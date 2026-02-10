@@ -3,6 +3,14 @@ export interface DailyEntry {
   morningWeightLb: number;
   eveningWeightLb?: number;
   waistIn?: number;
+  bfMorningR1?: number;
+  bfMorningR2?: number;
+  bfMorningR3?: number;
+  bfMorningPct?: number;
+  bfEveningR1?: number;
+  bfEveningR2?: number;
+  bfEveningR3?: number;
+  bfEveningPct?: number;
   sleepStart?: string;
   sleepEnd?: string;
   sleepQuality?: number;
@@ -323,6 +331,15 @@ export function diagnoseDietVsTraining(entries: DailyEntry[]): Diagnosis {
     return { type: "training", message: "Weight trend is on track. Look at training variables (volume, intensity, exercise selection) and sleep." };
   }
 
+  const withLm = recent.filter((e) => getLeanMassLb(e) != null);
+  if (withLm.length >= 2 && wkGain > 0.25) {
+    const lmFirst = getLeanMassLb(withLm[0])!;
+    const lmLast = getLeanMassLb(withLm[withLm.length - 1])!;
+    if (lmLast - lmFirst < 0) {
+      return { type: "training", message: "Weight up but estimated lean mass down (likely BIA noise or glycogen/hydration swing). Check hydration consistency and use 7-day averages." };
+    }
+  }
+
   return { type: "ok", message: "No red flags detected. Keep running the plan and monitor 7-day averages." };
 }
 
@@ -363,4 +380,58 @@ export function todayStr(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+export function avg3(a?: number, b?: number, c?: number): number | undefined {
+  const vals = [a, b, c].filter((v): v is number => v != null);
+  if (vals.length !== 3) return undefined;
+  return Math.round((vals.reduce((s, v) => s + v, 0) / 3) * 100) / 100;
+}
+
+export function getLeanMassLb(entry: DailyEntry): number | null {
+  const bf = entry.bfMorningPct;
+  if (bf == null) return null;
+  return Math.round(entry.morningWeightLb * (1 - bf / 100) * 100) / 100;
+}
+
+export function getFatMassLb(entry: DailyEntry): number | null {
+  const bf = entry.bfMorningPct;
+  if (bf == null) return null;
+  return Math.round(entry.morningWeightLb * (bf / 100) * 100) / 100;
+}
+
+export function leanMassRollingAvg(entries: DailyEntry[], days: number = 7): Array<{ day: string; avg: number }> {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const items = sorted
+    .map((e) => ({ date: parseDate(e.day), lm: getLeanMassLb(e), day: e.day }))
+    .filter((x): x is { date: Date; lm: number; day: string } => x.lm != null);
+  const out: Array<{ day: string; avg: number }> = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const di = items[i].date;
+    const window = items.filter((w) => {
+      const diff = daysBetween(w.date, di);
+      return diff >= 0 && diff < days;
+    });
+    if (window.length >= Math.min(days, 3)) {
+      const avg = window.reduce((s, w) => s + w.lm, 0) / window.length;
+      out.push({ day: items[i].day, avg: Math.round(avg * 100) / 100 });
+    }
+  }
+  return out;
+}
+
+export function leanGainRatio14d(entries: DailyEntry[]): number | null {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const recent = sorted.slice(-14);
+  const withLm = recent.filter((e) => getLeanMassLb(e) != null);
+  if (withLm.length < 2) return null;
+
+  const first = withLm[0];
+  const last = withLm[withLm.length - 1];
+  const dw = last.morningWeightLb - first.morningWeightLb;
+  const dlm = getLeanMassLb(last)! - getLeanMassLb(first)!;
+
+  if (Math.abs(dw) < 0.1) return null;
+  return dlm / dw;
 }
