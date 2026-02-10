@@ -18,6 +18,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - **Design**: Dark theme with teal primary (#00D4AA), Rubik font family
 
 ## Key Features
+- Date navigation on Log screen: prev/next day arrows, "Today"/"Yesterday" labels, "Logged" badge, "Jump to Today" chip, edit past entries
 - Daily logging: weight, waist, body fat %, sleep, water, steps, cardio, lift, deload week, adherence, notes
 - Body fat tracking: 3 AM readings + optional 3 PM readings, auto-averaged per session
 - Lean mass/fat mass auto-calculated from weight and BF%
