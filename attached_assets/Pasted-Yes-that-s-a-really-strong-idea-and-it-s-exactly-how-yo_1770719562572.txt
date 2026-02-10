@@ -1,0 +1,450 @@
+Yes — that’s a really strong idea, and it’s exactly how you turn this from “guessing” into a feedback-controlled system.
+
+Below is a working Python script design that does what you described:
+	•	Logs daily: sleep, water, morning/evening weight, workout, steps/cardio, adherence, waist/tape, notes.
+	•	Computes 7-day rolling averages and weekly deltas.
+	•	Applies your adjustment rules (aim +0.25–0.5 lb/week; if none add 75–100 kcal; if >0.75 lb/week remove 100 kcal).
+	•	Suggests which ingredient to change first (and by how many grams) to hit the calorie adjustment without wrecking your macro ratios.
+	•	Flags “likely diet issue vs training issue” using simple heuristics (weight/waist trend + performance trend + adherence).
+
+You can run it as a simple terminal app. It stores your data in a local JSON file.
+
+⸻
+
+Python script (CLI logger + weekly coach)
+
+#!/usr/bin/env python3
+"""
+Conrad Bulk/Recomp Monitor
+- Daily logging (sleep, water, weights, waist, training/performance)
+- 7-day rolling averages
+- Weekly recommendations:
+    * Target gain: +0.25 to +0.5 lb/week
+    * If none: +75–100 kcal/day
+    * If >0.75 lb/week: -100 kcal/day
+- Calorie adjustment via ingredient grams with minimal macro disruption.
+
+Run:
+  python conrad_coach.py log
+  python conrad_coach.py report
+"""
+
+from __future__ import annotations
+import json
+import os
+import sys
+from dataclasses import dataclass, asdict
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+
+DATA_PATH = os.path.join(os.path.dirname(__file__), "conrad_log.json")
+
+# --- Your "locked" plan (baseline totals) ---
+BASELINE = {
+    "calories": 2695.2,
+    "protein_g": 173.9,
+    "carbs_g": 330.9,
+    "fat_g": 54.4,
+    "items_g": {
+        "oats_g": 244,
+        "dextrin_g": 120,
+        "whey_g": 90,
+        "mct_g": 30,
+        "flax_g": 60,
+        "yogurt_cups": 1,
+        "eggs": 2,
+        "bananas": 2,
+    },
+    # Priority order for cutting calories first (least "anabolic cost" / least disruptive)
+    # You can tweak this order later.
+    "adjust_priority": [
+        "mct_g",       # fat-only calories
+        "dextrin_g",   # fast carb
+        "oats_g",      # slower carb
+        "bananas",     # carbs + micronutrients
+        "eggs",        # protein+fat+micros (later)
+        "flax_g",      # fiber+fat (later)
+        "whey_g",      # protein (last)
+        "yogurt_cups", # protein (last)
+    ],
+}
+
+# Approx calorie density assumptions (close enough for control; you can refine later)
+KCAL_PER_G = {
+    "oats_g": 4.0,      # your log ~4 kcal/g
+    "dextrin_g": 3.87,  # your log ~3.87 kcal/g
+    "whey_g": 3.76,     # your log ~3.76 kcal/g
+    "mct_g": 7.0,       # your log ~7 kcal/g
+    "flax_g": 3.24,     # your log ~3.24 kcal/g
+    "bananas": 104.0,   # per medium
+    "eggs": 77.5,       # per large hard-boiled (155 for 2)
+    "yogurt_cups": 149.5, # nonfat 1 cup
+}
+
+# Macro impact approximations per unit change (very rough, for "don’t wreck ratios")
+# If you want, you can replace these with label-accurate numbers.
+MACRO_DELTA = {
+    "oats_g":    {"carbs": 0.67, "protein": 0.17, "fat": 0.07},  # per 1g oats (rough)
+    "dextrin_g": {"carbs": 1.00, "protein": 0.00, "fat": 0.00},  # per 1g dextrin
+    "whey_g":    {"carbs": 0.10, "protein": 0.80, "fat": 0.05},  # per 1g whey (rough)
+    "mct_g":     {"carbs": 0.00, "protein": 0.00, "fat": 1.00},  # per 1g mct
+    "flax_g":    {"carbs": 0.10, "protein": 0.20, "fat": 0.35},  # per 1g flax (rough)
+    "bananas":   {"carbs": 27.0, "protein": 1.3,  "fat": 0.3},   # per banana
+    "eggs":      {"carbs": 0.6,  "protein": 6.5,  "fat": 5.3},   # per egg
+    "yogurt_cups": {"carbs": 9.0, "protein": 23.0, "fat": 0.0},  # per cup
+}
+
+@dataclass
+class DailyEntry:
+    day: str  # YYYY-MM-DD
+    morning_weight_lb: float
+    evening_weight_lb: Optional[float] = None
+    waist_in: Optional[float] = None  # e.g., at navel
+    sleep_start: Optional[str] = None  # HH:MM
+    sleep_end: Optional[str] = None    # HH:MM
+    sleep_quality_1to5: Optional[int] = None
+    water_liters_extra: Optional[float] = None  # outside shakes
+    steps: Optional[int] = None
+    cardio_min: Optional[int] = None
+    lift_done: Optional[bool] = None
+    performance_note: Optional[str] = None  # e.g. "bench +5lb", "felt flat"
+    adherence_0to1: float = 1.0  # 1.0 = hit plan, 0.8 = missed something
+    notes: Optional[str] = None
+
+def load_data() -> Dict:
+    if not os.path.exists(DATA_PATH):
+        return {"baseline": BASELINE, "entries": []}
+    with open(DATA_PATH, "r") as f:
+        return json.load(f)
+
+def save_data(data: Dict) -> None:
+    with open(DATA_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+def parse_date(s: str) -> date:
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def today_str() -> str:
+    return date.today().strftime("%Y-%m-%d")
+
+def input_float(prompt: str, allow_blank: bool = False) -> Optional[float]:
+    while True:
+        s = input(prompt).strip()
+        if allow_blank and s == "":
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            print("Enter a number.")
+
+def input_int(prompt: str, allow_blank: bool = False) -> Optional[int]:
+    while True:
+        s = input(prompt).strip()
+        if allow_blank and s == "":
+            return None
+        try:
+            return int(s)
+        except ValueError:
+            print("Enter an integer.")
+
+def input_bool(prompt: str, allow_blank: bool = False) -> Optional[bool]:
+    while True:
+        s = input(prompt + " [y/n]: ").strip().lower()
+        if allow_blank and s == "":
+            return None
+        if s in ("y", "yes"):
+            return True
+        if s in ("n", "no"):
+            return False
+        print("Enter y or n.")
+
+def log_entry() -> None:
+    data = load_data()
+    day = input(f"Date (YYYY-MM-DD) [{today_str()}]: ").strip() or today_str()
+
+    entry = DailyEntry(
+        day=day,
+        morning_weight_lb=float(input_float("Morning weight (lb): ")),
+        evening_weight_lb=input_float("Evening weight (lb) [blank ok]: ", allow_blank=True),
+        waist_in=input_float("Waist at navel (in) [blank ok]: ", allow_blank=True),
+        sleep_start=(input("Sleep start HH:MM [blank ok]: ").strip() or None),
+        sleep_end=(input("Sleep end HH:MM [blank ok]: ").strip() or None),
+        sleep_quality_1to5=input_int("Sleep quality 1–5 [blank ok]: ", allow_blank=True),
+        water_liters_extra=input_float("Water liters outside shakes [blank ok]: ", allow_blank=True),
+        steps=input_int("Steps [blank ok]: ", allow_blank=True),
+        cardio_min=input_int("Cardio minutes [blank ok]: ", allow_blank=True),
+        lift_done=input_bool("Lift done", allow_blank=True),
+        performance_note=(input("Performance note (optional): ").strip() or None),
+        adherence_0to1=float(input_float("Adherence 0–1 (1=hit plan) [default 1]: ", allow_blank=True) or 1.0),
+        notes=(input("Notes (optional): ").strip() or None),
+    )
+
+    # Replace existing entry for that day if present
+    entries = data["entries"]
+    entries = [e for e in entries if e["day"] != day]
+    entries.append(asdict(entry))
+    entries.sort(key=lambda e: e["day"])
+    data["entries"] = entries
+    save_data(data)
+    print(f"Saved entry for {day} -> {DATA_PATH}")
+
+def rolling_avg(entries: List[Dict], days: int = 7) -> List[Tuple[str, float]]:
+    # returns list of (day, avg_morning_weight) for each day with enough lookback
+    out = []
+    weights = [(parse_date(e["day"]), e["morning_weight_lb"]) for e in entries]
+    weights.sort(key=lambda x: x[0])
+    for i in range(len(weights)):
+        d_i = weights[i][0]
+        window = [(d,w) for (d,w) in weights if d_i - timedelta(days=days-1) <= d <= d_i]
+        if len(window) == days:
+            avg = sum(w for _,w in window) / days
+            out.append((d_i.strftime("%Y-%m-%d"), avg))
+    return out
+
+def last_n(entries: List[Dict], n: int) -> List[Dict]:
+    return sorted(entries, key=lambda e: e["day"])[-n:]
+
+def weekly_delta(entries: List[Dict]) -> Optional[float]:
+    ra = rolling_avg(entries, 7)
+    if len(ra) < 2:
+        return None
+    # compare last 7-day avg to previous 7-day avg (one week earlier)
+    last_day, last_avg = ra[-1]
+    prev_day, prev_avg = ra[-8] if len(ra) >= 8 else ra[-2]
+    return last_avg - prev_avg
+
+def waist_delta(entries: List[Dict], days: int = 14) -> Optional[float]:
+    # Compare most recent waist to value ~days ago (nearest available)
+    entries_sorted = sorted(entries, key=lambda e: e["day"])
+    recent = next((e for e in reversed(entries_sorted) if e.get("waist_in") is not None), None)
+    if not recent:
+        return None
+    recent_date = parse_date(recent["day"])
+    target_date = recent_date - timedelta(days=days)
+    older_candidates = [e for e in entries_sorted if e.get("waist_in") is not None and parse_date(e["day"]) <= target_date]
+    if not older_candidates:
+        return None
+    older = older_candidates[-1]
+    return float(recent["waist_in"]) - float(older["waist_in"])
+
+def suggest_calorie_adjustment(wk_gain_lb: float) -> int:
+    # per your locked rules
+    if wk_gain_lb < 0.10:   # essentially no gain
+        return +100
+    if wk_gain_lb > 0.75:
+        return -100
+    if 0.10 <= wk_gain_lb < 0.25:
+        return +75
+    if 0.25 <= wk_gain_lb <= 0.50:
+        return 0
+    if 0.50 < wk_gain_lb <= 0.75:
+        return -50
+    return 0
+
+def grams_for_kcal(item_key: str, kcal: int) -> int:
+    # kcal can be +/- ; return grams (or units) to change
+    k = KCAL_PER_G[item_key]
+    # round to practical increments
+    if item_key in ("bananas", "eggs", "yogurt_cups"):
+        # units
+        units = int(round(kcal / k))
+        return units
+    grams = int(round(kcal / k))
+    # practical rounding
+    if item_key in ("mct_g", "dextrin_g"):
+        return int(round(grams / 5) * 5)
+    if item_key in ("oats_g", "whey_g", "flax_g"):
+        return int(round(grams / 10) * 10)
+    return grams
+
+def propose_macro_safe_adjustment(kcal_change: int, baseline: Dict) -> List[Tuple[str, int, int]]:
+    """
+    Returns list of (item_key, delta_amount, approx_kcal_effect)
+    Applies priority list; tries to hit kcal_change with minimal disruption.
+    """
+    if kcal_change == 0:
+        return []
+
+    plan = []
+    remaining = kcal_change
+    priority = baseline["adjust_priority"]
+
+    for item in priority:
+        if remaining == 0:
+            break
+
+        # Avoid pulling protein down unless needed
+        if item in ("whey_g", "yogurt_cups") and abs(remaining) <= 150:
+            continue
+
+        delta_amt = grams_for_kcal(item, remaining)
+
+        # Ensure delta isn’t zero from rounding
+        if delta_amt == 0:
+            delta_amt = 5 if item.endswith("_g") else 1
+            if remaining < 0:
+                delta_amt *= -1
+
+        # compute achieved kcal
+        achieved = int(round(delta_amt * KCAL_PER_G[item]))
+        # don't overshoot massively
+        if abs(achieved) > abs(remaining) and abs(remaining) < 150:
+            # try smaller step
+            if item.endswith("_g"):
+                step = 5 if item in ("mct_g", "dextrin_g") else 10
+                delta_amt = step if remaining > 0 else -step
+                achieved = int(round(delta_amt * KCAL_PER_G[item]))
+            else:
+                # unit-based
+                delta_amt = 1 if remaining > 0 else -1
+                achieved = int(round(delta_amt * KCAL_PER_G[item]))
+
+        plan.append((item, delta_amt, achieved))
+        remaining -= achieved
+
+        # stop if close enough
+        if abs(remaining) <= 25:
+            break
+
+    return plan
+
+def diagnose_diet_vs_training(entries: List[Dict]) -> str:
+    """
+    Simple heuristic:
+    - If adherence low -> "data quality / adherence issue"
+    - If gaining too fast AND waist up -> diet overshoot
+    - If not gaining AND performance flat -> diet undershoot or recovery
+    - If gaining as planned but performance not improving -> training programming
+    """
+    recent = last_n(entries, 14)
+    if not recent:
+        return "Not enough data yet."
+
+    avg_adherence = sum(float(e.get("adherence_0to1", 1.0)) for e in recent) / len(recent)
+    wk_gain = weekly_delta(entries)
+    wdelta = waist_delta(entries, 14)
+
+    perf_notes = [e.get("performance_note") for e in recent if e.get("performance_note")]
+    perf_flag_flat = False
+    if perf_notes:
+        # crude: if many notes mention "flat", "tired", "no progress"
+        bad_words = ("flat", "tired", "stalled", "no progress", "weak")
+        hits = sum(1 for n in perf_notes if any(b in n.lower() for b in bad_words))
+        perf_flag_flat = hits >= max(2, len(perf_notes)//3)
+
+    if avg_adherence < 0.9:
+        return "Likely adherence/data-quality issue first (plan not executed consistently)."
+
+    if wk_gain is None:
+        return "Need at least 14+ days to diagnose trends."
+
+    if wk_gain > 0.75 and (wdelta is not None and wdelta > 0.25):
+        return "Likely diet overshoot (gain too fast + waist rising). Reduce calories slightly."
+
+    if wk_gain < 0.10 and perf_flag_flat:
+        return "Likely diet/recovery undershoot (not gaining + performance flat). Add calories or reduce cardio/stress."
+
+    if 0.25 <= wk_gain <= 0.50 and perf_flag_flat:
+        return "Diet is likely adequate (weight trending right). Look at training variables (volume/intensity/exercise selection) and sleep."
+
+    return "No clear red flags; keep running the plan and watch 7-day averages."
+
+def report() -> None:
+    data = load_data()
+    entries = data["entries"]
+    if len(entries) < 7:
+        print("Not enough data yet (need at least 7 days logged).")
+        return
+
+    wk_gain = weekly_delta(entries)
+    if wk_gain is None:
+        print("Need more data to compute weekly delta (need ~14+ days).")
+        return
+
+    kcal_adj = suggest_calorie_adjustment(wk_gain)
+    plan = propose_macro_safe_adjustment(kcal_adj, data["baseline"])
+
+    wdelta = waist_delta(entries, 14)
+    diagnosis = diagnose_diet_vs_training(entries)
+
+    print("\n=== Conrad Weekly Report ===")
+    print(f"Baseline: {data['baseline']['calories']} kcal | P{data['baseline']['protein_g']} C{data['baseline']['carbs_g']} F{data['baseline']['fat_g']}")
+    print(f"7-day avg weekly weight change: {wk_gain:+.2f} lb/week")
+    if wdelta is not None:
+        print(f"~14-day waist change: {wdelta:+.2f} in")
+    else:
+        print("~14-day waist change: (not enough waist data)")
+
+    print(f"\nRecommendation: calorie adjust {kcal_adj:+d} kcal/day")
+    if kcal_adj == 0:
+        print("→ Hold steady. Keep running another week and recheck.")
+    else:
+        print("Proposed ingredient tweaks (minimal disruption):")
+        for item, delta_amt, achieved in plan:
+            unit = "g" if item.endswith("_g") else "unit"
+            sign = "+" if delta_amt > 0 else ""
+            print(f"  - {item}: {sign}{delta_amt} {unit}  (~{achieved:+d} kcal/day)")
+
+    print(f"\nDiagnosis: {diagnosis}\n")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python conrad_coach.py [log|report]")
+        sys.exit(1)
+    cmd = sys.argv[1].lower()
+    if cmd == "log":
+        log_entry()
+    elif cmd == "report":
+        report()
+    else:
+        print("Unknown command. Use log or report.")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+
+
+⸻
+
+How this decides what to reduce first
+
+By default it will adjust calories in this order (least disruptive first):
+	1.	MCT (pure fat calories; easiest lever)
+	2.	Dextrin (fast carbs; keep mostly around training)
+	3.	Oats (slower carbs)
+	4.	Bananas
+	5.	Eggs
+	6.	Flax
+	7.	Whey/Yogurt last (protein anchors)
+
+That matches what we’ve been doing manually.
+
+⸻
+
+How to use it day-to-day
+	•	Each day: python conrad_coach.py log
+	•	Once per week: python conrad_coach.py report
+
+It will tell you:
+	•	your weekly weight trend (7-day avg)
+	•	waist trend (if you log it)
+	•	suggested calorie change (+100 / -100, etc.)
+	•	exactly which ingredient to adjust and by how much (grams)
+
+⸻
+
+“Diet vs training issue” logic (simple but useful)
+	•	If weight is trending right (+0.25–0.5/wk) but performance notes say “flat/stalled”: likely training/recovery programming
+	•	If weight is rising fast + waist rising: diet overshoot
+	•	If not gaining + feeling flat: diet/recovery undershoot
+	•	If adherence < 0.9: fix execution first (garbage in → garbage out)
+
+You can make this more sophisticated later (e1RM tracking, volume load, HRV, etc.), but this is enough to start controlling outcomes.
+
+⸻
+
+If you want, I can also:
+	•	add your exact shake-time template as a “daily checklist”
+	•	generate a weekly dashboard (CSV + graphs)
+	•	add “if cardio minutes > X then auto +Y carbs” logic
+	•	add a “planned deload week” training flag so the script doesn’t misdiagnose deloads as diet problems
