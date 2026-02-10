@@ -108,7 +108,7 @@ export const ITEM_LABELS: Record<string, string> = {
   oats_g: "Oats",
   dextrin_g: "Dextrin",
   whey_g: "Whey",
-  mct_g: "MCT Oil",
+  mct_g: "MCT Powder",
   flax_g: "Flaxseed",
   bananas: "Bananas",
   eggs: "Eggs",

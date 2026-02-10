@@ -113,7 +113,7 @@ export default function ChecklistScreen() {
           {Object.entries(BASELINE.items).map(([key, amount]) => {
             const labels: Record<string, string> = {
               oats_g: "Oats", dextrin_g: "Dextrin", whey_g: "Whey",
-              mct_g: "MCT Oil", flax_g: "Flaxseed", yogurt_cups: "Greek Yogurt",
+              mct_g: "MCT Powder", flax_g: "Flaxseed", yogurt_cups: "Greek Yogurt",
               eggs: "Eggs", bananas: "Bananas",
             };
             const units: Record<string, string> = {
