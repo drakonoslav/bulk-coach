@@ -21,6 +21,8 @@ import {
   diagnoseDietVsTraining,
   cardioFuelNote,
   rollingAvg,
+  leanGainRatio14d,
+  leanMassRollingAvg,
   BASELINE,
   ITEM_LABELS,
   ITEM_UNITS,
@@ -28,7 +30,8 @@ import {
   type Diagnosis,
 } from "@/lib/coaching-engine";
 
-function WeightChart({ data }: { data: Array<{ day: string; avg: number }> }) {
+function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
+  const chartColor = lineColor || Colors.primary;
   if (data.length < 2) return null;
   const values = data.map((d) => d.avg);
   const min = Math.min(...values) - 0.5;
@@ -80,7 +83,7 @@ function WeightChart({ data }: { data: Array<{ day: string; avg: number }> }) {
                 top: prev.y,
                 width: len,
                 height: 2.5,
-                backgroundColor: Colors.primary,
+                backgroundColor: chartColor,
                 borderRadius: 1,
                 transform: [{ rotate: `${angle}deg` }],
                 transformOrigin: "left center",
@@ -98,9 +101,9 @@ function WeightChart({ data }: { data: Array<{ day: string; avg: number }> }) {
               width: 6,
               height: 6,
               borderRadius: 3,
-              backgroundColor: i === points.length - 1 ? Colors.primary : Colors.cardBgElevated,
+              backgroundColor: i === points.length - 1 ? chartColor : Colors.cardBgElevated,
               borderWidth: 1.5,
-              borderColor: Colors.primary,
+              borderColor: chartColor,
             }}
           />
         ))}
@@ -234,6 +237,9 @@ export default function ReportScreen() {
   const diagnosis = diagnoseDietVsTraining(entries);
   const ra = rollingAvg(entries, 7);
   const chartData = ra.slice(-21);
+  const lgr = leanGainRatio14d(entries);
+  const lmRa = leanMassRollingAvg(entries, 7);
+  const lmChartData = lmRa.slice(-21);
 
   const hasEnoughData = entries.length >= 7;
 
@@ -351,6 +357,74 @@ export default function ReportScreen() {
                 <Text style={styles.metricUnit}>inches (14d)</Text>
               </View>
             </View>
+
+            {lgr != null || lmChartData.length >= 2 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Lean Gain Analysis</Text>
+                <View style={styles.lgrCard}>
+                  {lgr != null ? (
+                    <View style={styles.lgrTop}>
+                      <View style={styles.lgrGauge}>
+                        <Text style={styles.lgrLabel}>Lean Gain Ratio (14d)</Text>
+                        <Text
+                          style={[
+                            styles.lgrValue,
+                            {
+                              color:
+                                lgr >= 0.6
+                                  ? Colors.success
+                                  : lgr >= 0.3
+                                  ? Colors.warning
+                                  : Colors.danger,
+                            },
+                          ]}
+                        >
+                          {lgr.toFixed(2)}
+                        </Text>
+                        <Text style={styles.lgrHint}>
+                          {lgr >= 0.6
+                            ? "Excellent - mostly lean mass"
+                            : lgr >= 0.3
+                            ? "Moderate - some fat gain"
+                            : lgr < 0
+                            ? "Losing lean mass - check training/protein"
+                            : "Low ratio - gaining mostly fat"}
+                        </Text>
+                      </View>
+                      <View style={styles.lgrBar}>
+                        <View style={styles.lgrBarTrack}>
+                          <View
+                            style={[
+                              styles.lgrBarFill,
+                              {
+                                width: `${Math.max(0, Math.min(100, ((lgr + 1) / 3) * 100))}%`,
+                                backgroundColor:
+                                  lgr >= 0.6
+                                    ? Colors.success
+                                    : lgr >= 0.3
+                                    ? Colors.warning
+                                    : Colors.danger,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <View style={styles.lgrBarLabels}>
+                          <Text style={styles.lgrBarLabel}>Fat</Text>
+                          <Text style={styles.lgrBarLabel}>Mixed</Text>
+                          <Text style={styles.lgrBarLabel}>Lean</Text>
+                        </View>
+                      </View>
+                    </View>
+                  ) : null}
+                  {lmChartData.length >= 2 ? (
+                    <View style={{ marginTop: lgr != null ? 16 : 0 }}>
+                      <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Lean Mass Trend (7d Avg)</Text>
+                      <WeightChart data={lmChartData} lineColor="#A78BFA" />
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Diagnosis</Text>
@@ -727,6 +801,59 @@ const styles = StyleSheet.create({
   },
   priorityNote: {
     fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+  },
+  lgrCard: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  lgrTop: {
+    gap: 12,
+  },
+  lgrGauge: {
+    alignItems: "center",
+  },
+  lgrLabel: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.3,
+  },
+  lgrValue: {
+    fontSize: 36,
+    fontFamily: "Rubik_700Bold",
+    marginVertical: 4,
+  },
+  lgrHint: {
+    fontSize: 12,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+    textAlign: "center",
+  },
+  lgrBar: {
+    gap: 4,
+  },
+  lgrBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.surface,
+    overflow: "hidden" as const,
+  },
+  lgrBarFill: {
+    height: 8,
+    borderRadius: 4,
+  },
+  lgrBarLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  lgrBarLabel: {
+    fontSize: 9,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
