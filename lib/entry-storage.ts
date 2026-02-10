@@ -67,6 +67,21 @@ export interface DashboardRow {
   cardioFuelNote?: string;
 }
 
+export async function loadEntry(day: string): Promise<DailyEntry | null> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL(`/api/logs/${day}`, baseUrl);
+    const res = await fetch(url.toString(), { credentials: "include" });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`${res.status}`);
+    const row = await res.json();
+    return rowToEntry(row);
+  } catch (err) {
+    console.error("loadEntry API error:", err);
+    return null;
+  }
+}
+
 export async function saveEntry(entry: DailyEntry): Promise<void> {
   await apiRequest("POST", "/api/logs/upsert", entry);
 }

@@ -14,8 +14,27 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import Colors from "@/constants/colors";
-import { saveEntry, loadEntries } from "@/lib/entry-storage";
+import { saveEntry, loadEntry } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
+
+function formatDateLabel(dateStr: string): string {
+  const today = todayStr();
+  const yesterday = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  if (dateStr === today) return "Today";
+  if (dateStr === yesterday) return "Yesterday";
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function shiftDate(dateStr: string, offset: number): string {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
 
 function InputField({
   label,
@@ -154,6 +173,9 @@ export default function LogScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
+  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [loading, setLoading] = useState(false);
+  const [hasExisting, setHasExisting] = useState(false);
   const [morningWeight, setMorningWeight] = useState("");
   const [eveningWeight, setEveningWeight] = useState("");
   const [waist, setWaist] = useState("");
@@ -177,40 +199,77 @@ export default function LogScreen() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const isToday = selectedDate === todayStr();
+  const isFuture = selectedDate > todayStr();
+
+  const populateForm = (existing: DailyEntry | null) => {
+    if (existing) {
+      setHasExisting(true);
+      setMorningWeight(existing.morningWeightLb.toString());
+      setEveningWeight(existing.eveningWeightLb?.toString() || "");
+      setWaist(existing.waistIn?.toString() || "");
+      setBfAmR1(existing.bfMorningR1?.toString() || "");
+      setBfAmR2(existing.bfMorningR2?.toString() || "");
+      setBfAmR3(existing.bfMorningR3?.toString() || "");
+      setBfPmR1(existing.bfEveningR1?.toString() || "");
+      setBfPmR2(existing.bfEveningR2?.toString() || "");
+      setBfPmR3(existing.bfEveningR3?.toString() || "");
+      setSleepStart(existing.sleepStart || "");
+      setSleepEnd(existing.sleepEnd || "");
+      setSleepQuality(existing.sleepQuality);
+      setWater(existing.waterLiters?.toString() || "");
+      setSteps(existing.steps?.toString() || "");
+      setCardio(existing.cardioMin?.toString() || "");
+      setLiftDone(existing.liftDone);
+      setDeloadWeek(existing.deloadWeek);
+      setPerfNote(existing.performanceNote || "");
+      setAdherence(existing.adherence ?? 1);
+      setNotes(existing.notes || "");
+    } else {
+      setHasExisting(false);
+      resetForm();
+    }
+  };
+
+  const loadDateEntry = useCallback(async (day: string) => {
+    setLoading(true);
+    setSaved(false);
+    try {
+      const existing = await loadEntry(day);
+      populateForm(existing);
+    } catch {
+      resetForm();
+      setHasExisting(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      const checkToday = async () => {
-        const entries = await loadEntries();
-        const today = todayStr();
-        const existing = entries.find((e) => e.day === today);
-        if (existing) {
-          setMorningWeight(existing.morningWeightLb.toString());
-          setEveningWeight(existing.eveningWeightLb?.toString() || "");
-          setWaist(existing.waistIn?.toString() || "");
-          setBfAmR1(existing.bfMorningR1?.toString() || "");
-          setBfAmR2(existing.bfMorningR2?.toString() || "");
-          setBfAmR3(existing.bfMorningR3?.toString() || "");
-          setBfPmR1(existing.bfEveningR1?.toString() || "");
-          setBfPmR2(existing.bfEveningR2?.toString() || "");
-          setBfPmR3(existing.bfEveningR3?.toString() || "");
-          setSleepStart(existing.sleepStart || "");
-          setSleepEnd(existing.sleepEnd || "");
-          setSleepQuality(existing.sleepQuality);
-          setWater(existing.waterLiters?.toString() || "");
-          setSteps(existing.steps?.toString() || "");
-          setCardio(existing.cardioMin?.toString() || "");
-          setLiftDone(existing.liftDone);
-          setDeloadWeek(existing.deloadWeek);
-          setPerfNote(existing.performanceNote || "");
-          setAdherence(existing.adherence ?? 1);
-          setNotes(existing.notes || "");
-        } else {
-          resetForm();
-        }
-      };
-      checkToday();
-    }, [])
+      loadDateEntry(selectedDate);
+    }, [selectedDate])
   );
+
+  const goToPrevDay = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const prev = shiftDate(selectedDate, -1);
+    setSelectedDate(prev);
+  };
+
+  const goToNextDay = () => {
+    if (isFuture) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const next = shiftDate(selectedDate, 1);
+    if (next <= todayStr()) {
+      setSelectedDate(next);
+    }
+  };
+
+  const goToToday = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedDate(todayStr());
+  };
 
   const resetForm = () => {
     setMorningWeight("");
@@ -250,7 +309,7 @@ export default function LogScreen() {
       const bfEveningAvg = avg3(bfPmVals[0], bfPmVals[1], bfPmVals[2]);
 
       const entry: DailyEntry = {
-        day: todayStr(),
+        day: selectedDate,
         morningWeightLb: parseFloat(morningWeight),
         eveningWeightLb: eveningWeight ? parseFloat(eveningWeight) : undefined,
         waistIn: waist ? parseFloat(waist) : undefined,
@@ -277,6 +336,7 @@ export default function LogScreen() {
 
       await saveEntry(entry);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setHasExisting(true);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
@@ -302,7 +362,32 @@ export default function LogScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Daily Log</Text>
-          <Text style={styles.subtitle}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</Text>
+          <View style={styles.dateNav}>
+            <Pressable onPress={goToPrevDay} style={styles.dateNavBtn} hitSlop={12}>
+              <Ionicons name="chevron-back" size={22} color={Colors.text} />
+            </Pressable>
+            <Pressable onPress={isToday ? undefined : goToToday} style={styles.dateNavCenter}>
+              <Text style={styles.dateNavLabel}>{formatDateLabel(selectedDate)}</Text>
+              <Text style={styles.dateNavSub}>
+                {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              </Text>
+              {hasExisting && (
+                <View style={styles.dateNavBadge}>
+                  <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
+                  <Text style={styles.dateNavBadgeText}>Logged</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable onPress={goToNextDay} style={[styles.dateNavBtn, isToday && { opacity: 0.3 }]} hitSlop={12} disabled={isToday}>
+              <Ionicons name="chevron-forward" size={22} color={Colors.text} />
+            </Pressable>
+          </View>
+          {!isToday && (
+            <Pressable onPress={goToToday} style={styles.todayChip}>
+              <Ionicons name="today-outline" size={14} color={Colors.primary} />
+              <Text style={styles.todayChipText}>Jump to Today</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.sectionCard}>
@@ -586,8 +671,8 @@ export default function LogScreen() {
             </View>
           ) : (
             <View style={styles.saveBtnContent}>
-              <Ionicons name="save-outline" size={20} color="#fff" />
-              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save Entry"}</Text>
+              <Ionicons name={hasExisting ? "refresh-outline" : "save-outline"} size={20} color="#fff" />
+              <Text style={styles.saveBtnText}>{saving ? "Saving..." : hasExisting ? "Update Entry" : "Save Entry"}</Text>
             </View>
           )}
         </Pressable>
@@ -614,12 +699,68 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: "Rubik_700Bold",
     color: Colors.text,
-    marginBottom: 4,
+    marginBottom: 12,
   },
-  subtitle: {
-    fontSize: 14,
+  dateNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  dateNavBtn: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+  },
+  dateNavCenter: {
+    flex: 1,
+    alignItems: "center",
+  },
+  dateNavLabel: {
+    fontSize: 18,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.text,
+  },
+  dateNavSub: {
+    fontSize: 12,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  dateNavBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+  },
+  dateNavBadgeText: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.success,
+  },
+  todayChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.primary + "15",
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  todayChipText: {
+    fontSize: 12,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.primary,
   },
   sectionCard: {
     backgroundColor: Colors.cardBg,
