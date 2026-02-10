@@ -164,6 +164,7 @@ export default function LogScreen() {
   const [steps, setSteps] = useState("");
   const [cardio, setCardio] = useState("");
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
+  const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
   const [perfNote, setPerfNote] = useState("");
   const [adherence, setAdherence] = useState(1.0);
   const [notes, setNotes] = useState("");
@@ -187,6 +188,7 @@ export default function LogScreen() {
           setSteps(existing.steps?.toString() || "");
           setCardio(existing.cardioMin?.toString() || "");
           setLiftDone(existing.liftDone);
+          setDeloadWeek(existing.deloadWeek);
           setPerfNote(existing.performanceNote || "");
           setAdherence(existing.adherence ?? 1);
           setNotes(existing.notes || "");
@@ -209,6 +211,7 @@ export default function LogScreen() {
     setSteps("");
     setCardio("");
     setLiftDone(undefined);
+    setDeloadWeek(undefined);
     setPerfNote("");
     setAdherence(1.0);
     setNotes("");
@@ -235,6 +238,7 @@ export default function LogScreen() {
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
         liftDone,
+        deloadWeek,
         performanceNote: perfNote || undefined,
         adherence,
         notes: notes || undefined,
@@ -349,6 +353,13 @@ export default function LogScreen() {
               onToggle={() => setLiftDone(liftDone === true ? undefined : true)}
               icon="barbell-outline"
               activeColor={Colors.success}
+            />
+            <ToggleButton
+              label="Deload"
+              value={deloadWeek}
+              onToggle={() => setDeloadWeek(deloadWeek === true ? undefined : true)}
+              icon="pause-circle-outline"
+              activeColor={Colors.secondary}
             />
           </View>
           <InputField

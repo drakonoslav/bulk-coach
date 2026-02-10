@@ -18,6 +18,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "plus.circle", selected: "plus.circle.fill" }} />
         <Label>Log</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="checklist">
+        <Icon sf={{ default: "list.bullet.clipboard", selected: "list.bullet.clipboard.fill" }} />
+        <Label>Plan</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="report">
         <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
         <Label>Report</Label>
@@ -71,6 +75,15 @@ function ClassicTabLayout() {
           title: "Log",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="add-circle-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="checklist"
+        options={{
+          title: "Plan",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="clipboard-outline" size={size} color={color} />
           ),
         }}
       />

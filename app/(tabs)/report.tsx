@@ -19,6 +19,7 @@ import {
   suggestCalorieAdjustment,
   proposeMacroSafeAdjustment,
   diagnoseDietVsTraining,
+  cardioFuelNote,
   rollingAvg,
   BASELINE,
   ITEM_LABELS,
@@ -114,6 +115,7 @@ function DiagnosisCard({ diagnosis }: { diagnosis: Diagnosis }) {
     overshoot: { icon: "trending-up", color: Colors.danger, bg: Colors.dangerMuted },
     undershoot: { icon: "trending-down", color: Colors.secondary, bg: Colors.secondaryMuted },
     training: { icon: "barbell-outline", color: "#60A5FA", bg: "rgba(96, 165, 250, 0.15)" },
+    deload: { icon: "pause-circle-outline", color: Colors.secondary, bg: Colors.secondaryMuted },
     ok: { icon: "checkmark-circle", color: Colors.success, bg: Colors.successMuted },
     insufficient: { icon: "time-outline", color: Colors.textSecondary, bg: Colors.surface },
   };
@@ -129,7 +131,8 @@ function DiagnosisCard({ diagnosis }: { diagnosis: Diagnosis }) {
            diagnosis.type === "adherence" ? "Adherence Check" :
            diagnosis.type === "overshoot" ? "Gaining Too Fast" :
            diagnosis.type === "undershoot" ? "Not Gaining" :
-           diagnosis.type === "training" ? "Training Focus" : "More Data Needed"}
+           diagnosis.type === "training" ? "Training Focus" :
+           diagnosis.type === "deload" ? "Deload Week" : "More Data Needed"}
         </Text>
       </View>
       <Text style={styles.diagMessage}>{diagnosis.message}</Text>
@@ -360,6 +363,33 @@ export default function ReportScreen() {
                 <AdjustmentCard adjustments={adjustments} kcalChange={kcalAdj} />
               </View>
             ) : null}
+
+            {(() => {
+              const last7 = entries.slice(-7);
+              const fuelNotes = last7
+                .filter((e) => e.cardioMin != null)
+                .map((e) => ({ day: e.day, note: cardioFuelNote(e.cardioMin, BASELINE) }))
+                .filter((n) => n.note != null);
+              if (fuelNotes.length === 0) return null;
+              return (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Cardio Fuel Guardrail</Text>
+                  <View style={styles.fuelCard}>
+                    {fuelNotes.map((fn) => (
+                      <View key={fn.day} style={styles.fuelRow}>
+                        <View style={styles.fuelDot}>
+                          <Feather name="zap" size={12} color={Colors.secondary} />
+                        </View>
+                        <View style={styles.fuelContent}>
+                          <Text style={styles.fuelDay}>{fn.day}</Text>
+                          <Text style={styles.fuelText}>{fn.note}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Adjustment Priority</Text>
@@ -699,5 +729,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
+  },
+  fuelCard: {
+    backgroundColor: Colors.secondaryMuted,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.secondary + "30",
+  },
+  fuelRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  fuelDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.secondary + "25",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  fuelContent: {
+    flex: 1,
+  },
+  fuelDay: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.secondary,
+    marginBottom: 2,
+  },
+  fuelText: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 18,
   },
 });

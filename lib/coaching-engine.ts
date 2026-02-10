@@ -10,9 +10,16 @@ export interface DailyEntry {
   steps?: number;
   cardioMin?: number;
   liftDone?: boolean;
+  deloadWeek?: boolean;
   performanceNote?: string;
   adherence: number;
   notes?: string;
+}
+
+export interface CardioFuel {
+  thresholdMin: number;
+  addCarbsG: number;
+  preferredSource: string;
 }
 
 export interface Baseline {
@@ -22,6 +29,7 @@ export interface Baseline {
   fatG: number;
   items: Record<string, number>;
   adjustPriority: string[];
+  cardioFuel: CardioFuel;
 }
 
 export const BASELINE: Baseline = {
@@ -49,7 +57,33 @@ export const BASELINE: Baseline = {
     "whey_g",
     "yogurt_cups",
   ],
+  cardioFuel: {
+    thresholdMin: 45,
+    addCarbsG: 25,
+    preferredSource: "dextrin_g",
+  },
 };
+
+export interface ChecklistItem {
+  time: string;
+  label: string;
+  detail: string;
+}
+
+export const DAILY_CHECKLIST: ChecklistItem[] = [
+  { time: "05:30", label: "Wake", detail: "Water + electrolytes" },
+  { time: "05:30", label: "Pre-cardio", detail: "1 banana + water + pinch salt" },
+  { time: "06:00-06:40", label: "Zone 2 rebounder", detail: "Steady Zone 2" },
+  { time: "06:45", label: "Post-cardio shake", detail: "Oats 120g + Whey 25g + MCT 10g" },
+  { time: "07:00-15:00", label: "Work", detail: "Anchor block" },
+  { time: "10:30", label: "Mid-morning shake", detail: "Greek yogurt 1 cup + Flax 30g + Whey 15g" },
+  { time: "14:45", label: "Pre-lift shake", detail: "Dextrin 80g + Whey 20g" },
+  { time: "15:45-17:00", label: "Lift", detail: "Push/Pull" },
+  { time: "17:10", label: "Post-lift shake", detail: "Dextrin 40g + Whey 30g" },
+  { time: "20:00", label: "Evening recovery meal", detail: "Oats 124g + Flax 30g + MCT 20g + Eggs 2 + Banana 1" },
+  { time: "21:30", label: "Wind down", detail: "Evening protein + downshift" },
+  { time: "21:45", label: "Sleep", detail: "Lights out" },
+];
 
 export const KCAL_PER_G: Record<string, number> = {
   oats_g: 4.0,
@@ -219,7 +253,22 @@ export function proposeMacroSafeAdjustment(kcalChange: number, baseline: Baselin
   return plan;
 }
 
-export type DiagnosisType = "adherence" | "overshoot" | "undershoot" | "training" | "ok" | "insufficient";
+export function cardioFuelNote(cardioMin: number | undefined, baseline: Baseline): string | null {
+  if (cardioMin == null) return null;
+  const cf = baseline.cardioFuel;
+  if (cardioMin > cf.thresholdMin) {
+    const add = cf.addCarbsG;
+    const src = cf.preferredSource;
+    if (src === "oats_g") {
+      const oatsG = Math.round((add / 0.67) / 10) * 10;
+      return `Cardio ${cardioMin}min > ${cf.thresholdMin} — add ~${add}g carbs: +${oatsG}g oats (or +${add}g dextrin)`;
+    }
+    return `Cardio ${cardioMin}min > ${cf.thresholdMin} — add +${add}g carbs: +${add}g dextrin`;
+  }
+  return null;
+}
+
+export type DiagnosisType = "adherence" | "overshoot" | "undershoot" | "training" | "deload" | "ok" | "insufficient";
 
 export interface Diagnosis {
   type: DiagnosisType;
@@ -237,6 +286,7 @@ export function diagnoseDietVsTraining(entries: DailyEntry[]): Diagnosis {
   const avgAdherence = recent.reduce((s, e) => s + (e.adherence ?? 1), 0) / recent.length;
   const wkGain = weeklyDelta(entries);
   const wDelta = waistDelta(entries, 14);
+  const deload = recent.some((e) => e.deloadWeek === true);
 
   const perfNotes = recent.filter((e) => e.performanceNote).map((e) => e.performanceNote!);
   let perfFlagFlat = false;
@@ -248,6 +298,13 @@ export function diagnoseDietVsTraining(entries: DailyEntry[]): Diagnosis {
 
   if (avgAdherence < 0.9) {
     return { type: "adherence", message: "Focus on consistency first. Plan adherence is below 90%." };
+  }
+
+  if (deload) {
+    if (wkGain != null && wkGain < 0.1) {
+      return { type: "deload", message: "Deload flagged. Weight not moving is acceptable — hold diet steady and reassess after deload." };
+    }
+    return { type: "deload", message: "Deload flagged. Avoid training conclusions — reassess next week." };
   }
 
   if (wkGain == null) {
