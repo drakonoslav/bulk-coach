@@ -1,0 +1,256 @@
+Got it. Here’s a Node/Express (TypeScript) + SQLite implementation spec you can paste to Replit that covers:
+	•	schema
+	•	upsert
+	•	recompute window
+	•	dashboard_cache
+	•	endpoints
+	•	“backfill edits recompute downstream trends”
+
+You can implement Postgres later with the same shape.
+
+⸻
+
+✅ Replit Spec: Persistent Logging + Backfill + Trend Recompute (Node/Express TS + SQLite)
+
+Tech
+	•	Backend: Node/Express (TypeScript) on port 5000
+	•	Frontend: Expo RN
+	•	Storage: SQLite (recommended first)
+
+Goal
+	1.	Persist daily logs across restarts
+	2.	Allow inserting/updating past days (upsert by day)
+	3.	Automatically recompute derived metrics + rolling trends in an affected window
+	4.	Serve “dashboard” rows that always reflect latest truth
+
+⸻
+
+1) SQLite schema (run on server startup)
+
+Use these tables:
+
+daily_log (source of truth)
+
+PRAGMA journal_mode=WAL;
+
+CREATE TABLE IF NOT EXISTS daily_log (
+  day TEXT PRIMARY KEY,                 -- 'YYYY-MM-DD'
+
+  morning_weight_lb REAL NOT NULL,
+  evening_weight_lb REAL,
+  waist_in REAL,
+
+  bf_morning_r1 REAL,
+  bf_morning_r2 REAL,
+  bf_morning_r3 REAL,
+  bf_morning_pct REAL,                  -- avg of 3 readings
+
+  bf_evening_r1 REAL,
+  bf_evening_r2 REAL,
+  bf_evening_r3 REAL,
+  bf_evening_pct REAL,
+
+  sleep_start TEXT,
+  sleep_end TEXT,
+  sleep_quality_1to5 INTEGER,
+
+  water_liters_extra REAL,
+  steps INTEGER,
+  cardio_min INTEGER,
+  lift_done INTEGER,                    -- 0/1
+  deload_week INTEGER,                  -- 0/1
+
+  adherence_0to1 REAL DEFAULT 1.0,
+  performance_note TEXT,
+  notes TEXT,
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+dashboard_cache (recomputed metrics, safe for fast reads)
+
+CREATE TABLE IF NOT EXISTS dashboard_cache (
+  day TEXT PRIMARY KEY,
+
+  lean_mass_lb REAL,
+  fat_mass_lb REAL,
+
+  weight_7d_avg REAL,
+  waist_7d_avg REAL,
+  lean_mass_7d_avg REAL,
+
+  lean_gain_ratio_14d_roll REAL,        -- rolling 14-day ratio per day (clamped)
+  cardio_fuel_note TEXT,
+
+  recomputed_at TEXT DEFAULT (datetime('now'))
+);
+
+
+⸻
+
+2) UPSERT (insert or update by day)
+
+Create an API that does upsert-by-day.
+
+SQL (SQLite)
+
+INSERT INTO daily_log (
+  day,
+  morning_weight_lb, evening_weight_lb, waist_in,
+  bf_morning_r1, bf_morning_r2, bf_morning_r3, bf_morning_pct,
+  bf_evening_r1, bf_evening_r2, bf_evening_r3, bf_evening_pct,
+  sleep_start, sleep_end, sleep_quality_1to5,
+  water_liters_extra, steps, cardio_min, lift_done, deload_week,
+  adherence_0to1, performance_note, notes,
+  updated_at
+) VALUES (
+  ?,?,?,?,?,?,?,?,
+  ?,?,?,?,?,?,
+  ?,?,?,?,
+  ?,?,?,?,?,?,
+  ?,?,?, datetime('now')
+)
+ON CONFLICT(day) DO UPDATE SET
+  morning_weight_lb=excluded.morning_weight_lb,
+  evening_weight_lb=excluded.evening_weight_lb,
+  waist_in=excluded.waist_in,
+
+  bf_morning_r1=excluded.bf_morning_r1,
+  bf_morning_r2=excluded.bf_morning_r2,
+  bf_morning_r3=excluded.bf_morning_r3,
+  bf_morning_pct=excluded.bf_morning_pct,
+
+  bf_evening_r1=excluded.bf_evening_r1,
+  bf_evening_r2=excluded.bf_evening_r2,
+  bf_evening_r3=excluded.bf_evening_r3,
+  bf_evening_pct=excluded.bf_evening_pct,
+
+  sleep_start=excluded.sleep_start,
+  sleep_end=excluded.sleep_end,
+  sleep_quality_1to5=excluded.sleep_quality_1to5,
+
+  water_liters_extra=excluded.water_liters_extra,
+  steps=excluded.steps,
+  cardio_min=excluded.cardio_min,
+  lift_done=excluded.lift_done,
+  deload_week=excluded.deload_week,
+
+  adherence_0to1=excluded.adherence_0to1,
+  performance_note=excluded.performance_note,
+  notes=excluded.notes,
+  updated_at=datetime('now');
+
+Important
+	•	BF% avg should be calculated in backend before save:
+	•	bf_morning_pct = avg(r1,r2,r3) only if all 3 exist
+	•	Same for evening.
+
+⸻
+
+3) Recompute Function Outline (the key piece)
+
+Rule
+
+After every upsert on day D, recompute dashboard metrics for a buffered window:
+	•	recomputeStart = D - 20 days
+	•	recomputeEnd   = D + 20 days
+	•	pullStart = recomputeStart - 14 days (extra context for rolling windows)
+
+Derived fields
+	•	lean_mass_lb = morning_weight_lb * (1 - bf_morning_pct/100) when BF exists
+	•	fat_mass_lb = morning_weight_lb * (bf_morning_pct/100) when BF exists
+
+Rolling 7-day averages
+
+Compute per day (calendar sequence):
+	•	weight_7d_avg
+	•	waist_7d_avg
+	•	lean_mass_7d_avg
+
+Rolling 14-day lean gain ratio (per day)
+
+For each day i:
+	•	look back 14 calendar days (inclusive)
+	•	choose first + last row in window where lean_mass exists
+	•	compute:
+ratio = (lean_last - lean_first) / (weight_last - weight_first)
+	•	if fewer than 2 lean_mass points → null
+	•	if |Δweight| < 0.1 → null
+	•	clamp result for storage: [-1.0, 2.0]
+
+Save results
+
+Upsert into dashboard_cache for every day in [recomputeStart, recomputeEnd].
+
+⸻
+
+4) Endpoints (Express)
+
+Upsert a daily log
+
+POST /api/logs/upsert
+
+Body includes day and whatever fields you captured.
+On success:
+	1.	upsert daily_log
+	2.	call recomputeRange(day)
+	3.	return { ok: true }
+
+Fetch dashboard rows
+
+GET /api/dashboard?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+Returns rows from dashboard_cache joined with daily_log if needed.
+
+Example query:
+
+SELECT d.day,
+       l.morning_weight_lb, l.waist_in, l.bf_morning_pct,
+       d.lean_mass_lb, d.weight_7d_avg, d.waist_7d_avg, d.lean_mass_7d_avg,
+       d.lean_gain_ratio_14d_roll, d.cardio_fuel_note
+FROM dashboard_cache d
+JOIN daily_log l ON l.day = d.day
+WHERE d.day BETWEEN ? AND ?
+ORDER BY d.day ASC;
+
+
+⸻
+
+5) TypeScript libs (recommendation)
+
+Use one of:
+	•	better-sqlite3 (simple, fast, sync)
+	•	sqlite3 (async, more boilerplate)
+	•	knex (query builder)
+
+For Replit simplicity: better-sqlite3.
+
+⸻
+
+6) Data Integrity / Persistence Requirements
+	•	DB file must be stored in a persistent path within the Replit project (not /tmp)
+	•	Use WAL mode
+	•	Use atomic upserts
+	•	No in-memory-only storage
+
+⸻
+
+7) Postgres option (if you decide it’s “better”)
+
+If you want cloud durability/multi-device:
+	•	swap SQLite for Postgres
+	•	same schema, but types:
+	•	day = DATE
+	•	lift_done/deload_week = BOOLEAN
+	•	same upsert: INSERT ... ON CONFLICT (day) DO UPDATE
+	•	recompute logic stays identical
+
+⸻
+
+If you want, I can also paste a concrete TS code skeleton:
+	•	db.ts (connect, migrations)
+	•	recompute.ts (rolling calculations)
+	•	routes.ts (upsert + dashboard endpoints)
+
+But the above is already a full “do exactly this” spec that Replit can implement cleanly.

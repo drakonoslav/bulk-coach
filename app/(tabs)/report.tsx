@@ -22,6 +22,7 @@ import {
   cardioFuelNote,
   rollingAvg,
   leanGainRatio14d,
+  leanGainRatioRolling,
   leanMassRollingAvg,
   BASELINE,
   ITEM_LABELS,
@@ -107,6 +108,105 @@ function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: numb
             }}
           />
         ))}
+      </View>
+    </View>
+  );
+}
+
+function RatioChart({ data }: { data: Array<{ day: string; ratio: number }> }) {
+  if (data.length < 2) return null;
+  const values = data.map((d) => d.ratio);
+  const min = Math.min(...values, -0.2);
+  const max = Math.max(...values, 1.2);
+  const range = max - min || 1;
+  const height = 100;
+  const width = 300;
+  const step = width / (values.length - 1);
+
+  const points = values.map((v, i) => ({
+    x: i * step,
+    y: height - ((v - min) / range) * height,
+  }));
+
+  const zeroY = height - ((0 - min) / range) * height;
+
+  return (
+    <View style={styles.chartContainer}>
+      <View style={[styles.chartYAxis, { height }]}>
+        <Text style={styles.chartAxisLabel}>{max.toFixed(1)}</Text>
+        <Text style={styles.chartAxisLabel}>{((max + min) / 2).toFixed(1)}</Text>
+        <Text style={styles.chartAxisLabel}>{min.toFixed(1)}</Text>
+      </View>
+      <View style={{ width, height, position: "relative" }}>
+        {zeroY >= 0 && zeroY <= height ? (
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: zeroY,
+              height: 1,
+              backgroundColor: Colors.textTertiary + "60",
+            }}
+          />
+        ) : null}
+        {[0, 0.5, 1].map((pct) => (
+          <View
+            key={pct}
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: pct * height,
+              height: 1,
+              backgroundColor: Colors.border,
+            }}
+          />
+        ))}
+        {points.map((p, i) => {
+          if (i === 0) return null;
+          const prev = points[i - 1];
+          const dx = p.x - prev.x;
+          const dy = p.y - prev.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          const segColor = values[i] >= 0.6 ? Colors.success : values[i] >= 0.3 ? Colors.warning : Colors.danger;
+          return (
+            <View
+              key={i}
+              style={{
+                position: "absolute",
+                left: prev.x,
+                top: prev.y,
+                width: len,
+                height: 2.5,
+                backgroundColor: segColor,
+                borderRadius: 1,
+                transform: [{ rotate: `${angle}deg` }],
+                transformOrigin: "left center",
+              }}
+            />
+          );
+        })}
+        {points.map((p, i) => {
+          const dotColor = values[i] >= 0.6 ? Colors.success : values[i] >= 0.3 ? Colors.warning : Colors.danger;
+          return (
+            <View
+              key={`dot-${i}`}
+              style={{
+                position: "absolute",
+                left: p.x - 3,
+                top: p.y - 3,
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: i === points.length - 1 ? dotColor : Colors.cardBgElevated,
+                borderWidth: 1.5,
+                borderColor: dotColor,
+              }}
+            />
+          );
+        })}
       </View>
     </View>
   );
@@ -238,6 +338,7 @@ export default function ReportScreen() {
   const ra = rollingAvg(entries, 7);
   const chartData = ra.slice(-21);
   const lgr = leanGainRatio14d(entries);
+  const lgrRolling = leanGainRatioRolling(entries, 14);
   const lmRa = leanMassRollingAvg(entries, 7);
   const lmChartData = lmRa.slice(-21);
 
@@ -358,7 +459,7 @@ export default function ReportScreen() {
               </View>
             </View>
 
-            {lgr != null || lmChartData.length >= 2 ? (
+            {lgr != null || lmChartData.length >= 2 || lgrRolling.length >= 2 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Lean Gain Analysis</Text>
                 <View style={styles.lgrCard}>
@@ -416,8 +517,16 @@ export default function ReportScreen() {
                       </View>
                     </View>
                   ) : null}
-                  {lmChartData.length >= 2 ? (
+                  {lgrRolling.length >= 2 ? (
                     <View style={{ marginTop: lgr != null ? 16 : 0 }}>
+                      <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Rolling Lean Gain Ratio (14d)</Text>
+                      <View style={styles.chartWrapper}>
+                        <RatioChart data={lgrRolling} />
+                      </View>
+                    </View>
+                  ) : null}
+                  {lmChartData.length >= 2 ? (
+                    <View style={{ marginTop: 16 }}>
                       <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Lean Mass Trend (7d Avg)</Text>
                       <WeightChart data={lmChartData} lineColor="#A78BFA" />
                     </View>

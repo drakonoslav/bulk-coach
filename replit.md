@@ -8,6 +8,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-10: Coaching engine with rolling averages, calorie adjustment, ingredient tweaks, diagnosis
 - 2026-02-10: v2 features - Daily Checklist tab, Deload Week flag, Cardio Fuel Guardrail
 - 2026-02-10: v3 body composition - BF% inputs (3 AM + optional 3 PM readings with auto-averaging), lean mass/fat mass auto-calculation, lean gain ratio (14d), BIA noise detection in diagnosis
+- 2026-02-10: v3.1 rolling lean gain ratio - rolling 14-day lean gain ratio series with color-coded trend chart in Report
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 4-tab layout (Dashboard, Log, Plan, Report)
@@ -22,7 +23,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - Lean mass/fat mass auto-calculated from weight and BF%
 - Lean gain ratio (14d): delta lean mass / delta weight, clamped -1.0 to 2.0
 - Dashboard: lean mass trend card (purple #A78BFA), BF% stat card (pink #F472B6), BF% pills on entries
-- Report: lean gain analysis section with color-coded ratio gauge and lean mass trend chart
+- Report: lean gain analysis section with color-coded ratio gauge, rolling ratio trend chart, and lean mass trend chart
 - Daily Checklist (Plan tab): locked shake-time template with all 12 meal/activity anchors
 - 7-day rolling averages and weight trend visualization
 - Weekly calorie adjustment recommendations (+0.25-0.5 lb/week target)
