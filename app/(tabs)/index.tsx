@@ -21,6 +21,8 @@ import {
   getCurrentAvgWeight,
   getWeightTrend,
   getSleepHours,
+  getLeanMassLb,
+  leanMassRollingAvg,
   formatDate,
   BASELINE,
 } from "@/lib/coaching-engine";
@@ -134,6 +136,12 @@ function EntryRow({ entry }: { entry: DailyEntry }) {
             <Text style={[styles.entryPillText, { color: Colors.secondary }]}>{sleep}h</Text>
           </View>
         ) : null}
+        {entry.bfMorningPct != null ? (
+          <View style={[styles.entryPill, { backgroundColor: "rgba(167, 139, 250, 0.15)" }]}>
+            <Ionicons name="body-outline" size={12} color="#A78BFA" />
+            <Text style={[styles.entryPillText, { color: "#A78BFA" }]}>{entry.bfMorningPct.toFixed(1)}%</Text>
+          </View>
+        ) : null}
         {entry.adherence < 1 ? (
           <View style={[styles.entryPill, { backgroundColor: Colors.dangerMuted }]}>
             <Ionicons name="alert-circle-outline" size={12} color={Colors.danger} />
@@ -173,6 +181,11 @@ export default function DashboardScreen() {
   const wDelta = waistDelta(entries);
   const ra = rollingAvg(entries, 7);
   const chartData = ra.slice(-14).map((r) => r.avg);
+
+  const lmRa = leanMassRollingAvg(entries, 7);
+  const lmChartData = lmRa.slice(-14).map((r) => r.avg);
+  const latestLm = lmRa.length > 0 ? lmRa[lmRa.length - 1].avg : null;
+  const latestBf = [...entries].reverse().find((e) => e.bfMorningPct != null)?.bfMorningPct ?? null;
 
   const recentEntries = [...entries].reverse().slice(0, 7);
 
@@ -250,11 +263,19 @@ export default function DashboardScreen() {
             subtitle="7-day avg"
           />
           <StatCard
-            icon="calendar-outline"
-            iconColor={Colors.primary}
-            label="Streak"
-            value={entries.length > 0 ? `${entries.length}` : "0"}
-            subtitle="days logged"
+            icon="body-outline"
+            iconColor="#A78BFA"
+            label="Lean Mass"
+            value={latestLm != null ? `${latestLm.toFixed(1)}` : "--"}
+            subtitle="lb (7d avg)"
+            chart={<MiniChart data={lmChartData} color="#A78BFA" />}
+          />
+          <StatCard
+            icon="analytics-outline"
+            iconColor="#F472B6"
+            label="Body Fat"
+            value={latestBf != null ? `${latestBf.toFixed(1)}%` : "--"}
+            subtitle="latest AM avg"
           />
         </View>
 
