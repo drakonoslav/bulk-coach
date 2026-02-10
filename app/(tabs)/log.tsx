@@ -15,7 +15,7 @@ import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import Colors from "@/constants/colors";
 import { saveEntry, loadEntries } from "@/lib/entry-storage";
-import { DailyEntry, todayStr } from "@/lib/coaching-engine";
+import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 
 function InputField({
   label,
@@ -157,6 +157,12 @@ export default function LogScreen() {
   const [morningWeight, setMorningWeight] = useState("");
   const [eveningWeight, setEveningWeight] = useState("");
   const [waist, setWaist] = useState("");
+  const [bfAmR1, setBfAmR1] = useState("");
+  const [bfAmR2, setBfAmR2] = useState("");
+  const [bfAmR3, setBfAmR3] = useState("");
+  const [bfPmR1, setBfPmR1] = useState("");
+  const [bfPmR2, setBfPmR2] = useState("");
+  const [bfPmR3, setBfPmR3] = useState("");
   const [sleepStart, setSleepStart] = useState("");
   const [sleepEnd, setSleepEnd] = useState("");
   const [sleepQuality, setSleepQuality] = useState<number | undefined>();
@@ -181,6 +187,12 @@ export default function LogScreen() {
           setMorningWeight(existing.morningWeightLb.toString());
           setEveningWeight(existing.eveningWeightLb?.toString() || "");
           setWaist(existing.waistIn?.toString() || "");
+          setBfAmR1(existing.bfMorningR1?.toString() || "");
+          setBfAmR2(existing.bfMorningR2?.toString() || "");
+          setBfAmR3(existing.bfMorningR3?.toString() || "");
+          setBfPmR1(existing.bfEveningR1?.toString() || "");
+          setBfPmR2(existing.bfEveningR2?.toString() || "");
+          setBfPmR3(existing.bfEveningR3?.toString() || "");
           setSleepStart(existing.sleepStart || "");
           setSleepEnd(existing.sleepEnd || "");
           setSleepQuality(existing.sleepQuality);
@@ -204,6 +216,12 @@ export default function LogScreen() {
     setMorningWeight("");
     setEveningWeight("");
     setWaist("");
+    setBfAmR1("");
+    setBfAmR2("");
+    setBfAmR3("");
+    setBfPmR1("");
+    setBfPmR2("");
+    setBfPmR3("");
     setSleepStart("");
     setSleepEnd("");
     setSleepQuality(undefined);
@@ -226,11 +244,24 @@ export default function LogScreen() {
 
     setSaving(true);
     try {
+      const bfAmVals = [bfAmR1, bfAmR2, bfAmR3].map((v) => (v ? parseFloat(v) : undefined));
+      const bfPmVals = [bfPmR1, bfPmR2, bfPmR3].map((v) => (v ? parseFloat(v) : undefined));
+      const bfMorningAvg = avg3(bfAmVals[0], bfAmVals[1], bfAmVals[2]);
+      const bfEveningAvg = avg3(bfPmVals[0], bfPmVals[1], bfPmVals[2]);
+
       const entry: DailyEntry = {
         day: todayStr(),
         morningWeightLb: parseFloat(morningWeight),
         eveningWeightLb: eveningWeight ? parseFloat(eveningWeight) : undefined,
         waistIn: waist ? parseFloat(waist) : undefined,
+        bfMorningR1: bfAmVals[0],
+        bfMorningR2: bfAmVals[1],
+        bfMorningR3: bfAmVals[2],
+        bfMorningPct: bfMorningAvg,
+        bfEveningR1: bfPmVals[0],
+        bfEveningR2: bfPmVals[1],
+        bfEveningR3: bfPmVals[2],
+        bfEveningPct: bfEveningAvg,
         sleepStart: sleepStart || undefined,
         sleepEnd: sleepEnd || undefined,
         sleepQuality,
@@ -306,6 +337,118 @@ export default function LogScreen() {
             iconColor={Colors.secondary}
             suffix="in"
           />
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionLabel}>Body Fat (BIA)</Text>
+          <Text style={styles.bfHint}>Enter 3 handheld readings (AM). Script averages them.</Text>
+          <View style={styles.bfRow}>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>AM 1</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfAmR1}
+                onChangeText={setBfAmR1}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>AM 2</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfAmR2}
+                onChangeText={setBfAmR2}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>AM 3</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfAmR3}
+                onChangeText={setBfAmR3}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            {(() => {
+              const a = avg3(
+                bfAmR1 ? parseFloat(bfAmR1) : undefined,
+                bfAmR2 ? parseFloat(bfAmR2) : undefined,
+                bfAmR3 ? parseFloat(bfAmR3) : undefined,
+              );
+              return (
+                <View style={styles.bfAvg}>
+                  <Text style={styles.bfAvgLabel}>Avg</Text>
+                  <Text style={[styles.bfAvgValue, a != null && { color: Colors.primary }]}>
+                    {a != null ? `${a.toFixed(1)}%` : "--"}
+                  </Text>
+                </View>
+              );
+            })()}
+          </View>
+          <Text style={[styles.bfHint, { marginTop: 10 }]}>PM readings (optional)</Text>
+          <View style={styles.bfRow}>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>PM 1</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfPmR1}
+                onChangeText={setBfPmR1}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>PM 2</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfPmR2}
+                onChangeText={setBfPmR2}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={styles.bfField}>
+              <Text style={styles.bfFieldLabel}>PM 3</Text>
+              <TextInput
+                style={styles.bfInput}
+                value={bfPmR3}
+                onChangeText={setBfPmR3}
+                placeholder="%"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="decimal-pad"
+                keyboardAppearance="dark"
+              />
+            </View>
+            {(() => {
+              const a = avg3(
+                bfPmR1 ? parseFloat(bfPmR1) : undefined,
+                bfPmR2 ? parseFloat(bfPmR2) : undefined,
+                bfPmR3 ? parseFloat(bfPmR3) : undefined,
+              );
+              return (
+                <View style={styles.bfAvg}>
+                  <Text style={styles.bfAvgLabel}>Avg</Text>
+                  <Text style={[styles.bfAvgValue, a != null && { color: Colors.secondary }]}>
+                    {a != null ? `${a.toFixed(1)}%` : "--"}
+                  </Text>
+                </View>
+              );
+            })()}
+          </View>
         </View>
 
         <View style={styles.sectionCard}>
@@ -606,6 +749,55 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "center",
     paddingVertical: 4,
+  },
+  bfHint: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+    marginBottom: 8,
+  },
+  bfRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-end",
+  },
+  bfField: {
+    flex: 1,
+  },
+  bfFieldLabel: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  bfInput: {
+    backgroundColor: Colors.inputBg,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.text,
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bfAvg: {
+    width: 56,
+    alignItems: "center",
+    paddingBottom: 2,
+  },
+  bfAvgLabel: {
+    fontSize: 10,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
+    marginBottom: 4,
+  },
+  bfAvgValue: {
+    fontSize: 15,
+    fontFamily: "Rubik_700Bold",
+    color: Colors.textTertiary,
   },
   saveBtn: {
     backgroundColor: Colors.primary,
