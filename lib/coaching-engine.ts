@@ -421,6 +421,38 @@ export function leanMassRollingAvg(entries: DailyEntry[], days: number = 7): Arr
   return out;
 }
 
+export function leanGainRatioRolling(
+  entries: DailyEntry[],
+  windowDays: number = 14,
+): Array<{ day: string; ratio: number }> {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const out: Array<{ day: string; ratio: number }> = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    const endDate = new Date(sorted[i].day + "T00:00:00");
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - (windowDays - 1));
+
+    const window = sorted.filter((e) => {
+      const d = new Date(e.day + "T00:00:00");
+      return d >= startDate && d <= endDate && getLeanMassLb(e) != null;
+    });
+
+    if (window.length < 2) continue;
+
+    const first = window[0];
+    const last = window[window.length - 1];
+    const dw = last.morningWeightLb - first.morningWeightLb;
+    if (Math.abs(dw) < 0.1) continue;
+
+    const dlm = getLeanMassLb(last)! - getLeanMassLb(first)!;
+    const ratio = Math.max(-1.0, Math.min(2.0, dlm / dw));
+    out.push({ day: sorted[i].day, ratio });
+  }
+
+  return out;
+}
+
 export function leanGainRatio14d(entries: DailyEntry[]): number | null {
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
   const recent = sorted.slice(-14);
