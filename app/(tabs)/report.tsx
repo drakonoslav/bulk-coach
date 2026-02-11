@@ -30,7 +30,9 @@ import {
   BASELINE,
   ITEM_LABELS,
   ITEM_UNITS,
+  distributeDeltasToMeals,
   type AdjustmentItem,
+  type MealDelta,
   type Diagnosis,
 } from "@/lib/coaching-engine";
 
@@ -306,6 +308,92 @@ function AdjustmentCard({ adjustments, kcalChange }: { adjustments: AdjustmentIt
           })}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function MealAdjustmentGuide({ adjustments, kcalChange }: { adjustments: AdjustmentItem[]; kcalChange: number }) {
+  if (kcalChange === 0 || adjustments.length === 0) return null;
+
+  const mealDeltas = distributeDeltasToMeals(adjustments);
+  if (mealDeltas.length === 0) return null;
+
+  const prepMeals = mealDeltas.filter((m) => m.prepZone === "prep");
+  const homeMeals = mealDeltas.filter((m) => m.prepZone === "home");
+
+  const summaryParts: string[] = [];
+  for (const adj of adjustments) {
+    const label = ITEM_LABELS[adj.item] || adj.item;
+    const unit = ITEM_UNITS[adj.item] || "";
+    const sign = adj.deltaAmount > 0 ? "+" : "";
+    summaryParts.push(`${sign}${adj.deltaAmount}${unit ? `${unit}` : ""} ${label}`);
+  }
+
+  const renderMealRow = (meal: MealDelta) => (
+    <View key={meal.time} style={mealGuideStyles.mealRow}>
+      <View style={mealGuideStyles.mealHeader}>
+        <Text style={mealGuideStyles.mealTime}>{meal.time}</Text>
+        <Text style={mealGuideStyles.mealLabel}>{meal.label}</Text>
+      </View>
+      {meal.changes.map((c) => {
+        const label = ITEM_LABELS[c.item] || c.item;
+        const unit = ITEM_UNITS[c.item] || "";
+        const sign = c.delta > 0 ? "+" : "";
+        return (
+          <View key={c.item} style={mealGuideStyles.changeRow}>
+            <Feather name="arrow-right" size={12} color={c.delta > 0 ? Colors.success : Colors.danger} />
+            <Text style={mealGuideStyles.changeText}>
+              <Text style={{ color: c.delta > 0 ? Colors.success : Colors.danger, fontFamily: "Rubik_600SemiBold" }}>
+                {sign}{c.delta}{unit ? `${unit}` : ""}
+              </Text>
+              {" "}{label}
+            </Text>
+            <Text style={mealGuideStyles.newTotal}>
+              new: {c.newTotal}{unit}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  return (
+    <View style={mealGuideStyles.container}>
+      <View style={mealGuideStyles.summaryBar}>
+        <Ionicons name="restaurant-outline" size={16} color={Colors.primary} />
+        <Text style={mealGuideStyles.summaryText}>
+          {prepMeals.length > 0 ? `Prep ${prepMeals.length} meal${prepMeals.length > 1 ? "s" : ""} before work.` : ""}
+          {prepMeals.length > 0 && homeMeals.length > 0 ? " " : ""}
+          {homeMeals.length > 0 ? `${homeMeals.length} can be made at home.` : ""}
+        </Text>
+      </View>
+
+      <View style={mealGuideStyles.deltaSummary}>
+        <Text style={mealGuideStyles.deltaSummaryLabel}>Total Adjustments</Text>
+        <Text style={mealGuideStyles.deltaSummaryValue}>{summaryParts.join("  /  ")}</Text>
+      </View>
+
+      {prepMeals.length > 0 && (
+        <View style={mealGuideStyles.zoneBlock}>
+          <View style={mealGuideStyles.zoneHeader}>
+            <Feather name="clock" size={14} color={Colors.secondary} />
+            <Text style={[mealGuideStyles.zoneTitle, { color: Colors.secondary }]}>PREP REQUIRED</Text>
+            <Text style={mealGuideStyles.zoneSubtitle}>Before leaving for work</Text>
+          </View>
+          {prepMeals.map(renderMealRow)}
+        </View>
+      )}
+
+      {homeMeals.length > 0 && (
+        <View style={mealGuideStyles.zoneBlock}>
+          <View style={mealGuideStyles.zoneHeader}>
+            <Ionicons name="home-outline" size={14} color={Colors.primary} />
+            <Text style={[mealGuideStyles.zoneTitle, { color: Colors.primary }]}>AT HOME</Text>
+            <Text style={mealGuideStyles.zoneSubtitle}>No advance prep needed</Text>
+          </View>
+          {homeMeals.map(renderMealRow)}
+        </View>
+      )}
     </View>
   );
 }
@@ -973,6 +1061,13 @@ export default function ReportScreen() {
               </View>
             ) : null}
 
+            {kcalAdj != null && adjustments.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Meal Adjustment Guide</Text>
+                <MealAdjustmentGuide adjustments={adjustments} kcalChange={kcalAdj} />
+              </View>
+            ) : null}
+
             {(() => {
               const last7 = entries.slice(-7);
               const fuelNotes = last7
@@ -1484,5 +1579,114 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+});
+
+const mealGuideStyles = StyleSheet.create({
+  container: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden" as const,
+  },
+  summaryBar: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.primaryMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  summaryText: {
+    fontSize: 13,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.primary,
+    flex: 1,
+  },
+  deltaSummary: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  deltaSummaryLabel: {
+    fontSize: 10,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textTertiary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    marginBottom: 3,
+  },
+  deltaSummaryValue: {
+    fontSize: 13,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.text,
+  },
+  zoneBlock: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  zoneHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+    marginBottom: 8,
+  },
+  zoneTitle: {
+    fontSize: 11,
+    fontFamily: "Rubik_700Bold",
+    letterSpacing: 0.8,
+  },
+  zoneSubtitle: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+    marginLeft: 4,
+  },
+  mealRow: {
+    backgroundColor: Colors.cardBgElevated,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 6,
+  },
+  mealHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    marginBottom: 4,
+  },
+  mealTime: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textTertiary,
+    width: 42,
+  },
+  mealLabel: {
+    fontSize: 13,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.text,
+  },
+  changeRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+    paddingLeft: 50,
+    marginTop: 2,
+  },
+  changeText: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  newTotal: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
   },
 });

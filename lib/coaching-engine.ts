@@ -477,3 +477,82 @@ export function leanGainRatio14d(entries: DailyEntry[]): number | null {
   if (Math.abs(dw) < 0.1) return null;
   return dlm / dw;
 }
+
+export interface MealSlot {
+  time: string;
+  label: string;
+  ingredients: Record<string, number>;
+  prepZone: "prep" | "home";
+}
+
+export const MEAL_SLOTS: MealSlot[] = [
+  { time: "05:30", label: "Pre-cardio", ingredients: { bananas: 1 }, prepZone: "home" },
+  { time: "06:45", label: "Post-cardio shake", ingredients: { oats_g: 120, whey_g: 25, mct_g: 10 }, prepZone: "home" },
+  { time: "10:30", label: "Mid-morning shake", ingredients: { yogurt_cups: 1, flax_g: 30, whey_g: 15 }, prepZone: "prep" },
+  { time: "14:45", label: "Pre-lift shake", ingredients: { dextrin_g: 80, whey_g: 20 }, prepZone: "prep" },
+  { time: "17:10", label: "Post-lift shake", ingredients: { dextrin_g: 40, whey_g: 30 }, prepZone: "home" },
+  { time: "20:00", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home" },
+];
+
+export interface MealDelta {
+  time: string;
+  label: string;
+  prepZone: "prep" | "home";
+  changes: Array<{ item: string; delta: number; newTotal: number }>;
+}
+
+export function distributeDeltasToMeals(adjustments: AdjustmentItem[]): MealDelta[] {
+  if (adjustments.length === 0) return [];
+
+  const result: MealDelta[] = [];
+
+  for (const adj of adjustments) {
+    const mealsWithItem = MEAL_SLOTS.filter((m) => m.ingredients[adj.item] != null);
+    if (mealsWithItem.length === 0) continue;
+
+    if (mealsWithItem.length === 1) {
+      const meal = mealsWithItem[0];
+      const existing = result.find((r) => r.time === meal.time);
+      const baseAmount = meal.ingredients[adj.item];
+      const change = { item: adj.item, delta: adj.deltaAmount, newTotal: baseAmount + adj.deltaAmount };
+      if (existing) {
+        existing.changes.push(change);
+      } else {
+        result.push({ time: meal.time, label: meal.label, prepZone: meal.prepZone, changes: [change] });
+      }
+    } else {
+      const totalBase = mealsWithItem.reduce((s, m) => s + m.ingredients[adj.item], 0);
+      let remaining = adj.deltaAmount;
+
+      for (let i = 0; i < mealsWithItem.length; i++) {
+        const meal = mealsWithItem[i];
+        const baseAmount = meal.ingredients[adj.item];
+        const proportion = totalBase > 0 ? baseAmount / totalBase : 1 / mealsWithItem.length;
+        let share: number;
+
+        if (i === mealsWithItem.length - 1) {
+          share = remaining;
+        } else {
+          const unit = adj.item.endsWith("_g") ? 5 : 1;
+          share = Math.round((adj.deltaAmount * proportion) / unit) * unit;
+          if (share === 0 && remaining !== 0) share = remaining > 0 ? (adj.item.endsWith("_g") ? 5 : 1) : (adj.item.endsWith("_g") ? -5 : -1);
+        }
+        remaining -= share;
+
+        if (share === 0) continue;
+
+        const existing = result.find((r) => r.time === meal.time);
+        const change = { item: adj.item, delta: share, newTotal: baseAmount + share };
+        if (existing) {
+          existing.changes.push(change);
+        } else {
+          result.push({ time: meal.time, label: meal.label, prepZone: meal.prepZone, changes: [change] });
+        }
+      }
+    }
+  }
+
+  const timeOrder = MEAL_SLOTS.map((m) => m.time);
+  result.sort((a, b) => timeOrder.indexOf(a.time) - timeOrder.indexOf(b.time));
+  return result;
+}
