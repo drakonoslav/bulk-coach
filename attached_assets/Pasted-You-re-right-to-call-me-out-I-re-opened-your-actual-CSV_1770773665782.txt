@@ -1,0 +1,141 @@
+You’re right to call me out — I re-opened your actual CSV and it is exactly the “one-row cumulative snapshot” format (not a per-day export).
+
+What your file really is
+
+I loaded /mnt/data/erectile_summary_statistics_from_7_4_2025_to_2_10_2026 2.csv and it has:
+	•	1 row
+	•	Key columns include:
+	•	number_of_recordings (this is your “total nights” count)
+	•	total_number_of_nocturnal_and_morning_erections
+	•	total_duration_of_all_nocturnal_and_morning_erections
+	•	plus averages like average_number_of_nocturnal_erections_per_night, average_total_duration_of_all_nocturnal_erections_per_night, etc.
+
+So: this CSV is a cumulative summary “from X to Y”, not “night-by-night”.
+
+That means: if your app is expecting “measured daily rows,” those do not exist in the file. The only way to produce daily rows is:
+	•	Delta between snapshot A and snapshot B, or
+	•	If number_of_recordings == 1, you can treat the totals as “day 1 measured” because there’s only one night.
+
+⸻
+
+Why your UI “Measured today” isn’t behaving
+
+Given your screenshot, you expect the upload to populate a “Measured” session for “Today”.
+
+If Replit implemented the earlier “first snapshot is baseline (no session row)” rule, then on the first-ever upload, the correct behavior would be:
+	•	snapshot saved ✅
+	•	no measured session row created ❌
+	•	UI should show something like: “Baseline snapshot saved (need next upload to compute daily)”
+
+But you want the opposite when number_of_recordings == 1:
+	•	snapshot saved ✅
+	•	measured session row created for the selected date ✅
+
+So Replit needs one explicit rule change:
+
+Rule you want
+	•	If uploaded snapshot has number_of_recordings == 1 → create a measured day for the chosen date using the totals in the row.
+	•	Else (nights > 1) and there is no prior snapshot → baseline only (no day can be derived yet).
+
+⸻
+
+What to tell Replit (exactly)
+
+1) Confirm the CSV parser maps your columns
+
+Your file’s columns are these (examples):
+	•	number_of_recordings
+	•	total_number_of_nocturnal_and_morning_erections
+	•	total_duration_of_all_nocturnal_and_morning_erections
+
+So in the parser, explicitly map:
+	•	totalNights = number_of_recordings
+	•	totalErections = total_number_of_nocturnal_and_morning_erections (fallback to total_number_of_erections)
+	•	totalDuration = total_duration_of_all_nocturnal_and_morning_erections (fallback to total_duration_of_all_nocturnal_erections_per_night * totalNights if needed)
+
+2) If totalNights == 1, create a measured row immediately
+
+When you upload and choose a target date D:
+	•	Insert snapshot row (cumulative)
+	•	Then create/update the derived per-day row in erection_sessions for date D with:
+
+Required fields you asked for:
+	•	is_imputed = false
+	•	imputed_method = null
+	•	imputed_source_date_start = null
+	•	imputed_source_date_end = null
+	•	multi_night_combined = false
+	•	snapshot_id = <inserted snapshot id>
+
+3) Exact UPSERT SQL for the derived “measured day”
+
+(assuming erection_sessions(date) is UNIQUE)
+
+INSERT INTO erection_sessions (
+  date,
+  nocturnal_count,
+  total_duration_sec,
+  avg_firmness,
+  is_imputed,
+  imputed_method,
+  imputed_source_date_start,
+  imputed_source_date_end,
+  multi_night_combined,
+  snapshot_id,
+  updated_at
+)
+VALUES (
+  $1, $2, $3, $4,
+  FALSE,
+  NULL,
+  NULL,
+  NULL,
+  FALSE,
+  $5,
+  NOW()
+)
+ON CONFLICT (date) DO UPDATE SET
+  nocturnal_count = EXCLUDED.nocturnal_count,
+  total_duration_sec = EXCLUDED.total_duration_sec,
+  avg_firmness = EXCLUDED.avg_firmness,
+  is_imputed = FALSE,
+  imputed_method = NULL,
+  imputed_source_date_start = NULL,
+  imputed_source_date_end = NULL,
+  multi_night_combined = FALSE,
+  snapshot_id = EXCLUDED.snapshot_id,
+  updated_at = NOW();
+
+4) Recompute logic after upload
+
+After inserting/upserting measured day(s):
+	•	Recompute proxies + rolling metrics for at least D-14 to D+1 (or full affected range if multi-day).
+
+And in recompute:
+	•	Default uses measured-only:
+	•	WHERE is_imputed = FALSE (unless the UI toggle includes imputed)
+
+⸻
+
+Why your “minimum column headers” concern is valid
+
+Those “minimum headers” you’re thinking of (measured/imputed identity) are not CSV headers in your file. They are columns in your database derived table (erection_sessions) and must be set by backend logic.
+
+So if you upload the CSV and nothing “Measured” appears, it’s not because the CSV is missing those fields — it’s because the backend isn’t generating the derived row the way you want.
+
+⸻
+
+Quick sanity check you can do immediately
+
+Tell Replit to add server logging for the upload endpoint:
+	•	Log parsed totalNights
+	•	Log whether it created:
+	•	snapshot row
+	•	derived measured session row (date D)
+	•	Log the final SELECT * FROM erection_sessions WHERE date = D
+
+If totalNights == 1 and it still does not create a measured row → that’s the bug.
+
+⸻
+
+If you want, paste whatever Replit’s current rule is for “first snapshot baseline” (just that function) and I’ll rewrite it into the exact branching you want for single-row snapshots + delta snapshots + gap imputation without changing your overall design.

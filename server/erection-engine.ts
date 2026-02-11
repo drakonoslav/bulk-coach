@@ -55,6 +55,20 @@ function computeProxyScore(noctCount: number, noctDurSec: number): number {
   return Math.round(((noctCount * 1.0) + Math.log(1 + durMin) * 0.8) * 100) / 100;
 }
 
+function parseHmsToSeconds(val: string): number {
+  val = val.trim();
+  const asNum = Number(val);
+  if (!isNaN(asNum) && !val.includes(":")) return Math.round(asNum);
+  const parts = val.split(":").map(p => parseInt(p, 10));
+  if (parts.length === 3 && parts.every(p => !isNaN(p))) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  if (parts.length === 2 && parts.every(p => !isNaN(p))) {
+    return parts[0] * 60 + parts[1];
+  }
+  throw new Error(`Cannot parse duration value: "${val}". Expected HH:MM:SS, MM:SS, or seconds.`);
+}
+
 export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedSnapshot {
   const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
   let text = fileBuffer.toString("utf-8");
@@ -75,7 +89,7 @@ export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedS
     colMap[headers[i]] = i;
   }
 
-  function findCol(...aliases: string[]): number {
+  function findColExact(...aliases: string[]): number {
     for (const alias of aliases) {
       const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
       if (colMap[normalized] !== undefined) return colMap[normalized];
@@ -83,21 +97,51 @@ export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedS
     return -1;
   }
 
-  const recIdx = findCol("number_of_recordings", "recordings", "num_recordings", "recording_count", "nights");
-  const erIdx = findCol("total_nocturnal_erections", "nocturnal_erections", "total_erections", "erections");
-  const durIdx = findCol("total_nocturnal_duration_seconds", "nocturnal_duration_seconds", "total_duration_seconds", "duration_seconds", "total_duration");
+  function findColFuzzy(...aliases: string[]): number {
+    const exact = findColExact(...aliases);
+    if (exact !== -1) return exact;
+    for (const alias of aliases) {
+      const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      for (const key of Object.keys(colMap)) {
+        if (key === normalized) return colMap[key];
+      }
+    }
+    for (const alias of aliases) {
+      const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      for (const key of Object.keys(colMap)) {
+        if (key.includes(normalized)) return colMap[key];
+      }
+    }
+    return -1;
+  }
 
-  if (recIdx === -1) throw new Error("Missing column: number_of_recordings (or recordings, num_recordings)");
-  if (erIdx === -1) throw new Error("Missing column: total_nocturnal_erections (or erections)");
-  if (durIdx === -1) throw new Error("Missing column: total_nocturnal_duration_seconds (or duration_seconds)");
+  const recIdx = findColFuzzy("number_of_recordings");
+  const erIdx = findColExact(
+    "total_number_of_nocturnal_and_morning_erections",
+    "total_nocturnal_erections",
+    "total_number_of_erections",
+    "nocturnal_erections",
+    "total_erections",
+    "erections",
+  );
+  const durIdx = findColExact(
+    "total_duration_of_all_nocturnal_and_morning_erections",
+    "total_nocturnal_duration_seconds",
+    "total_duration_of_all_nocturnal_erections",
+    "nocturnal_duration_seconds",
+    "total_duration_seconds",
+  );
+
+  if (recIdx === -1) throw new Error("Missing column: number_of_recordings");
+  if (erIdx === -1) throw new Error("Missing column for erection count (tried: total_number_of_nocturnal_and_morning_erections, total_nocturnal_erections, total_number_of_erections)");
+  if (durIdx === -1) throw new Error("Missing column for duration (tried: total_duration_of_all_nocturnal_and_morning_erections, total_nocturnal_duration_seconds)");
 
   const numRec = parseInt(values[recIdx], 10);
   const totalEr = parseInt(values[erIdx], 10);
-  const totalDur = parseInt(values[durIdx], 10);
+  const totalDur = parseHmsToSeconds(values[durIdx]);
 
   if (isNaN(numRec)) throw new Error("Invalid number_of_recordings value");
-  if (isNaN(totalEr)) throw new Error("Invalid total_nocturnal_erections value");
-  if (isNaN(totalDur)) throw new Error("Invalid total_nocturnal_duration_seconds value");
+  if (isNaN(totalEr)) throw new Error("Invalid erection count value");
 
   return {
     sha256,
@@ -143,6 +187,39 @@ export async function importSnapshotAndDerive(
   );
 
   if (prevRows.length === 0) {
+    if (sNew.number_of_recordings === 1) {
+      await pool.query(
+        `INSERT INTO erection_sessions (date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
+         VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, FALSE, NOW())
+         ON CONFLICT (date) DO UPDATE SET
+           nocturnal_erections = EXCLUDED.nocturnal_erections,
+           nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
+           snapshot_id = EXCLUDED.snapshot_id,
+           is_imputed = FALSE,
+           imputed_method = NULL,
+           imputed_source_date_start = NULL,
+           imputed_source_date_end = NULL,
+           multi_night_combined = FALSE,
+           updated_at = NOW()`,
+        [sessionDate, sNew.total_nocturnal_erections, sNew.total_nocturnal_duration_seconds, sNew.id],
+      );
+
+      await recomputeProxyPipeline(sessionDate);
+
+      return {
+        snapshot: sNew,
+        derived: {
+          sessionDate,
+          deltaNoctErections: sNew.total_nocturnal_erections,
+          deltaNoctDur: sNew.total_nocturnal_duration_seconds,
+          multiNightCombined: false,
+          deltaRecordings: 1,
+        },
+        note: "single_night_measured",
+        gapsFilled: 0,
+      };
+    }
+
     return {
       snapshot: sNew,
       derived: null,
