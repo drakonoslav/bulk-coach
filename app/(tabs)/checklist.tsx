@@ -735,16 +735,18 @@ export default function ChecklistScreen() {
               ))}
               {(() => {
                 const sb = readiness.sleepBlock;
-                const hasSchedule = sb?.scheduleAdherenceScore != null;
+                const al = sb?.alignment;
+                const hasAlignment = al?.alignmentScore != null;
                 const hasAdequacy = sb?.sleepAdequacyScore != null;
                 const devResult = sb?.deviation;
-                const devLabel = devResult?.label ? ({ efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" } as Record<string, string>)[devResult.label] : null;
+                const devLabelMap: Record<string, string> = { efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" };
+                const devLabel = devResult?.label && devResult.label !== "insufficient_data" ? devLabelMap[devResult.label] ?? null : null;
                 return (
                   <>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Schedule</Text>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasSchedule ? (sb!.scheduleAdherenceScore! >= 80 ? "#34D399" : sb!.scheduleAdherenceScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                        {hasSchedule ? `${sb!.scheduleAdherenceScore} / 100 (${devResult?.displayLine ?? "\u2014"})` : "\u2014 no self-reported times"}
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Alignment</Text>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAlignment ? (al!.alignmentScore! >= 80 ? "#34D399" : al!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
+                        {hasAlignment ? `${al!.alignmentScore} / 100 (${devResult?.displayLine ?? "\u2014"})` : "\u2014 no self-reported times"}
                       </Text>
                     </View>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
