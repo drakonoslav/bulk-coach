@@ -24,6 +24,7 @@ export interface TakeoutImportResult {
   rowsPerDayDistribution: Record<string, { min: number; max: number; median: number }>;
   timezoneUsed: string;
   sleepBucketRule: string;
+  importSummary: ImportSummary;
 }
 
 interface ConflictEntry {
@@ -48,16 +49,33 @@ interface DayBucket {
   hrv: number | null;
 }
 
+interface SleepBucketEntry {
+  sleep_end_raw: string;
+  sleep_end_local: string;
+  bucket_date: string;
+  minutes: number;
+  source: "csv" | "json";
+}
+
 interface DiagnosticDay {
   rawFiles: Record<Metric, string[]>;
   rawRowCounts: Record<Metric, number>;
   computedValues: Partial<DayBucket>;
   source: Record<Metric, "csv" | "json" | "both" | "none">;
+  sleepBucketing: SleepBucketEntry[];
+}
+
+interface ImportSummary {
+  days_with_csv: number;
+  days_with_json: number;
+  days_with_both: number;
+  conflicts_count: number;
 }
 
 let lastDiagnostics: Map<string, DiagnosticDay> | null = null;
 let lastTimezone: string = "America/New_York";
 let lastFitbitRoot: string | null = null;
+let lastImportSummary: ImportSummary | null = null;
 
 export function getDiagnostics(date: string): {
   date: string;
@@ -66,6 +84,7 @@ export function getDiagnostics(date: string): {
   timezoneUsed: string;
   fitbitRootPrefix: string | null;
   sleepBucketRule: string;
+  importSummary: ImportSummary | null;
   dbValues: Record<string, unknown> | null;
 } {
   const diag = lastDiagnostics?.get(date) ?? null;
@@ -77,7 +96,8 @@ export function getDiagnostics(date: string): {
     neighbors: { [shiftDate(date, -1)]: prev, [shiftDate(date, 1)]: next },
     timezoneUsed: lastTimezone,
     fitbitRootPrefix: lastFitbitRoot,
-    sleepBucketRule: "wake_date: sleep bucketed by endTime local date (or dateOfSleep from Fitbit API which is already wake date)",
+    sleepBucketRule: "wake_date: sleep_end (UTC) + offset → local datetime → DATE(local) = bucket_date. Multiple segments on same wake-date are summed.",
+    importSummary: lastImportSummary,
     dbValues: null,
   };
 }
@@ -103,6 +123,7 @@ function emptyDiagnostic(): DiagnosticDay {
     rawRowCounts: { steps: 0, calories: 0, activeMinutes: 0, zones: 0, restingHr: 0, sleep: 0 },
     computedValues: {},
     source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none" },
+    sleepBucketing: [],
   };
 }
 
@@ -153,6 +174,22 @@ function parseUTCTimestampToLocalDate(utcTs: string, offsetStr: string): string 
     }
   }
   return dt.toISOString().slice(0, 10);
+}
+
+function applyOffsetToTimestamp(utcTs: string, offsetStr: string): string {
+  const m = utcTs.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return utcTs;
+  const dt = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
+  if (isNaN(dt.getTime())) return utcTs;
+  if (offsetStr && offsetStr !== "+00:00") {
+    const offMatch = offsetStr.match(/^([+-])(\d{2}):(\d{2})$/);
+    if (offMatch) {
+      const sign = offMatch[1] === "+" ? 1 : -1;
+      const offMinutes = sign * (parseInt(offMatch[2]) * 60 + parseInt(offMatch[3]));
+      dt.setUTCMinutes(dt.getUTCMinutes() + offMinutes);
+    }
+  }
+  return dt.toISOString().replace("T", " ").slice(0, 19);
 }
 
 function parseCSVRows(buf: Buffer): { headers: string[]; rows: string[][] } {
@@ -406,9 +443,10 @@ function parseUserSleepsCSV(
     const mins = parseInt(row[sleepMinCol], 10);
     if (isNaN(mins) || mins <= 0) continue;
     let date: string | null = null;
-    if (endCol !== -1 && row[endCol]) {
-      const offset = endOffsetCol !== -1 ? row[endOffsetCol] || "+00:00" : "+00:00";
-      date = parseUTCTimestampToLocalDate(row[endCol], offset);
+    const sleepEndRaw = endCol !== -1 ? row[endCol] || "" : "";
+    const offsetStr = endOffsetCol !== -1 ? row[endOffsetCol] || "+00:00" : "+00:00";
+    if (sleepEndRaw) {
+      date = parseUTCTimestampToLocalDate(sleepEndRaw, offsetStr);
     }
     if (!date) {
       const startCol = colIdx(headers, "sleep_start", "start_time");
@@ -423,6 +461,14 @@ function parseUserSleepsCSV(
     if (!d.rawFiles.sleep.includes(filename)) d.rawFiles.sleep.push(filename);
     d.rawRowCounts.sleep++;
     d.source.sleep = "csv";
+    const sleepEndLocal = sleepEndRaw ? applyOffsetToTimestamp(sleepEndRaw, offsetStr) : sleepEndRaw;
+    d.sleepBucketing.push({
+      sleep_end_raw: sleepEndRaw,
+      sleep_end_local: sleepEndLocal,
+      bucket_date: date,
+      minutes: mins,
+      source: "csv",
+    });
     count++;
   }
   return count;
@@ -615,8 +661,9 @@ function parseSleepJSON(
     let count = 0;
     for (const item of data) {
       let date: string | null = null;
-      if (item.endTime) {
-        date = parseFitbitEndTimeToWakeDate(item.endTime, tz);
+      const endTimeRaw = item.endTime || "";
+      if (endTimeRaw) {
+        date = parseFitbitEndTimeToWakeDate(endTimeRaw, tz);
       }
       if (!date && item.dateOfSleep) {
         date = item.dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? item.dateOfSleep.slice(0, 10) : null;
@@ -628,6 +675,13 @@ function parseSleepJSON(
       if (isNaN(minsVal) || minsVal <= 0) continue;
       const d = ensureDiag(diags, date);
       if (!d.rawFiles.sleep.includes(filename)) d.rawFiles.sleep.push(filename);
+      d.sleepBucketing.push({
+        sleep_end_raw: endTimeRaw,
+        sleep_end_local: endTimeRaw,
+        bucket_date: date,
+        minutes: minsVal,
+        source: "json",
+      });
       if (csvDays.has(date)) {
         conflicts.push({ date, metric: "sleep", csvValue: buckets.get(date)?.sleepMinutes ?? 0, jsonValue: minsVal, resolution: "csv_preferred" });
         continue;
@@ -663,6 +717,7 @@ export async function importFitbitTakeout(
       rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
       conflictsDetected: [], rowsPerDayDistribution: {},
       timezoneUsed: timezone, sleepBucketRule: "wake_date",
+      importSummary: { days_with_csv: 0, days_with_json: 0, days_with_both: 0, conflicts_count: 0 },
     };
   }
 
@@ -680,6 +735,7 @@ export async function importFitbitTakeout(
       rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
       conflictsDetected: [], rowsPerDayDistribution: {},
       timezoneUsed: timezone, sleepBucketRule: "wake_date",
+      importSummary: { days_with_csv: 0, days_with_json: 0, days_with_both: 0, conflicts_count: 0 },
     };
   }
 
@@ -801,7 +857,28 @@ export async function importFitbitTakeout(
 
   lastDiagnostics = diags;
 
+  let daysWithCsv = 0, daysWithJson = 0, daysWithBoth = 0;
+  for (const [, d] of diags) {
+    const metrics: Metric[] = ["steps", "calories", "activeMinutes", "zones", "restingHr", "sleep"];
+    let hasCsv = false, hasJson = false;
+    for (const m of metrics) {
+      if (d.source[m] === "csv") hasCsv = true;
+      if (d.source[m] === "json") hasJson = true;
+      if (d.source[m] === "both") { hasCsv = true; hasJson = true; }
+    }
+    if (hasCsv && hasJson) daysWithBoth++;
+    else if (hasCsv) daysWithCsv++;
+    else if (hasJson) daysWithJson++;
+  }
+  lastImportSummary = {
+    days_with_csv: daysWithCsv,
+    days_with_json: daysWithJson,
+    days_with_both: daysWithBoth,
+    conflicts_count: conflicts.length,
+  };
+
   console.log(`[takeout] Total parsed: ${filesParsed} files, ${csvBuckets.size} unique days, ${conflicts.length} conflicts resolved (CSV preferred)`);
+  console.log(`[takeout] Import summary: csv_only=${daysWithCsv}, json_only=${daysWithJson}, both=${daysWithBoth}, conflicts=${conflicts.length}`);
 
   const rowsPerDayDistribution: Record<string, { min: number; max: number; median: number }> = {};
   for (const [key, vals] of Object.entries(rowDistRaw)) {
@@ -816,6 +893,7 @@ export async function importFitbitTakeout(
       rowsSkipped: 0, recomputeRan: false, parseDetails, filePatterns,
       conflictsDetected: conflicts.slice(0, 50), rowsPerDayDistribution,
       timezoneUsed: timezone, sleepBucketRule: "wake_date",
+      importSummary: lastImportSummary!,
     };
   }
 
@@ -923,7 +1001,8 @@ export async function importFitbitTakeout(
     conflictsDetected: conflicts.slice(0, 100),
     rowsPerDayDistribution,
     timezoneUsed: timezone,
-    sleepBucketRule: "wake_date: sleep bucketed by endTime local date (or dateOfSleep from Fitbit which is already wake date)",
+    sleepBucketRule: "wake_date: sleep_end (UTC) + offset → local datetime → DATE(local) = bucket_date",
+    importSummary: lastImportSummary!,
   };
 }
 

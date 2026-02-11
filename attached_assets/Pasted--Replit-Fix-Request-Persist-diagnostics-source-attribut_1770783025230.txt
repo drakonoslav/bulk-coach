@@ -1,0 +1,76 @@
+✅ Replit Fix Request: Persist diagnostics + source attribution to DB
+
+The /diagnostics endpoint can’t rely on in-memory tracking. Please persist enough metadata in Postgres so diagnostics work anytime, even after restart.
+
+1) Add a table to store per-import file contributions
+
+Create:
+
+fitbit_import_file_contributions
+	•	import_id uuid FK → fitbit_takeout_imports.id
+	•	metric text  (steps, sleep, calories, rhr, zones, etc.)
+	•	source text  (csv|json)
+	•	file_path text
+	•	rows_consumed int
+	•	days_touched int
+	•	created_at timestamptz
+
+2) Add per-day per-metric “source of truth” attribution
+
+Create:
+
+fitbit_daily_sources
+	•	date date
+	•	metric text
+	•	source text (csv|json|none)
+	•	import_id uuid
+	•	file_path text (optional but ideal)
+	•	value numeric (optional; store the final computed metric value)
+	•	primary key: (date, metric)
+
+Whenever the importer aggregates day metrics, write the chosen source.
+
+3) Enforce “no double counting” explicitly in code
+
+For each date + metric:
+	•	If CSV exists → choose CSV
+	•	Else if JSON exists → choose JSON
+	•	Never sum CSV+JSON
+	•	If both exist and differ > tolerance:
+	•	mark a conflict row (below)
+
+Create:
+
+fitbit_import_conflicts
+	•	import_id uuid
+	•	date date
+	•	metric text
+	•	csv_value numeric
+	•	json_value numeric
+	•	chosen_source text
+	•	file_path_csv text
+	•	file_path_json text
+
+4) Improve diagnostics endpoint
+
+GET /api/import/fitbit/takeout/diagnostics?date=YYYY-MM-DD
+
+Return for D-1/D/D+1:
+	•	dbValues (as now)
+	•	source attribution per metric:
+	•	chosen source (csv|json|none)
+	•	file_path
+	•	rows_consumed
+	•	sleep details:
+	•	list sleep sessions end timestamps (local) that were bucketed into that day
+	•	total minutes computed
+
+5) Store fitbit_root_prefix in imports table
+
+Right now fitbitRootPrefix: null in diagnostics output.
+Please return it from DB (from last import) so we can verify dynamic root detection happened.
+
+One more thing I’d ask them (important)
+
+Your morningWeightLb: 0 and adherence: 1 look like defaults.
+
