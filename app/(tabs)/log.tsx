@@ -468,6 +468,9 @@ export default function LogScreen() {
       const bfMorningAvg = avg3(bfAmVals[0], bfAmVals[1], bfAmVals[2]);
       const bfEveningAvg = avg3(bfPmVals[0], bfPmVals[1], bfPmVals[2]);
 
+      const scheduleBed = sleepPlan?.bedtime || "21:45";
+      const scheduleWake = sleepPlan?.wake || "05:30";
+
       const entry: DailyEntry = {
         day: selectedDate,
         morningWeightLb: parseFloat(morningWeight),
@@ -485,6 +488,8 @@ export default function LogScreen() {
         sleepEnd: sleepEnd || undefined,
         sleepQuality,
         tossedMinutes: tossedMinutes ? parseInt(tossedMinutes, 10) : undefined,
+        plannedBedTime: scheduleBed,
+        plannedWakeTime: scheduleWake,
         actualBedTime: actualBedTime || undefined,
         actualWakeTime: actualWakeTime || undefined,
         sleepLatencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,

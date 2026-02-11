@@ -71,8 +71,9 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
   if (!rows[0]) return null;
 
   const r = rows[0];
-  const plannedBed: string | null = r.planned_bed_time || null;
-  const plannedWake: string | null = r.planned_wake_time || null;
+  const schedule = await getSleepPlanSettings();
+  const plannedBed: string | null = r.planned_bed_time || schedule.bedtime;
+  const plannedWake: string | null = r.planned_wake_time || schedule.wake;
   const actualBed: string | null = r.actual_bed_time || null;
   const actualWake: string | null = r.actual_wake_time || null;
   const latency: number | null = r.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
@@ -209,9 +210,11 @@ export async function computeSleepTrending(date: string): Promise<SleepTrending>
 
   const blocks: Array<{ day: string; alignment: number | null; adequacy: number | null; debt: number | null }> = [];
 
+  const schedule = await getSleepPlanSettings();
+
   for (const r of rows) {
-    const plannedBed = r.planned_bed_time || null;
-    const plannedWake = r.planned_wake_time || null;
+    const plannedBed = r.planned_bed_time || schedule.bedtime;
+    const plannedWake = r.planned_wake_time || schedule.wake;
     const actualBed = r.actual_bed_time || null;
     const actualWake = r.actual_wake_time || null;
     const fitbit = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
