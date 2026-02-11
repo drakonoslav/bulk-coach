@@ -7,11 +7,14 @@ import {
   Pressable,
   Platform,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Ionicons, Feather } from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import Colors from "@/constants/colors";
 import { saveEntry, loadEntry } from "@/lib/entry-storage";
@@ -201,6 +204,9 @@ export default function LogScreen() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [erectionBadges, setErectionBadges] = useState<Record<string, "measured" | "imputed">>({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const [sessionForDate, setSessionForDate] = useState<{ erections: number; durSec: number; isImputed: boolean } | null>(null);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -256,12 +262,107 @@ export default function LogScreen() {
     } catch {}
   }, []);
 
+  const loadSessionForDate = useCallback(async (day: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL("/api/erection/sessions", baseUrl).toString(), { credentials: "include" });
+      if (res.ok) {
+        const rows = await res.json();
+        const match = rows.find((r: any) => r.date === day);
+        if (match) {
+          setSessionForDate({
+            erections: Number(match.nocturnalErections ?? 0),
+            durSec: Number(match.nocturnalDurationSeconds ?? 0),
+            isImputed: !!match.isImputed,
+          });
+        } else {
+          setSessionForDate(null);
+        }
+      }
+    } catch {
+      setSessionForDate(null);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDateEntry(selectedDate);
       loadErectionBadges();
+      loadSessionForDate(selectedDate);
+      setUploadResult(null);
     }, [selectedDate])
   );
+
+  function formatDur(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m === 0) return `${s}s`;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+
+  const handleSnapshotUpload = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "application/octet-stream", "*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      setUploading(true);
+      setUploadResult(null);
+
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/erection/upload", baseUrl).toString();
+
+      const formData = new FormData();
+      if (Platform.OS === "web") {
+        const resp = await globalThis.fetch(asset.uri);
+        const blob = await resp.blob();
+        formData.append("file", blob, asset.name || "snapshot.csv");
+      } else {
+        const file = new File(asset.uri);
+        formData.append("file", file as any);
+      }
+      formData.append("session_date", selectedDate);
+
+      const uploadRes = await expoFetch(url, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      const json = await uploadRes.json();
+
+      if (!uploadRes.ok) {
+        setUploadResult(json.error || "Upload failed");
+        return;
+      }
+
+      if (json.note === "duplicate_snapshot") {
+        setUploadResult("Already imported (duplicate)");
+      } else if (json.note === "baseline_stored") {
+        setUploadResult("Baseline stored (first upload)");
+      } else if (json.derived) {
+        const d = json.derived;
+        setUploadResult(
+          `${d.deltaNoctErections} erections, ${formatDur(d.deltaNoctDur)}${json.gapsFilled > 0 ? ` | ${json.gapsFilled} gaps filled` : ""}`
+        );
+      } else {
+        setUploadResult(json.note || "Done");
+      }
+
+      loadErectionBadges();
+      loadSessionForDate(selectedDate);
+    } catch (err: any) {
+      setUploadResult("Upload failed: " + (err.message || "Unknown error"));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const goToPrevDay = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -673,6 +774,79 @@ export default function LogScreen() {
             textAlignVertical="top"
             keyboardAppearance="dark"
           />
+        </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#8B5CF620" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <MaterialCommunityIcons name="pulse" size={16} color="#8B5CF6" />
+            <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#8B5CF6" }]}>Nocturnal Vitals</Text>
+          </View>
+
+          {sessionForDate ? (
+            <View style={{ backgroundColor: "rgba(139,92,246,0.08)", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: sessionForDate.isImputed ? "#FBBF24" : "#34D399" }} />
+                  <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: sessionForDate.isImputed ? "#FBBF24" : "#34D399" }}>
+                    {sessionForDate.isImputed ? "Estimated" : "Measured"}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                  {formatDateLabel(selectedDate)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 20, marginTop: 10 }}>
+                <View>
+                  <Text style={{ fontSize: 22, fontFamily: "Rubik_700Bold", color: "#8B5CF6" }}>{sessionForDate.erections}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>erections</Text>
+                </View>
+                <View>
+                  <Text style={{ fontSize: 22, fontFamily: "Rubik_700Bold", color: "#8B5CF6" }}>{formatDur(sessionForDate.durSec)}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>duration</Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 10 }}>
+              No session data for this date. Upload a cumulative snapshot CSV to add.
+            </Text>
+          )}
+
+          <Pressable
+            onPress={handleSnapshotUpload}
+            disabled={uploading}
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                paddingVertical: 12,
+                borderRadius: 12,
+                backgroundColor: "rgba(139,92,246,0.12)",
+                borderWidth: 1,
+                borderColor: "#8B5CF630",
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            {uploading ? (
+              <ActivityIndicator size="small" color="#8B5CF6" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={18} color="#8B5CF6" />
+                <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6" }}>
+                  Upload Snapshot for {formatDateLabel(selectedDate)}
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          {uploadResult && (
+            <View style={{ marginTop: 8, backgroundColor: "rgba(139,92,246,0.06)", borderRadius: 8, padding: 10 }}>
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{uploadResult}</Text>
+            </View>
+          )}
         </View>
 
         <Pressable
