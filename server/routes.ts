@@ -36,6 +36,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500
 const CHUNK_DIR = path.join("/tmp", "takeout_chunks");
 if (!fs.existsSync(CHUNK_DIR)) fs.mkdirSync(CHUNK_DIR, { recursive: true });
 
+const jobResults = new Map<string, { status: "processing" | "done" | "error"; result?: any; error?: string }>();
+
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
   const vals = [r1, r2, r3].filter((v): v is number => v != null && !isNaN(v));
   if (vals.length < 3) return null;
@@ -296,8 +298,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/import/takeout_chunk_finalize", async (req: Request, res: Response) => {
-    req.setTimeout(300000);
-    res.setTimeout(300000);
     try {
       const { uploadId, overwrite_fields, timezone } = req.body;
       if (!uploadId) {
@@ -308,25 +308,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Upload session not found" });
       }
       const meta = JSON.parse(fs.readFileSync(path.join(uploadDir, "_meta.json"), "utf8"));
-      const chunks: Buffer[] = [];
       for (let i = 0; i < meta.totalChunks; i++) {
         const chunkPath = path.join(uploadDir, `chunk_${i}`);
         if (!fs.existsSync(chunkPath)) {
           return res.status(400).json({ error: `Missing chunk ${i}` });
         }
-        chunks.push(fs.readFileSync(chunkPath));
       }
-      const fullBuffer = Buffer.concat(chunks);
-      const overwriteFieldsBool = overwrite_fields === "true" || overwrite_fields === true;
-      const tz = timezone || "America/New_York";
-      const result = await importFitbitTakeout(fullBuffer, meta.filename, overwriteFieldsBool, tz);
-      fs.rmSync(uploadDir, { recursive: true, force: true });
-      res.json(result);
+
+      const jobId = crypto.randomUUID();
+      jobResults.set(jobId, { status: "processing" });
+
+      res.json({ jobId, status: "processing" });
+
+      (async () => {
+        try {
+          const chunks: Buffer[] = [];
+          for (let i = 0; i < meta.totalChunks; i++) {
+            chunks.push(fs.readFileSync(path.join(uploadDir, `chunk_${i}`)));
+          }
+          const fullBuffer = Buffer.concat(chunks);
+          const overwriteFieldsBool = overwrite_fields === "true" || overwrite_fields === true;
+          const tz = timezone || "America/New_York";
+          const result = await importFitbitTakeout(fullBuffer, meta.filename, overwriteFieldsBool, tz);
+          fs.rmSync(uploadDir, { recursive: true, force: true });
+          jobResults.set(jobId, { status: "done", result });
+          setTimeout(() => jobResults.delete(jobId), 600000);
+        } catch (err: unknown) {
+          console.error("chunk finalize background error:", err);
+          const message = err instanceof Error ? err.message : "Import failed";
+          jobResults.set(jobId, { status: "error", error: message });
+          fs.rmSync(uploadDir, { recursive: true, force: true });
+          setTimeout(() => jobResults.delete(jobId), 600000);
+        }
+      })();
     } catch (err: unknown) {
       console.error("chunk finalize error:", err);
-      const message = err instanceof Error ? err.message : "Import failed";
-      res.status(500).json({ error: message });
+      res.status(500).json({ error: "Failed to start processing" });
     }
+  });
+
+  app.get("/api/import/takeout_job/:jobId", async (req: Request, res: Response) => {
+    const { jobId } = req.params;
+    const job = jobResults.get(jobId);
+    if (!job) {
+      return res.status(404).json({ error: "Job not found or expired" });
+    }
+    res.json(job);
   });
 
   app.get("/api/import/takeout_history", async (_req: Request, res: Response) => {
