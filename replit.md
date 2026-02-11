@@ -11,6 +11,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-10: v3.1 rolling lean gain ratio - rolling 14-day lean gain ratio series with color-coded trend chart in Report
 - 2026-02-11: v4 erection session tracking - Vitals tab with cumulative snapshot uploads, delta computation, gap-fill imputation (linear interpolation), androgen proxy calculation with 7d rolling averages, badges on Log screen, proxy chart on Report tab with imputed toggle
 - 2026-02-11: v4.1 data confidence - confidence endpoint with 7d/14d/30d rolling windows, grading (High/Med/Low/None), measured/imputed/multi-night counts; confidence strips on Vitals and Report tabs; snapshot cleanup on invalid delta; measured-only defaults audited
+- 2026-02-11: v4.2 chain recompute - when a snapshot N is inserted between existing snapshots, the next snapshot's derived session is re-derived using the new delta, gap-fill is re-run for the range, and proxy scores are recomputed; applies to all paths (baseline, baseline_seed, mid-chain)
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)

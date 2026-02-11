@@ -1,0 +1,138 @@
+Here’s a copy-paste spec you can send to Replit/dev so you get a one-click full backup export + restore import that survives republish, schema changes, and avoids re-uploading tons of CSVs.
+
+⸻
+
+Request: Full Backup Export + Restore Import (versioned, idempotent)
+
+Why
+
+Republish/deploys are wiping my database/state. I need a reliable way to export the entire dataset (diet logs, body comp, training flags, Fitbit imports, erection snapshots/sessions/proxy caches, etc.) and re-import it after updates. This must support schema evolution so restores don’t break when we add fields.
+
+⸻
+
+1) Add “Backup Export” endpoint
+
+Route: GET /api/backup/export
+Auth: same as current (or simple token for now)
+
+Returns: a single downloadable .json (or .zip with json) containing:
+
+Metadata (required)
+
+{
+  "backup_version": 1,
+  "exported_at": "2026-02-10T19:30:00Z",
+  "app_version": "v4",
+  "db_schema_version": 12,
+  "timezone": "America/New_York"
+}
+
+Data payload (required)
+
+Include all rows from these tables (or your equivalents):
+	•	daily_logs (weight, bf, sleep, training flags, cardio, macros summary, etc.)
+	•	dashboard_cache / report_cache (optional; can be recomputed)
+	•	fitbit_imports + any parsed Fitbit daily metrics table
+	•	erection_summary_snapshots
+	•	erection_sessions
+	•	androgen_proxy_daily (optional; can be recomputed)
+	•	any settings/preferences table (targets, toggle defaults, etc.)
+
+Important: It’s okay to exclude caches if recompute can rebuild them. If excluded, include a boolean like "caches_included": false.
+
+⸻
+
+2) Add “Backup Import / Restore” endpoint
+
+Route: POST /api/backup/import
+Content: multipart/form-data with file field file
+Options (query/body):
+	•	mode: "merge" (default) or "replace"
+	•	dry_run: boolean (default false)
+
+Import behaviors
+
+A) Merge mode (default, safest)
+	•	Upsert by natural keys:
+	•	daily_logs: key = date
+	•	erection_sessions: key = date
+	•	erection_summary_snapshots: key = sha256 (or id if stable)
+	•	fitbit_imports: key = sha256 (or id)
+	•	Never duplicate rows.
+	•	If a row already exists, update it (or keep existing if updated_at is newer).
+
+B) Replace mode (advanced)
+	•	Wipes tables first (in correct FK order) then imports everything.
+	•	Only used if user explicitly chooses.
+
+Dry run
+
+If dry_run=true, return counts only (no writes):
+
+{
+  "status": "dry_run",
+  "would_insert": {"daily_logs": 120, "erection_sessions": 90, "...": 10},
+  "would_update": {"daily_logs": 3, "erection_sessions": 2},
+  "conflicts": []
+}
+
+
+⸻
+
+3) Schema migration safety (must-have)
+
+Backup import must be forward compatible:
+	•	Unknown fields in backup → ignore (don’t crash)
+	•	Missing new columns → default/null
+	•	Use backup_version and db_schema_version to choose mapping logic if needed
+
+If the dev changes column names later, keep a mapping table in code:
+
+const FIELD_MAP_V1 = { nocturnal_erections: "nocturnal_count", ... }
+
+
+⸻
+
+4) Recompute after restore
+
+After import completes:
+	•	call existing recompute pipeline over full date range present:
+	•	rebuild rolling metrics
+	•	rebuild caches (dashboard/report)
+	•	rebuild androgen proxy series (measured-only + include-imputed)
+
+Return:
+
+{
+  "status": "ok",
+  "imported": {...counts...},
+  "recomputed": true,
+  "date_range": {"min": "2026-01-01", "max": "2026-02-10"}
+}
+
+
+⸻
+
+5) Frontend UX (Expo)
+
+Add a screen in Settings (or Vitals):
+	•	Export Backup button
+	•	downloads file (share sheet)
+	•	Import Backup button
+	•	pick file via document picker
+	•	shows dry-run summary first
+	•	confirm to run import
+	•	show last backup timestamp
+
+⸻
+
+6) Critical note about republish data loss
+
+Also please confirm the DB is truly persistent:
+	•	use Replit Postgres (not ephemeral)
+	•	ensure the connection string is stable across deploys
+	•	avoid dev-only resets/migrations that drop tables on restart
+
+⸻
+
+If you want, I can tailor the table list/keys exactly to your current schema (daily logs vs entries naming, cache table names, etc.). Just paste the table names Replit created (or the schema.sql/migration file) and I’ll make it precise.

@@ -244,7 +244,11 @@ export async function importSnapshotAndDerive(
         false,
       );
 
-      await recomputeGapsAndProxy(sessionDate);
+      const chainResult = await chainRecomputeNext(sNew, sessionDate);
+      const maxDate = chainResult.nextSessionDate
+        ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
+        : sessionDate;
+      await recomputeGapsAndProxy(sessionDate, maxDate);
 
       return {
         snapshot: sNew,
@@ -256,16 +260,20 @@ export async function importSnapshotAndDerive(
           deltaNights: 1,
         },
         note: "baseline_measured",
-        gapsFilled: 0,
+        gapsFilled: chainResult.gapsFilled,
       };
     } else {
-      await recomputeGapsAndProxy(sessionDate);
+      const chainResult = await chainRecomputeNext(sNew, sessionDate);
+      const maxDate = chainResult.nextSessionDate
+        ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
+        : sessionDate;
+      await recomputeGapsAndProxy(sessionDate, maxDate);
 
       return {
         snapshot: sNew,
         derived: null,
         note: "baseline_seed_no_session",
-        gapsFilled: 0,
+        gapsFilled: chainResult.gapsFilled,
       };
     }
   }
@@ -292,13 +300,22 @@ export async function importSnapshotAndDerive(
     multiNightCombined,
   );
 
-  const gapsFilled = await detectAndFillGaps(
+  let gapsFilled = await detectAndFillGaps(
     addDays(sessionDate, -60),
     addDays(sessionDate, 60),
     sNew.id,
   );
 
-  await recomputeGapsAndProxy(sessionDate);
+  const chainResult = await chainRecomputeNext(sNew, sessionDate);
+  gapsFilled += chainResult.gapsFilled;
+
+  const minDate = chainResult.nextSessionDate
+    ? (sessionDate < chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
+    : sessionDate;
+  const maxDate = chainResult.nextSessionDate
+    ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
+    : sessionDate;
+  await recomputeGapsAndProxy(minDate, maxDate);
 
   return {
     snapshot: sNew,
@@ -386,12 +403,60 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
   return filled;
 }
 
-async function recomputeGapsAndProxy(sessionDate: string): Promise<void> {
-  const from = addDays(sessionDate, -30);
-  const to = addDays(sessionDate, 30);
+async function recomputeGapsAndProxy(sessionDateOrMin: string, sessionDateMax?: string): Promise<void> {
+  const minD = sessionDateOrMin;
+  const maxD = sessionDateMax ?? sessionDateOrMin;
+  const from = addDays(minD, -30);
+  const to = addDays(maxD, 30);
 
   await recomputeAndrogenProxy(from, to, false);
   await recomputeAndrogenProxy(from, to, true);
+}
+
+async function chainRecomputeNext(
+  sNew: Snapshot,
+  sessionDate: string,
+): Promise<{ gapsFilled: number; nextSessionDate: string | null }> {
+  const { rows: nextRows } = await pool.query(
+    `SELECT * FROM erection_summary_snapshots
+     WHERE total_nights > $1
+     ORDER BY total_nights ASC
+     LIMIT 1`,
+    [sNew.total_nights],
+  );
+
+  if (nextRows.length === 0) {
+    return { gapsFilled: 0, nextSessionDate: null };
+  }
+
+  const sNext = rowToSnapshot(nextRows[0]);
+  const dn2 = sNext.total_nights - sNew.total_nights;
+  const de2 = sNext.total_erections - sNew.total_erections;
+  const dd2 = sNext.total_duration_sec - sNew.total_duration_sec;
+
+  if (dn2 <= 0 || de2 < 0 || dd2 < 0) {
+    console.warn(`Chain recompute: next snapshot ${sNext.id} has invalid delta after insert (dn=${dn2}, de=${de2}, dd=${dd2}), skipping`);
+    return { gapsFilled: 0, nextSessionDate: sNext.session_date };
+  }
+
+  const multiNight2 = dn2 > 1;
+  await upsertMeasuredSession(
+    sNext.session_date,
+    de2,
+    dd2,
+    sNext.id,
+    multiNight2,
+  );
+
+  const rangeFrom = sessionDate < sNext.session_date ? sessionDate : sNext.session_date;
+  const rangeTo = sessionDate > sNext.session_date ? sessionDate : sNext.session_date;
+  const gapsFilled = await detectAndFillGaps(
+    addDays(rangeFrom, -7),
+    addDays(rangeTo, 7),
+    sNext.id,
+  );
+
+  return { gapsFilled, nextSessionDate: sNext.session_date };
 }
 
 async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeImputed: boolean): Promise<void> {
