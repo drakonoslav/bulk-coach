@@ -3,7 +3,7 @@ import { Tabs } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import Colors from "@/constants/colors";
 
@@ -25,6 +25,10 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="report">
         <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
         <Label>Report</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="vitals">
+        <Icon sf={{ default: "waveform.path.ecg", selected: "waveform.path.ecg" }} />
+        <Label>Vitals</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -93,6 +97,15 @@ function ClassicTabLayout() {
           title: "Report",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="document-text-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="vitals"
+        options={{
+          title: "Vitals",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="pulse" size={size} color={color} />
           ),
         }}
       />
