@@ -77,12 +77,16 @@ export default function ChecklistScreen() {
     readinessScore: number;
     readinessTier: string;
     confidenceGrade: string;
+    typeLean: number;
+    exerciseBias: number;
+    cortisolFlag: boolean;
     drivers: string[];
   } | null>(null);
-  const [template, setTemplate] = useState<{
+  const [templates, setTemplates] = useState<Array<{
+    id: number;
     templateType: string;
     sessions: Array<{ name: string; highLabel: string; medLabel: string; lowLabel: string }>;
-  } | null>(null);
+  }>>([]);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -105,7 +109,10 @@ export default function ChecklistScreen() {
         expoFetch(new URL("/api/training/template", baseUrl).toString(), { credentials: "include" }),
       ]);
       if (rRes.ok) setReadiness(await rRes.json());
-      if (tRes.ok) setTemplate(await tRes.json());
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        setTemplates(Array.isArray(tData) ? tData : [tData]);
+      }
     } catch {}
   }, []);
 
@@ -218,76 +225,135 @@ export default function ChecklistScreen() {
           </View>
         </View>
 
-        {readiness && template && (
-          <View style={styles.readinessCard}>
-            <View style={styles.readinessHeader}>
-              <View style={[styles.readinessIcon, {
-                backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39918" : readiness.readinessTier === "RED" ? "#EF444418" : "#FBBF2418",
-              }]}>
-                <Ionicons
-                  name={readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "RED" ? "bed" : "pause-circle"}
-                  size={18}
-                  color={readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24"}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.readinessTitle}>Training Readiness</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={[styles.readinessScore, {
-                    color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                  }]}>
-                    {readiness.readinessScore}
-                  </Text>
-                  <View style={[styles.readinessTierBadge, {
-                    backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39918" : readiness.readinessTier === "RED" ? "#EF444418" : "#FBBF2418",
-                  }]}>
-                    <Text style={[styles.readinessTierText, {
-                      color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                    }]}>
-                      {readiness.readinessTier}
+        {readiness && templates.length > 0 && (() => {
+          const tierColor = readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "BLUE" ? "#60A5FA" : "#FBBF24";
+          const tierIcon = readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "BLUE" ? "snow" : "pause-circle";
+          const activeTemplate = templates[0];
+          return (
+            <View style={styles.readinessCard}>
+              <View style={styles.readinessHeader}>
+                <View style={[styles.readinessIcon, { backgroundColor: tierColor + "18" }]}>
+                  <Ionicons name={tierIcon as any} size={18} color={tierColor} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.readinessTitle}>Training Readiness</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={[styles.readinessScore, { color: tierColor }]}>
+                      {readiness.readinessScore}
                     </Text>
+                    <View style={[styles.readinessTierBadge, { backgroundColor: tierColor + "18" }]}>
+                      <Text style={[styles.readinessTierText, { color: tierColor }]}>
+                        {readiness.readinessTier}
+                      </Text>
+                    </View>
+                    {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
+                      <Text style={styles.readinessLowConf}>LOW CONF</Text>
+                    )}
                   </View>
-                  {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
-                    <Text style={styles.readinessLowConf}>LOW CONF</Text>
-                  )}
                 </View>
               </View>
-            </View>
 
-            <View style={styles.readinessBar}>
-              <View style={[styles.readinessBarFill, {
-                width: `${readiness.readinessScore}%`,
-                backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-              }]} />
-            </View>
-
-            <View style={styles.readinessSessions}>
-              <Text style={styles.readinessSessionsLabel}>
-                {readiness.readinessTier === "GREEN" ? "Go Heavy" : readiness.readinessTier === "RED" ? "Recovery Day" : "Normal Training"}
-              </Text>
-              {template.sessions.map((s, i) => {
-                const label = readiness.readinessTier === "GREEN" ? s.highLabel : readiness.readinessTier === "RED" ? s.lowLabel : s.medLabel;
-                return (
-                  <View key={i} style={styles.readinessSessionRow}>
-                    <View style={[styles.readinessSessionDot, {
-                      backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                    }]} />
-                    <Text style={styles.readinessSessionName}>{s.name}</Text>
-                    <Text style={styles.readinessSessionLabel}>{label}</Text>
-                  </View>
-                );
-              })}
-            </View>
-
-            {readiness.drivers.length > 0 && (
-              <View style={styles.readinessDrivers}>
-                {readiness.drivers.slice(0, 3).map((d, i) => (
-                  <Text key={i} style={styles.readinessDriverText}>{d}</Text>
-                ))}
+              <View style={styles.readinessBar}>
+                <View style={[styles.readinessBarFill, {
+                  width: `${readiness.readinessScore}%`,
+                  backgroundColor: tierColor,
+                }]} />
               </View>
-            )}
-          </View>
-        )}
+
+              {readiness.cortisolFlag && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EF444418", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                  <Ionicons name="warning" size={16} color="#EF4444" />
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#EF4444", flex: 1 }}>
+                    Cortisol Suppression - multiple signals degraded, capping intensity
+                  </Text>
+                </View>
+              )}
+
+              <View style={{ gap: 10, marginBottom: 12 }}>
+                <View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                      {readiness.typeLean > 0 ? "+" : ""}{readiness.typeLean.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
+                    <View style={{
+                      position: "absolute",
+                      left: `${((readiness.typeLean + 1) / 2) * 100}%`,
+                      top: 0, width: 3, height: 6, borderRadius: 1.5,
+                      backgroundColor: tierColor,
+                      marginLeft: -1.5,
+                    }} />
+                    <View style={{
+                      position: "absolute", left: "50%", top: 0, width: 1, height: 6,
+                      backgroundColor: Colors.textTertiary + "40",
+                    }} />
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Hypertrophy</Text>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Strength</Text>
+                  </View>
+                </View>
+
+                <View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                      {readiness.exerciseBias > 0 ? "+" : ""}{readiness.exerciseBias.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
+                    <View style={{
+                      position: "absolute",
+                      left: `${((readiness.exerciseBias + 1) / 2) * 100}%`,
+                      top: 0, width: 3, height: 6, borderRadius: 1.5,
+                      backgroundColor: tierColor,
+                      marginLeft: -1.5,
+                    }} />
+                    <View style={{
+                      position: "absolute", left: "50%", top: 0, width: 1, height: 6,
+                      backgroundColor: Colors.textTertiary + "40",
+                    }} />
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Isolation</Text>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Compound</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.readinessSessions}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={styles.readinessSessionsLabel}>
+                    {readiness.readinessTier === "GREEN" ? "Go Heavy" : readiness.readinessTier === "BLUE" ? "Deload / Pump" : "Normal Training"}
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
+                    {activeTemplate.templateType}
+                  </Text>
+                </View>
+                {activeTemplate.sessions.map((s, i) => {
+                  const label = readiness.readinessTier === "GREEN" ? s.highLabel : readiness.readinessTier === "BLUE" ? s.lowLabel : s.medLabel;
+                  return (
+                    <View key={i} style={styles.readinessSessionRow}>
+                      <View style={[styles.readinessSessionDot, { backgroundColor: tierColor }]} />
+                      <Text style={styles.readinessSessionName}>{s.name}</Text>
+                      <Text style={styles.readinessSessionLabel}>{label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {readiness.drivers.length > 0 && (
+                <View style={styles.readinessDrivers}>
+                  {readiness.drivers.slice(0, 3).map((d, i) => (
+                    <Text key={i} style={styles.readinessDriverText}>{d}</Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        })()}
 
         <View style={styles.timeline}>
           {DAILY_CHECKLIST.map((item, i) => (

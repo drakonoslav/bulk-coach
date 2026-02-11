@@ -321,6 +321,9 @@ export default function ReportScreen() {
     readinessScore: number;
     readinessTier: string;
     confidenceGrade: string;
+    typeLean: number;
+    exerciseBias: number;
+    cortisolFlag: boolean;
     hrvDelta: number | null;
     rhrDelta: number | null;
     sleepDelta: number | null;
@@ -594,81 +597,144 @@ export default function ReportScreen() {
             {readiness && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Training Readiness</Text>
-                <View style={[styles.lgrCard, { borderColor: readiness.readinessTier === "GREEN" ? "#34D39930" : readiness.readinessTier === "RED" ? "#EF444430" : "#FBBF2430" }]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                      <View style={{
-                        width: 40, height: 40, borderRadius: 20,
-                        backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39920" : readiness.readinessTier === "RED" ? "#EF444420" : "#FBBF2420",
-                        alignItems: "center", justifyContent: "center",
-                      }}>
-                        <Ionicons
-                          name={readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "RED" ? "bed" : "pause-circle"}
-                          size={20}
-                          color={readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24"}
-                        />
+                {(() => {
+                  const tierColor = readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "BLUE" ? "#60A5FA" : "#FBBF24";
+                  const tierIcon = readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "BLUE" ? "snow" : "pause-circle";
+                  return (
+                    <View style={[styles.lgrCard, { borderColor: tierColor + "30" }]}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                          <View style={{
+                            width: 40, height: 40, borderRadius: 20,
+                            backgroundColor: tierColor + "20",
+                            alignItems: "center", justifyContent: "center",
+                          }}>
+                            <Ionicons name={tierIcon as any} size={20} color={tierColor} />
+                          </View>
+                          <View>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                              Readiness Score
+                            </Text>
+                            <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: tierColor }}>
+                              {readiness.readinessScore}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 4 }}>
+                          <View style={{
+                            paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
+                            backgroundColor: tierColor + "20",
+                          }}>
+                            <Text style={{
+                              fontSize: 12, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
+                              color: tierColor,
+                            }}>
+                              {readiness.readinessTier}
+                            </Text>
+                          </View>
+                          {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
+                            <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
+                              LOW CONFIDENCE
+                            </Text>
+                          )}
+                        </View>
                       </View>
-                      <View>
-                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
-                          Readiness Score
-                        </Text>
-                        <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24" }}>
-                          {readiness.readinessScore}
-                        </Text>
+
+                      <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, marginBottom: 12, overflow: "hidden" as const }}>
+                        <View style={{
+                          height: 6, borderRadius: 3,
+                          width: `${readiness.readinessScore}%`,
+                          backgroundColor: tierColor,
+                        }} />
                       </View>
-                    </View>
-                    <View style={{ alignItems: "flex-end", gap: 4 }}>
-                      <View style={{
-                        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
-                        backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39920" : readiness.readinessTier === "RED" ? "#EF444420" : "#FBBF2420",
-                      }}>
-                        <Text style={{
-                          fontSize: 12, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
-                          color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                        }}>
-                          {readiness.readinessTier}
-                        </Text>
-                      </View>
-                      {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
-                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
-                          LOW CONFIDENCE
-                        </Text>
+
+                      {readiness.cortisolFlag && (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EF444418", borderRadius: 10, padding: 10, marginBottom: 12 }}>
+                          <Ionicons name="warning" size={16} color="#EF4444" />
+                          <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#EF4444", flex: 1 }}>
+                            Cortisol Suppression Active
+                          </Text>
+                        </View>
                       )}
-                    </View>
-                  </View>
 
-                  <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, marginBottom: 12, overflow: "hidden" as const }}>
-                    <View style={{
-                      height: 6, borderRadius: 3,
-                      width: `${readiness.readinessScore}%`,
-                      backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                    }} />
-                  </View>
+                      <View style={{ gap: 10, marginBottom: 12, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
+                        <View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                              {readiness.typeLean > 0 ? "+" : ""}{readiness.typeLean.toFixed(2)}
+                            </Text>
+                          </View>
+                          <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
+                            <View style={{
+                              position: "absolute",
+                              left: `${((readiness.typeLean + 1) / 2) * 100}%`,
+                              top: 0, width: 3, height: 6, borderRadius: 1.5,
+                              backgroundColor: tierColor, marginLeft: -1.5,
+                            }} />
+                            <View style={{
+                              position: "absolute", left: "50%", top: 0, width: 1, height: 6,
+                              backgroundColor: Colors.textTertiary + "40",
+                            }} />
+                          </View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Hypertrophy</Text>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Strength</Text>
+                          </View>
+                        </View>
 
-                  <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
-                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
-                      Signal Drivers
-                    </Text>
-                    {readiness.drivers.map((d, i) => (
-                      <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3 }}>
-                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textSecondary }} />
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{d}</Text>
+                        <View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                              {readiness.exerciseBias > 0 ? "+" : ""}{readiness.exerciseBias.toFixed(2)}
+                            </Text>
+                          </View>
+                          <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
+                            <View style={{
+                              position: "absolute",
+                              left: `${((readiness.exerciseBias + 1) / 2) * 100}%`,
+                              top: 0, width: 3, height: 6, borderRadius: 1.5,
+                              backgroundColor: tierColor, marginLeft: -1.5,
+                            }} />
+                            <View style={{
+                              position: "absolute", left: "50%", top: 0, width: 1, height: 6,
+                              backgroundColor: Colors.textTertiary + "40",
+                            }} />
+                          </View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Isolation</Text>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Compound</Text>
+                          </View>
+                        </View>
                       </View>
-                    ))}
-                  </View>
 
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10 }}>
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
-                      Recommended Intensity
-                    </Text>
-                    <Text style={{
-                      fontSize: 13, fontFamily: "Rubik_700Bold",
-                      color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
-                    }}>
-                      {readiness.readinessTier === "GREEN" ? "HIGH (heavy compounds)" : readiness.readinessTier === "RED" ? "LOW (isolation/pump)" : "MEDIUM (normal hypertrophy)"}
-                    </Text>
-                  </View>
-                </View>
+                      <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
+                          Signal Drivers
+                        </Text>
+                        {readiness.drivers.map((d, i) => (
+                          <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3 }}>
+                            <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textSecondary }} />
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{d}</Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10 }}>
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                          Recommended Intensity
+                        </Text>
+                        <Text style={{
+                          fontSize: 13, fontFamily: "Rubik_700Bold",
+                          color: tierColor,
+                        }}>
+                          {readiness.readinessTier === "GREEN" ? "HIGH (heavy compounds)" : readiness.readinessTier === "BLUE" ? "LOW (deload/pump)" : "MEDIUM (normal hypertrophy)"}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
 
                 {readinessHistory.length >= 2 && (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>

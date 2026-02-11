@@ -517,17 +517,17 @@ export default function LogScreen() {
               )}
               {readinessBadge && (
                 <View style={[styles.dateNavBadge, {
-                  backgroundColor: readinessBadge.tier === "GREEN" ? "rgba(52, 211, 153, 0.12)" : readinessBadge.tier === "RED" ? "rgba(239, 68, 68, 0.12)" : "rgba(251, 191, 36, 0.12)",
+                  backgroundColor: readinessBadge.tier === "GREEN" ? "rgba(52, 211, 153, 0.12)" : readinessBadge.tier === "BLUE" ? "rgba(96, 165, 250, 0.12)" : "rgba(251, 191, 36, 0.12)",
                 }]}>
                   <Ionicons
-                    name={readinessBadge.tier === "GREEN" ? "flash" : readinessBadge.tier === "RED" ? "bed" : "pause-circle"}
+                    name={readinessBadge.tier === "GREEN" ? "flash" : readinessBadge.tier === "BLUE" ? "snow" : "pause-circle"}
                     size={12}
-                    color={readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "RED" ? "#EF4444" : "#FBBF24"}
+                    color={readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "BLUE" ? "#60A5FA" : "#FBBF24"}
                   />
                   <Text style={[styles.dateNavBadgeText, {
-                    color: readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "RED" ? "#EF4444" : "#FBBF24",
+                    color: readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "BLUE" ? "#60A5FA" : "#FBBF24",
                   }]}>
-                    {readinessBadge.tier === "GREEN" ? "Ready" : readinessBadge.tier === "RED" ? "Low" : "Normal"} {readinessBadge.score}
+                    {readinessBadge.tier === "GREEN" ? "Ready" : readinessBadge.tier === "BLUE" ? "Deload" : "Normal"} {readinessBadge.score}
                   </Text>
                 </View>
               )}
