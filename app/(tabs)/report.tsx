@@ -762,13 +762,13 @@ export default function ReportScreen() {
                     ].map((g) => (
                       <View key={g.label} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
                         <Ionicons name={g.ok ? "checkmark-circle" : "ellipse-outline"} size={12} color={g.ok ? "#34D399" : Colors.textTertiary} />
-                        <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: g.ok ? "#34D399" : Colors.textTertiary }}>{g.label}</Text>
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: g.ok ? "#34D399" : Colors.textTertiary }}>{g.label}</Text>
                       </View>
                     ))}
                   </View>
                 </View>
                 {dataSuff.gateLabel && (
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#FBBF24", marginTop: 6 }}>
+                  <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: "#FBBF24", marginTop: 6 }}>
                     {dataSuff.gateLabel}
                   </Text>
                 )}
@@ -816,13 +816,13 @@ export default function ReportScreen() {
                             <Ionicons name={tierIcon as any} size={20} color={tierColor} />
                           </View>
                           <View>
-                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
                               Readiness Score
                             </Text>
                             <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: tierColor }}>
                               {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
                             </Text>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
                               {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional floor — need 7+ days" : (readiness.daysInWindow ?? 0) < 28 ? "Partial baseline — score may shift" : "Estimates recovery permissiveness"}
                             </Text>
                           </View>
@@ -833,14 +833,14 @@ export default function ReportScreen() {
                             backgroundColor: tierColor + "20",
                           }}>
                             <Text style={{
-                              fontSize: 12, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
+                              fontSize: 13, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
                               color: tierColor,
                             }}>
                               {tier}
                             </Text>
                           </View>
                           {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
-                            <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
+                            <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
                               LOW CONFIDENCE
                             </Text>
                           )}
@@ -858,7 +858,7 @@ export default function ReportScreen() {
                       {readiness.cortisolFlag && (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EF444418", borderRadius: 10, padding: 10, marginBottom: 12 }}>
                           <Ionicons name="warning" size={16} color="#EF4444" />
-                          <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#EF4444", flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#EF4444", flex: 1 }}>
                             Cortisol Suppression Active
                           </Text>
                         </View>
@@ -867,8 +867,8 @@ export default function ReportScreen() {
                       <View style={{ gap: 10, marginBottom: 12, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
                         <View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
-                            <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
                               {typeLeanVal > 0 ? "+" : ""}{typeLeanVal.toFixed(2)}
                             </Text>
                           </View>
@@ -885,15 +885,15 @@ export default function ReportScreen() {
                             }} />
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Hypertrophy</Text>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Strength</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Hypertrophy</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Strength</Text>
                           </View>
                         </View>
 
                         <View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
-                            <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
                               {exerciseBiasVal > 0 ? "+" : ""}{exerciseBiasVal.toFixed(2)}
                             </Text>
                           </View>
@@ -910,14 +910,14 @@ export default function ReportScreen() {
                             }} />
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Isolation</Text>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Compound</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Isolation</Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Compound</Text>
                           </View>
                         </View>
                       </View>
 
                       <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
-                        <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
                           Signal Drivers
                         </Text>
                         {(readiness.drivers ?? []).map((d, i) => (
@@ -929,7 +929,7 @@ export default function ReportScreen() {
                       </View>
 
                       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10 }}>
-                        <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
                           Recommended Intensity
                         </Text>
                         <Text style={{
@@ -958,7 +958,7 @@ export default function ReportScreen() {
                   const needsMoreFor28d = (readiness.daysInWindow ?? 0) < 28;
                   return (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
-                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
                       Signal Breakdown
                     </Text>
                     {insufficientData && (
@@ -1065,7 +1065,7 @@ export default function ReportScreen() {
                   }
                   return (
                     <View style={[styles.lgrCard, { marginTop: 12, borderColor: ruleColor + "30" }]}>
-                      <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
                         Today's Training Rule
                       </Text>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -1149,7 +1149,7 @@ export default function ReportScreen() {
                       size={20}
                       color={proxyImputed ? "#FBBF24" : Colors.textTertiary}
                     />
-                    <Text style={{ fontSize: 13, color: proxyImputed ? "#FBBF24" : Colors.textSecondary, fontFamily: "Rubik_400Regular" }}>
+                    <Text style={{ fontSize: 14, color: proxyImputed ? "#FBBF24" : Colors.textSecondary, fontFamily: "Rubik_400Regular" }}>
                       Include imputed data
                     </Text>
                   </Pressable>
@@ -1163,14 +1163,14 @@ export default function ReportScreen() {
                         const gradeColor = c.grade === "High" ? "#34D399" : c.grade === "Med" ? "#FBBF24" : c.grade === "Low" ? "#EF4444" : Colors.textTertiary;
                         return (
                           <View key={c.window} style={{ flex: 1, alignItems: "center", gap: 6, paddingVertical: 8, backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 6 }}>
-                            <Text style={{ fontSize: 13, fontWeight: "700" as const, color: Colors.text, letterSpacing: 0.5 }}>{c.window}</Text>
+                            <Text style={{ fontSize: 14, fontWeight: "700" as const, color: Colors.text, letterSpacing: 0.5 }}>{c.window}</Text>
                             <View style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, borderWidth: 1, backgroundColor: gradeColor + "20", borderColor: gradeColor + "40" }}>
-                              <Text style={{ fontSize: 12, fontWeight: "700" as const, letterSpacing: 0.3, color: gradeColor }}>{c.grade}</Text>
+                              <Text style={{ fontSize: 13, fontWeight: "700" as const, letterSpacing: 0.3, color: gradeColor }}>{c.grade}</Text>
                             </View>
                             <View style={{ flexDirection: "row", gap: 6 }}>
-                              <Text style={{ fontSize: 11, fontWeight: "600" as const, color: "#34D399" }}>{c.measured}M</Text>
-                              <Text style={{ fontSize: 11, fontWeight: "600" as const, color: "#FBBF24" }}>{c.imputed}I</Text>
-                              {c.multiNight > 0 && <Text style={{ fontSize: 11, fontWeight: "600" as const, color: Colors.textTertiary }}>{c.multiNight}C</Text>}
+                              <Text style={{ fontSize: 13, fontWeight: "600" as const, color: "#34D399" }}>{c.measured}M</Text>
+                              <Text style={{ fontSize: 13, fontWeight: "600" as const, color: "#FBBF24" }}>{c.imputed}I</Text>
+                              {c.multiNight > 0 && <Text style={{ fontSize: 13, fontWeight: "600" as const, color: Colors.textTertiary }}>{c.multiNight}C</Text>}
                             </View>
                           </View>
                         );
@@ -1273,7 +1273,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   baselineLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Rubik_500Medium",
     color: Colors.textTertiary,
     textTransform: "uppercase" as const,
@@ -1286,7 +1286,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   baselineUnit: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
     marginTop: 1,
@@ -1324,7 +1324,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   chartAxisLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
     textAlign: "right",
@@ -1344,7 +1344,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_500Medium",
     color: Colors.textSecondary,
     textTransform: "uppercase" as const,
@@ -1357,7 +1357,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   metricUnit: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
     marginTop: 2,
@@ -1375,7 +1375,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   targetBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Rubik_600SemiBold",
   },
   targetBadgeTextGood: {
@@ -1424,7 +1424,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   adjustSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     lineHeight: 18,
@@ -1436,7 +1436,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   tweakHeader: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textTertiary,
     textTransform: "uppercase" as const,
@@ -1469,7 +1469,7 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_600SemiBold",
   },
   tweakKcal: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
     marginTop: 1,
@@ -1482,7 +1482,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   prioritySubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     lineHeight: 18,
@@ -1505,7 +1505,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   priorityNumText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textSecondary,
   },
@@ -1516,7 +1516,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   priorityNote: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
@@ -1534,7 +1534,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   lgrLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_500Medium",
     color: Colors.textSecondary,
     textTransform: "uppercase" as const,
@@ -1546,7 +1546,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   lgrHint: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
     textAlign: "center",
@@ -1569,7 +1569,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   lgrBarLabel: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
@@ -1598,13 +1598,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fuelDay: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.secondary,
     marginBottom: 2,
   },
   fuelText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     lineHeight: 18,
@@ -1628,7 +1628,7 @@ const mealGuideStyles = StyleSheet.create({
     backgroundColor: Colors.primaryMuted,
   },
   summaryText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_500Medium",
     color: Colors.primary,
     flex: 1,
@@ -1640,7 +1640,7 @@ const mealGuideStyles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   deltaSummaryLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textTertiary,
     textTransform: "uppercase" as const,
@@ -1648,7 +1648,7 @@ const mealGuideStyles = StyleSheet.create({
     marginBottom: 3,
   },
   deltaSummaryValue: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_500Medium",
     color: Colors.text,
   },
@@ -1679,12 +1679,12 @@ const mealGuideStyles = StyleSheet.create({
     flex: 1,
   },
   mealTime: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textTertiary,
   },
   mealLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
   },
@@ -1699,7 +1699,7 @@ const mealGuideStyles = StyleSheet.create({
     borderRadius: 4,
   },
   changedBadgeText: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: "Rubik_700Bold",
     letterSpacing: 0.5,
   },
@@ -1712,7 +1712,7 @@ const mealGuideStyles = StyleSheet.create({
     borderRadius: 4,
   },
   zoneBadgeText: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: "Rubik_600SemiBold",
     letterSpacing: 0.3,
   },
@@ -1737,7 +1737,7 @@ const mealGuideStyles = StyleSheet.create({
     borderRadius: 3,
   },
   ingredientName: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
   },
@@ -1747,20 +1747,20 @@ const mealGuideStyles = StyleSheet.create({
     gap: 4,
   },
   ingredientBaseline: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
   ingredientAdjusted: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Rubik_600SemiBold",
   },
   ingredientDelta: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Rubik_500Medium",
   },
   ingredientUnchanged: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
