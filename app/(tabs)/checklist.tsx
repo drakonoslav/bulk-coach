@@ -102,6 +102,17 @@ export default function ChecklistScreen() {
     cortisolFlag: boolean;
     drivers: string[];
   } | null>(null);
+  const [dataSuff, setDataSuff] = useState<{
+    analysisStartDate: string;
+    daysWithData: number;
+    totalDaysInRange: number;
+    gate7: boolean;
+    gate14: boolean;
+    gate30: boolean;
+    gateLabel: string | null;
+    signals: { hrv: number; rhr: number; sleep: number; steps: number; proxy: number };
+  } | null>(null);
+  const [rebaselining, setRebaselining] = useState(false);
   const [templates, setTemplates] = useState<Array<{
     id: number;
     templateType: string;
@@ -124,9 +135,10 @@ export default function ChecklistScreen() {
     try {
       const baseUrl = getApiUrl();
       const today = new Date().toISOString().slice(0, 10);
-      const [rRes, tRes] = await Promise.all([
+      const [rRes, tRes, dsRes] = await Promise.all([
         expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/training/template", baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/data-sufficiency", baseUrl).toString(), { credentials: "include" }),
       ]);
       if (rRes.ok) setReadiness(await rRes.json());
       if (tRes.ok) {
@@ -138,8 +150,27 @@ export default function ChecklistScreen() {
           setTemplates(arr as any);
         }
       }
+      if (dsRes.ok) setDataSuff(await dsRes.json());
     } catch {}
   }, []);
+
+  const handleRebaseline = useCallback(async () => {
+    setRebaselining(true);
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL("/api/settings/rebaseline", baseUrl).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 60 }),
+        credentials: "include",
+      });
+      if (res.ok) {
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await loadReadinessAndTemplate();
+      }
+    } catch {}
+    setRebaselining(false);
+  }, [loadReadinessAndTemplate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -311,6 +342,82 @@ export default function ChecklistScreen() {
             <Text style={styles.macroLabel}>fat</Text>
           </View>
         </View>
+
+        {dataSuff && (
+          <View style={styles.sufficiencyCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <View style={[styles.readinessIcon, { backgroundColor: dataSuff.gate30 ? "#34D39918" : dataSuff.gate14 ? "#FBBF2418" : "#60A5FA18" }]}>
+                <Ionicons
+                  name={dataSuff.gate30 ? "checkmark-circle" : "time"}
+                  size={18}
+                  color={dataSuff.gate30 ? "#34D399" : dataSuff.gate14 ? "#FBBF24" : "#60A5FA"}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.readinessTitle}>Analysis Window</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                  Since {dataSuff.analysisStartDate}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleRebaseline}
+                disabled={rebaselining}
+                style={({ pressed }) => [styles.rebaselineBtn, pressed && { opacity: 0.7 }]}
+              >
+                {rebaselining ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="refresh" size={14} color={Colors.primary} />
+                    <Text style={styles.rebaselineBtnText}>Rebaseline</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+              <View style={styles.suffGate}>
+                <Ionicons name={dataSuff.gate7 ? "checkmark-circle" : "ellipse-outline"} size={14} color={dataSuff.gate7 ? "#34D399" : Colors.textTertiary} />
+                <Text style={[styles.suffGateText, dataSuff.gate7 && { color: "#34D399" }]}>7d</Text>
+              </View>
+              <View style={styles.suffGate}>
+                <Ionicons name={dataSuff.gate14 ? "checkmark-circle" : "ellipse-outline"} size={14} color={dataSuff.gate14 ? "#34D399" : Colors.textTertiary} />
+                <Text style={[styles.suffGateText, dataSuff.gate14 && { color: "#34D399" }]}>14d</Text>
+              </View>
+              <View style={styles.suffGate}>
+                <Ionicons name={dataSuff.gate30 ? "checkmark-circle" : "ellipse-outline"} size={14} color={dataSuff.gate30 ? "#34D399" : Colors.textTertiary} />
+                <Text style={[styles.suffGateText, dataSuff.gate30 && { color: "#34D399" }]}>30d</Text>
+              </View>
+              <View style={styles.suffGate}>
+                <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{dataSuff.daysWithData}</Text>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>days</Text>
+              </View>
+            </View>
+
+            {dataSuff.gateLabel && (
+              <View style={{ backgroundColor: "#FBBF2410", borderRadius: 8, padding: 8 }}>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>
+                  {dataSuff.gateLabel}
+                </Text>
+              </View>
+            )}
+
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {[
+                { label: "HRV", count: dataSuff.signals.hrv },
+                { label: "RHR", count: dataSuff.signals.rhr },
+                { label: "Sleep", count: dataSuff.signals.sleep },
+                { label: "Steps", count: dataSuff.signals.steps },
+                { label: "Proxy", count: dataSuff.signals.proxy },
+              ].map((s) => (
+                <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.surface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>{s.label}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: s.count > 0 ? Colors.primary : Colors.textTertiary }}>{s.count}d</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {readiness && templates.length > 0 && (() => {
           const tierColor = readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "BLUE" ? "#60A5FA" : "#FBBF24";
@@ -967,6 +1074,38 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_500Medium",
     color: Colors.textSecondary,
     marginLeft: 8,
+  },
+  sufficiencyCard: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 12,
+  },
+  rebaselineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.primary + "14",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  rebaselineBtnText: {
+    fontSize: 11,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.primary,
+  },
+  suffGate: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  suffGateText: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textTertiary,
   },
   readinessCard: {
     backgroundColor: Colors.cardBg,

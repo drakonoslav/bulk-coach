@@ -331,6 +331,14 @@ export default function ReportScreen() {
     drivers: string[];
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
+  const [dataSuff, setDataSuff] = useState<{
+    analysisStartDate: string;
+    daysWithData: number;
+    gate7: boolean;
+    gate14: boolean;
+    gate30: boolean;
+    gateLabel: string | null;
+  } | null>(null);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -345,11 +353,12 @@ export default function ReportScreen() {
         const d = new Date(); d.setDate(d.getDate() - 13);
         return d.toISOString().slice(0, 10);
       })();
-      const [proxyRes, confRes, readinessRes, readinessHistRes] = await Promise.all([
+      const [proxyRes, confRes, readinessRes, readinessHistRes, dsRes] = await Promise.all([
         expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL(`/api/readiness/range?from=${histFrom}&to=${today}`, baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/data-sufficiency", baseUrl).toString(), { credentials: "include" }),
       ]);
       if (proxyRes.ok) {
         const rows = await proxyRes.json();
@@ -368,6 +377,7 @@ export default function ReportScreen() {
       if (readinessHistRes.ok) {
         setReadinessHistory(await readinessHistRes.json());
       }
+      if (dsRes.ok) setDataSuff(await dsRes.json());
     } catch {}
   }, [proxyImputed]);
 
@@ -593,6 +603,40 @@ export default function ReportScreen() {
               <Text style={styles.sectionTitle}>Diagnosis</Text>
               <DiagnosisCard diagnosis={diagnosis} />
             </View>
+
+            {dataSuff && (
+              <View style={styles.section}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.cardBg, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: Colors.border }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name={dataSuff.gate30 ? "checkmark-circle" : "time"}
+                      size={16}
+                      color={dataSuff.gate30 ? "#34D399" : dataSuff.gate14 ? "#FBBF24" : "#60A5FA"}
+                    />
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                      Analysis: {dataSuff.daysWithData}d since {dataSuff.analysisStartDate}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {[
+                      { label: "7d", ok: dataSuff.gate7 },
+                      { label: "14d", ok: dataSuff.gate14 },
+                      { label: "30d", ok: dataSuff.gate30 },
+                    ].map((g) => (
+                      <View key={g.label} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                        <Ionicons name={g.ok ? "checkmark-circle" : "ellipse-outline"} size={12} color={g.ok ? "#34D399" : Colors.textTertiary} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: g.ok ? "#34D399" : Colors.textTertiary }}>{g.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+                {dataSuff.gateLabel && (
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#FBBF24", marginTop: 6 }}>
+                    {dataSuff.gateLabel}
+                  </Text>
+                )}
+              </View>
+            )}
 
             {readiness && (
               <View style={styles.section}>
