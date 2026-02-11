@@ -14,12 +14,13 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-11: v4.2 chain recompute - when a snapshot N is inserted between existing snapshots, the next snapshot's derived session is re-derived using the new delta, gap-fill is re-run for the range, and proxy scores are recomputed; applies to all paths (baseline, baseline_seed, mid-chain)
 - 2026-02-11: v4.2.1 buffered recompute range - recompute uses min(sessionDate, next.sessionDate) - 30d through max + 1d for proper imputed gap re-evaluation and proxy rolling series; server-side future date validation on snapshot upload
 - 2026-02-11: v5 backup system - full backup export/import with versioned JSON; merge/replace modes; dry-run preview; schema-safe upserts; recompute-after-restore; Backup & Restore UI in Vitals tab with export (share sheet) and import (document picker with dry-run confirmation)
+- 2026-02-11: v6 readiness system - recovery-gated training intensity with readiness score (0-100), three tiers (GREEN/YELLOW/RED), HRV/RHR/sleep/proxy weighted deltas (7d vs 28d baselines), confidence grading, training template system (Push/Pull/Legs with per-tier exercise labels), readiness card on Report+Plan tabs, readiness badge on Log screen, readiness trend chart, auto-recompute triggers on daily log/erection upload/Fitbit import
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
 - **Backend**: Express server on port 5000 with Postgres (Neon) via pg pool
 - **Storage**: Postgres for all data persistence, AsyncStorage for baseline only
-- **Engine**: `lib/coaching-engine.ts` - coaching logic; `server/erection-engine.ts` - snapshot parsing, delta computation, gap-fill imputation, androgen proxy calculation
+- **Engine**: `lib/coaching-engine.ts` - coaching logic; `server/erection-engine.ts` - snapshot parsing, delta computation, gap-fill imputation, androgen proxy calculation; `server/readiness-engine.ts` - readiness score computation, training template management
 - **Backup**: `server/backup.ts` - versioned export/import with merge/replace modes, dry-run, schema migration safety, full recompute after restore
 - **Data**: `lib/entry-storage.ts` - API-backed CRUD for daily entries
 - **Design**: Dark theme with teal primary (#00D4AA), purple accent (#8B5CF6) for vitals, Rubik font family
@@ -33,11 +34,25 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - Dashboard: lean mass trend card (purple #A78BFA), BF% stat card (pink #F472B6), BF% pills on entries
 - Report: lean gain analysis section with color-coded ratio gauge, rolling ratio trend chart, and lean mass trend chart
 - Daily Checklist (Plan tab): locked shake-time template with all 12 meal/activity anchors
+- Training readiness card on Plan tab: score, tier badge, progress bar, per-split exercise recommendations, signal drivers
 - 7-day rolling averages and weight trend visualization
 - Weekly calorie adjustment recommendations (+0.25-0.5 lb/week target)
 - Ingredient-level adjustment suggestions (MCT first, whey last)
 - Diet vs Training diagnosis heuristics with deload week suppression and BIA noise detection
 - Cardio fuel guardrail: >45min cardio triggers +25g carb suggestion (dextrin preferred)
+- Readiness score: 0-100 composite from HRV (+35%), RHR (-25%), sleep (+20%), proxy (+20%) deltas vs 28d baseline
+- Three training tiers: GREEN (>=65, heavy compounds), YELLOW (35-64, normal hypertrophy), RED (<35, isolation/pump)
+- Readiness badge on Log screen with tier color and score
+- Readiness card on Report tab with trend chart (14d)
+
+## Readiness System
+- **Weights**: HRV 35%, RHR 25% (inverted), Sleep 20%, Androgen Proxy 20%
+- **Baselines**: 7d rolling vs 28d rolling for each signal
+- **Tiers**: GREEN >= 65, YELLOW 35-64, RED < 35
+- **Confidence**: Based on measured erection sessions in last 7d (High >= 5, Med >= 3, Low >= 1, None = 0)
+- **Training Template**: Default Push/Pull/Legs with high/med/low intensity labels per session
+- **Recompute Triggers**: Daily log upsert, erection snapshot upload, Fitbit CSV import
+- **DB Tables**: readiness_daily (date, score, tier, confidence, signal values, drivers), training_template (type, sessions JSON)
 
 ## Baseline Plan (locked)
 - 2695 kcal | P173.9g C330.9g F54.4g

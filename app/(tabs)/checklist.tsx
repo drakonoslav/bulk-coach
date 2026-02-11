@@ -14,6 +14,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
+import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
 import { getApiUrl } from "@/lib/query-client";
@@ -72,6 +73,16 @@ export default function ChecklistScreen() {
     dateRange: { start: string; end: string } | null;
   } | null>(null);
   const [importHistory, setImportHistory] = useState<ImportHistoryItem[]>([]);
+  const [readiness, setReadiness] = useState<{
+    readinessScore: number;
+    readinessTier: string;
+    confidenceGrade: string;
+    drivers: string[];
+  } | null>(null);
+  const [template, setTemplate] = useState<{
+    templateType: string;
+    sessions: Array<{ name: string; highLabel: string; medLabel: string; lowLabel: string }>;
+  } | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -85,9 +96,23 @@ export default function ChecklistScreen() {
     } catch {}
   }, []);
 
+  const loadReadinessAndTemplate = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const today = new Date().toISOString().slice(0, 10);
+      const [rRes, tRes] = await Promise.all([
+        expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/training/template", baseUrl).toString(), { credentials: "include" }),
+      ]);
+      if (rRes.ok) setReadiness(await rRes.json());
+      if (tRes.ok) setTemplate(await tRes.json());
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadHistory();
+      loadReadinessAndTemplate();
     }, [])
   );
 
@@ -192,6 +217,77 @@ export default function ChecklistScreen() {
             <Text style={styles.macroLabel}>fat</Text>
           </View>
         </View>
+
+        {readiness && template && (
+          <View style={styles.readinessCard}>
+            <View style={styles.readinessHeader}>
+              <View style={[styles.readinessIcon, {
+                backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39918" : readiness.readinessTier === "RED" ? "#EF444418" : "#FBBF2418",
+              }]}>
+                <Ionicons
+                  name={readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "RED" ? "bed" : "pause-circle"}
+                  size={18}
+                  color={readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24"}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.readinessTitle}>Training Readiness</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={[styles.readinessScore, {
+                    color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                  }]}>
+                    {readiness.readinessScore}
+                  </Text>
+                  <View style={[styles.readinessTierBadge, {
+                    backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39918" : readiness.readinessTier === "RED" ? "#EF444418" : "#FBBF2418",
+                  }]}>
+                    <Text style={[styles.readinessTierText, {
+                      color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                    }]}>
+                      {readiness.readinessTier}
+                    </Text>
+                  </View>
+                  {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
+                    <Text style={styles.readinessLowConf}>LOW CONF</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.readinessBar}>
+              <View style={[styles.readinessBarFill, {
+                width: `${readiness.readinessScore}%`,
+                backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+              }]} />
+            </View>
+
+            <View style={styles.readinessSessions}>
+              <Text style={styles.readinessSessionsLabel}>
+                {readiness.readinessTier === "GREEN" ? "Go Heavy" : readiness.readinessTier === "RED" ? "Recovery Day" : "Normal Training"}
+              </Text>
+              {template.sessions.map((s, i) => {
+                const label = readiness.readinessTier === "GREEN" ? s.highLabel : readiness.readinessTier === "RED" ? s.lowLabel : s.medLabel;
+                return (
+                  <View key={i} style={styles.readinessSessionRow}>
+                    <View style={[styles.readinessSessionDot, {
+                      backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                    }]} />
+                    <Text style={styles.readinessSessionName}>{s.name}</Text>
+                    <Text style={styles.readinessSessionLabel}>{label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {readiness.drivers.length > 0 && (
+              <View style={styles.readinessDrivers}>
+                {readiness.drivers.slice(0, 3).map((d, i) => (
+                  <Text key={i} style={styles.readinessDriverText}>{d}</Text>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.timeline}>
           {DAILY_CHECKLIST.map((item, i) => (
@@ -604,5 +700,113 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_500Medium",
     color: Colors.textSecondary,
     marginLeft: 8,
+  },
+  readinessCard: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 20,
+  },
+  readinessHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  readinessIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readinessTitle: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  readinessScore: {
+    fontSize: 24,
+    fontFamily: "Rubik_700Bold",
+  },
+  readinessTierBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  readinessTierText: {
+    fontSize: 11,
+    fontFamily: "Rubik_700Bold",
+    letterSpacing: 0.5,
+  },
+  readinessLowConf: {
+    fontSize: 9,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
+    letterSpacing: 0.3,
+  },
+  readinessBar: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.surface,
+    marginBottom: 14,
+    overflow: "hidden" as const,
+  },
+  readinessBarFill: {
+    height: 5,
+    borderRadius: 3,
+  },
+  readinessSessions: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+  },
+  readinessSessionsLabel: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  readinessSessionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 5,
+  },
+  readinessSessionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  readinessSessionName: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.text,
+    width: 44,
+  },
+  readinessSessionLabel: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  readinessDrivers: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 8,
+    gap: 3,
+  },
+  readinessDriverText: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
   },
 });
