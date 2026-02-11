@@ -39,7 +39,7 @@ interface ProxyRow {
 interface SnapshotRow {
   id: string;
   sessionDate: string;
-  numberOfRecordings: number;
+  totalNights: number;
   totalNocturnalErections: number;
   totalNocturnalDurationSeconds: number;
 }
@@ -191,7 +191,7 @@ export default function VitalsScreen() {
         setSnapshots(rows.map((r: any) => ({
           id: r.id,
           sessionDate: r.session_date,
-          numberOfRecordings: Number(r.number_of_recordings),
+          totalNights: Number(r.total_nights),
           totalNocturnalErections: Number(r.total_nocturnal_erections),
           totalNocturnalDurationSeconds: Number(r.total_nocturnal_duration_seconds),
         })));
@@ -390,7 +390,7 @@ export default function VitalsScreen() {
             {snapshots.map((snap, idx) => (
               <View key={snap.id} style={[styles.snapRow, idx > 0 && styles.snapRowBorder]}>
                 <View style={styles.snapLeft}>
-                  <Text style={styles.snapRecCount}>#{snap.numberOfRecordings}</Text>
+                  <Text style={styles.snapRecCount}>#{snap.totalNights}</Text>
                   <Text style={styles.snapDate}>{snap.sessionDate}</Text>
                 </View>
                 <View style={styles.snapRight}>
