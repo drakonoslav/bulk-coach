@@ -1,0 +1,54 @@
+Goal: I upload a cumulative summary file each day (or whenever I have it). The app should derive the “new night” metrics by subtracting the previous snapshot totals. If days are missing, the system should keep the calendar continuous by optionally creating imputed (guessed) rows, but clearly marking them as imputed so they don’t contaminate real trends.
+
+1) Two classes of data
+	•	Measured (quantified) = derived from an uploaded file snapshot delta
+	•	Imputed (estimated) = created only to fill missing days; must be flagged
+
+2) What happens on each upload
+
+When user uploads a file and picks a session_date:
+	1.	Parse the new snapshot S_new (cumulative totals + number_of_recordings).
+	2.	Find the most recent prior snapshot S_prev with lower or equal number_of_recordings.
+	3.	Compute delta for the new recording(s):
+	•	delta_total = S_new.total_X - S_prev.total_X
+	4.	If S_new.number_of_recordings - S_prev.number_of_recordings == 1:
+	•	Create/Upsert a Measured erection_session row for session_date using the delta.
+	5.	If it’s > 1:
+	•	Default behavior: create a single Measured row on session_date and mark it multi_night_combined=true
+	•	Optional advanced: allow user to allocate across multiple dates.
+
+3) Non-consecutive uploads (backfill)
+
+Uploads can arrive out of order. The user may upload day 3 on Feb 14, and set session_date to Feb 13, etc. The database should allow backfilling any date.
+
+After any upload, run recompute for:
+	•	min(affected_dates) .. today
+
+4) Missing-day “gap fill” behavior (explicit imputation)
+
+If there are calendar gaps between measured days:
+	•	Create rows for missing dates as Imputed with:
+	•	is_imputed=true
+	•	imputed_method = "linear_interpolation" (or "carry_forward")
+	•	imputed_confidence = low
+	•	Imputed values should be derived only between two measured anchors (e.g., between measured day 2 and measured day 3).
+	•	Never impute beyond the last measured day (no forecasting), unless user explicitly toggles “extend last known average.”
+
+Important: dashboards/trends should default to using Measured only, but optionally let user “include imputed” for smooth visualization.
+
+5) UI requirements
+	•	Each day shows a badge:
+	•	✅ Measured (file-backed)
+	•	⚠️ Imputed (estimated)
+	•	⏳ Missing (no data)
+	•	Provide a toggle:
+	•	“Show imputed values on charts” (on/off)
+	•	Import screen shows:
+	•	prior snapshot recordings count
+	•	new snapshot recordings count
+	•	delta computed
+	•	user picks session_date
+
+6) Why this matters
+
+This keeps the dataset continuous for analysis/visualization, but preserves scientific integrity: the model can filter to measured-only when correlating with testosterone/cortisol proxies.
