@@ -446,15 +446,15 @@ export default function ChecklistScreen() {
                     <Ionicons name="time" size={20} color="#60A5FA" />
                   </View>
                   <View>
-                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
                       Training Readiness
                     </Text>
-                    <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: "#60A5FA" }}>
+                    <Text style={{ fontSize: 20, fontFamily: "Rubik_600SemiBold", color: "#60A5FA" }}>
                       Baseline Building...
                     </Text>
                   </View>
                 </View>
-                <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+                <Text style={{ fontSize: 14, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
                   Need at least 7 days of data in the analysis window to compute readiness. Currently {readiness.daysInWindow ?? 0} days.
                 </Text>
               </View>
