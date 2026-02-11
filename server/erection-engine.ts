@@ -276,6 +276,7 @@ export async function importSnapshotAndDerive(
   const dd = sNew.total_duration_sec - sPrev.total_duration_sec;
 
   if (dn <= 0 || de < 0 || dd < 0) {
+    await pool.query(`DELETE FROM erection_summary_snapshots WHERE id = $1`, [sNew.id]);
     throw new Error(
       `Snapshot not cumulative / ordering invalid: dn=${dn}, de=${de}, dd=${dd}`
     );
