@@ -77,6 +77,45 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS energy_burned_kcal INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS resting_hr INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS hrv INTEGER`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS erection_summary_snapshots (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sha256 TEXT UNIQUE NOT NULL,
+      session_date DATE NOT NULL,
+      number_of_recordings INTEGER NOT NULL,
+      total_nocturnal_erections INTEGER NOT NULL DEFAULT 0,
+      total_nocturnal_duration_seconds INTEGER NOT NULL DEFAULT 0,
+      original_filename TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS erection_sessions (
+      date DATE PRIMARY KEY,
+      nocturnal_erections INTEGER,
+      nocturnal_duration_seconds INTEGER,
+      snapshot_id UUID,
+      is_imputed BOOLEAN NOT NULL DEFAULT FALSE,
+      imputed_method TEXT,
+      imputed_source_date_start DATE,
+      imputed_source_date_end DATE,
+      multi_night_combined BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS androgen_proxy_daily (
+      date DATE NOT NULL,
+      proxy_score NUMERIC,
+      proxy_7d_avg NUMERIC,
+      computed_with_imputed BOOLEAN NOT NULL DEFAULT FALSE,
+      computed_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (date, computed_with_imputed)
+    );
+  `);
 }
 
 export { pool };

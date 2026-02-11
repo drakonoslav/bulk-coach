@@ -4,6 +4,14 @@ import multer from "multer";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
+import {
+  parseSnapshotFile,
+  importSnapshotAndDerive,
+  getSnapshots,
+  getSessions,
+  getProxyData,
+  getSessionBadges,
+} from "./erection-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -192,6 +200,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(rows.map(snakeToCamel));
     } catch (err: unknown) {
       console.error("import history error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/erection/upload", upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const sessionDate = req.body?.session_date;
+      if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
+        return res.status(400).json({ error: "session_date required (YYYY-MM-DD)" });
+      }
+
+      const parsed = parseSnapshotFile(req.file.buffer, req.file.originalname);
+      const result = await importSnapshotAndDerive(parsed, sessionDate, req.file.originalname);
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("erection upload error:", err);
+      const message = err instanceof Error ? err.message : "Upload failed";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/erection/snapshots", async (_req: Request, res: Response) => {
+    try {
+      const snapshots = await getSnapshots();
+      res.json(snapshots);
+    } catch (err: unknown) {
+      console.error("snapshots error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/erection/sessions", async (req: Request, res: Response) => {
+    try {
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+      const includeImputed = req.query.include_imputed !== "false";
+      const sessions = await getSessions(from, to, includeImputed);
+      res.json(sessions.map(snakeToCamel));
+    } catch (err: unknown) {
+      console.error("sessions error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/erection/proxy", async (req: Request, res: Response) => {
+    try {
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+      const includeImputed = req.query.include_imputed === "true";
+      const data = await getProxyData(from, to, includeImputed);
+      res.json(data.map(snakeToCamel));
+    } catch (err: unknown) {
+      console.error("proxy error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/erection/badges", async (_req: Request, res: Response) => {
+    try {
+      const badges = await getSessionBadges();
+      res.json(badges);
+    } catch (err: unknown) {
+      console.error("badges error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
