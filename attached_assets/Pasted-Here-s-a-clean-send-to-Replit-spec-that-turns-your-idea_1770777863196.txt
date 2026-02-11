@@ -1,0 +1,175 @@
+Here’s a clean “send to Replit” spec that turns your idea into an implementable feature without making the app neurotic or overcomplicated.
+
+⸻
+
+Feature: Recovery-Gated Training Intensity (not muscle-group waves)
+
+Goal
+
+Implement a simple decision system:
+
+When readiness is high → schedule/execute high neural-demand sessions.
+When readiness is low → shift to low neural-demand (isolation/volume/technique) without changing frequency.
+
+This is not a “monthly wave” system. It’s intensity allocation based on recovery signals.
+
+⸻
+
+Inputs (already in app / coming from Fitbit)
+
+Daily signals (with rolling baselines):
+	1.	HRV (today + 7d avg + 28d baseline)
+	2.	Resting HR (today + 7d avg + 28d baseline)
+	3.	Sleep minutes (last night + 7d avg + 28d baseline)
+	4.	Erection proxy (measured-only default):
+	•	today + 7d avg + 28d baseline
+	5.	Data Confidence (already built):
+	•	7/14/30 window grade + measured count requirement
+
+⸻
+
+Derived Metric: Readiness Score (0–100) + Tier
+
+Compute a “Readiness Score” once per day (backend recommended), with a tier:
+	•	GREEN = High readiness
+	•	YELLOW = Normal / proceed
+	•	RED = Low readiness (reduce neural demand)
+
+Baselines
+
+Use baselines that are stable:
+	•	baseline = 28-day rolling median (or mean if easier)
+	•	short-term = 7-day rolling mean
+
+Normalization (z-like)
+
+For each metric compute a normalized delta:
+	•	HRV_delta = (HRV_7d_avg − HRV_28d_baseline) / HRV_28d_baseline
+	•	RHR_delta = (RHR_7d_avg − RHR_28d_baseline) / RHR_28d_baseline
+	•	Sleep_delta = (Sleep_7d_avg − Sleep_28d_baseline) / Sleep_28d_baseline
+	•	Proxy_delta = (Proxy_7d_avg − Proxy_28d_baseline) / Proxy_28d_baseline
+
+Scoring weights (simple v1)
+	•	HRV: 35%
+	•	RHR: 25% (note: higher RHR is worse)
+	•	Sleep: 20%
+	•	Erection proxy: 20%
+
+Score formula:
+	•	Start at 50.
+	•	Add/subtract points by deltas.
+
+Example mapping:
+	•	HRV: +35 * clamp(HRV_delta / 0.10, -1, +1)
+	•	RHR: -25 * clamp(RHR_delta / 0.05, -1, +1)
+	•	Sleep: +20 * clamp(Sleep_delta / 0.10, -1, +1)
+	•	Proxy: +20 * clamp(Proxy_delta / 0.10, -1, +1)
+
+Clamp final score 0–100.
+
+Confidence gating (critical)
+
+If confidence is Low/None in last 7 days OR measured nights < 4:
+	•	still compute score
+	•	but label tier as “LOW CONFIDENCE” and do NOT trigger strong training recommendations.
+
+⸻
+
+Output: Training Intensity Recommendation (what user sees)
+
+Add a daily card to Training/Report:
+
+“Today’s Training Intensity”
+	•	Tier: GREEN / YELLOW / RED
+	•	Score: 0–100
+	•	Confidence: High/Med/Low/None
+	•	Which signals drove it (2–3 bullets)
+
+Example:
+	•	“HRV up +8% vs baseline”
+	•	“Sleep down -12% vs baseline”
+	•	“Proxy stable (measured-only)”
+
+⸻
+
+Decision Rule: Don’t change frequency; change neural demand
+
+The app should not rearrange weekly split frequency. It should adjust intensity type for today.
+
+User chooses a base split template:
+
+Two template types:
+
+Type A (simple):
+	•	Push / Pull / Legs
+
+Type B (region specific):
+	•	Arms (bi/tri/forearms)
+	•	Delts
+	•	Legs (quads/hams/calves)
+	•	Torso (core/abs)
+	•	Posterior (lats/traps/etc)
+
+Each session in a template gets a “Neural Demand Level”
+
+Add a tag per session option:
+	•	High: heavy compound / low rep / CNS-heavy
+	•	Medium: normal hypertrophy
+	•	Low: isolation/volume/technique/deload
+
+Examples:
+	•	High: Squat / Deadlift / Heavy RDL / Heavy Press
+	•	Low: machines, isolation, pump work, technique work, light cardio
+
+Mapping readiness to session intensity
+	•	GREEN → allow High demand today
+	•	YELLOW → run Medium (normal plan)
+	•	RED → swap to Low demand variant for the same muscle group
+
+So if user planned “Legs”:
+	•	GREEN: heavy legs
+	•	RED: leg pump / machines / technique + reduce axial loading
+
+No frequency changes. Just intensity variant.
+
+⸻
+
+API + DB (minimal)
+
+Add a computed table or cache:
+
+readiness_daily
+	•	date (pk)
+	•	readiness_score
+	•	readiness_tier (GREEN/YELLOW/RED)
+	•	confidence_grade
+	•	hrv_delta, rhr_delta, sleep_delta, proxy_delta
+	•	notes (json) drivers
+
+API:
+	•	GET /api/readiness?date=YYYY-MM-DD
+	•	returned object used by UI card
+
+Recompute whenever:
+	•	daily log changes
+	•	Fitbit import updates a day
+	•	erection sessions update a day
+
+⸻
+
+UI Changes
+	1.	Add “Readiness” card to Report (and optionally Log)
+	2.	On the training screen, when user selects today’s session:
+	•	show “Recommended intensity: High/Medium/Low”
+	•	offer a one-tap “Switch to Low Demand Variant” if RED
+
+⸻
+
+Non-goals (avoid noise)
+	•	No “male monthly cycles”
+	•	No day-by-day overreaction: use 7-day averages + baselines
+	•	Coaching decisions use measured-only by default (proxy)
+
+⸻
+
+If you want, I can also give you a shorter “two-paragraph message” version to send Replit, but the above is the full implementable spec with thresholds, weights, and how to wire it into your existing recompute/caching setup.

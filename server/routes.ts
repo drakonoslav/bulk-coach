@@ -215,6 +215,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "session_date required (YYYY-MM-DD)" });
       }
 
+      const today = new Date().toISOString().slice(0, 10);
+      if (sessionDate > today) {
+        return res.status(400).json({ error: "sessionDate cannot be in the future" });
+      }
+
       const parsed = parseSnapshotFile(req.file.buffer, req.file.originalname);
       const result = await importSnapshotAndDerive(parsed, sessionDate, req.file.originalname);
       res.json(result);

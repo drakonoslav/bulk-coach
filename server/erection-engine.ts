@@ -406,8 +406,8 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
 async function recomputeGapsAndProxy(sessionDateOrMin: string, sessionDateMax?: string): Promise<void> {
   const minD = sessionDateOrMin;
   const maxD = sessionDateMax ?? sessionDateOrMin;
-  const from = addDays(minD, -30);
-  const to = addDays(maxD, 30);
+  const from = addDays(minD < maxD ? minD : maxD, -30);
+  const to = addDays(minD > maxD ? minD : maxD, 1);
 
   await recomputeAndrogenProxy(from, to, false);
   await recomputeAndrogenProxy(from, to, true);
