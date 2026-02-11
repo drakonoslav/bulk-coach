@@ -15,6 +15,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-11: v4.2.1 buffered recompute range - recompute uses min(sessionDate, next.sessionDate) - 30d through max + 1d for proper imputed gap re-evaluation and proxy rolling series; server-side future date validation on snapshot upload
 - 2026-02-11: v5 backup system - full backup export/import with versioned JSON; merge/replace modes; dry-run preview; schema-safe upserts; recompute-after-restore; Backup & Restore UI in Vitals tab with export (share sheet) and import (document picker with dry-run confirmation)
 - 2026-02-11: v6 readiness system - recovery-gated training intensity with readiness score (0-100), three tiers (GREEN/YELLOW/RED), HRV/RHR/sleep/proxy weighted deltas (7d vs 28d baselines), confidence grading, training template system (Push/Pull/Legs with per-tier exercise labels), readiness card on Report+Plan tabs, readiness badge on Log screen, readiness trend chart, auto-recompute triggers on daily log/erection upload/Fitbit import
+- 2026-02-11: v7 dual-slider autoregulation - rewrote readiness engine with subscores centered at 50, new signal weights (HRV 30%, RHR 20%, Sleep 20%, Proxy 20%), confidence dampener (High 1.0, Med 0.9, Low 0.75, None 0.6), cortisol suppression flag, dual sliders (type_lean and exercise_bias), new tiers GREEN>=75/YELLOW 60-74/BLUE<60 (replacing RED), Type A+B training splits, frontend updated with slider visualizations and cortisol banner
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
@@ -34,23 +35,27 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - Dashboard: lean mass trend card (purple #A78BFA), BF% stat card (pink #F472B6), BF% pills on entries
 - Report: lean gain analysis section with color-coded ratio gauge, rolling ratio trend chart, and lean mass trend chart
 - Daily Checklist (Plan tab): locked shake-time template with all 12 meal/activity anchors
-- Training readiness card on Plan tab: score, tier badge, progress bar, per-split exercise recommendations, signal drivers
+- Training readiness card on Plan tab: score, tier badge, progress bar, dual sliders (type_lean, exercise_bias), cortisol flag, per-split exercise recommendations, signal drivers
 - 7-day rolling averages and weight trend visualization
 - Weekly calorie adjustment recommendations (+0.25-0.5 lb/week target)
 - Ingredient-level adjustment suggestions (MCT first, whey last)
 - Diet vs Training diagnosis heuristics with deload week suppression and BIA noise detection
 - Cardio fuel guardrail: >45min cardio triggers +25g carb suggestion (dextrin preferred)
-- Readiness score: 0-100 composite from HRV (+35%), RHR (-25%), sleep (+20%), proxy (+20%) deltas vs 28d baseline
-- Three training tiers: GREEN (>=65, heavy compounds), YELLOW (35-64, normal hypertrophy), RED (<35, isolation/pump)
+- Readiness score: 0-100 composite from HRV (+30%), RHR (-20%), sleep (+20%), proxy (+20%) deltas vs 28d baseline, confidence dampened
+- Three training tiers: GREEN (>=75, heavy compounds), YELLOW (60-74, normal hypertrophy), BLUE (<60, deload/pump)
+- Dual sliders: type_lean (hypertrophy↔strength) and exercise_bias (isolation↔compound) derived from readiness score
+- Cortisol suppression flag: caps readiness at 74 and forces exercise_bias ≤ 0 when 3+ signals degraded
 - Readiness badge on Log screen with tier color and score
-- Readiness card on Report tab with trend chart (14d)
+- Readiness card on Report tab with trend chart (14d), dual sliders, cortisol flag
 
 ## Readiness System
-- **Weights**: HRV 35%, RHR 25% (inverted), Sleep 20%, Androgen Proxy 20%
-- **Baselines**: 7d rolling vs 28d rolling for each signal
-- **Tiers**: GREEN >= 65, YELLOW 35-64, RED < 35
-- **Confidence**: Based on measured erection sessions in last 7d (High >= 5, Med >= 3, Low >= 1, None = 0)
-- **Training Template**: Default Push/Pull/Legs with high/med/low intensity labels per session
+- **Weights**: HRV 30%, RHR 20% (inverted), Sleep 20%, Androgen Proxy 20%
+- **Baselines**: 7d rolling vs 28d rolling for each signal, subscores centered at 50
+- **Tiers**: GREEN >= 75, YELLOW 60-74, BLUE < 60
+- **Confidence**: Dampener multiplier (High 1.0, Med 0.9, Low 0.75, None 0.6) applied to raw score
+- **Dual Sliders**: type_lean = (readiness - 60) / 20, exercise_bias = (readiness - 65) / 20, both clamped [-1, 1]
+- **Cortisol Flag**: Triggers when confidence ≠ None and 3+ signals degraded; caps readiness at 74, forces exercise_bias ≤ 0
+- **Training Templates**: Type A (Push/Pull/Legs) and Type B (Arms/Delts/Legs/Torso/Posterior) with per-tier exercise labels
 - **Recompute Triggers**: Daily log upsert, erection snapshot upload, Fitbit CSV import
 - **DB Tables**: readiness_daily (date, score, tier, confidence, signal values, drivers), training_template (type, sessions JSON)
 

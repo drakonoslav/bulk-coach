@@ -111,7 +111,12 @@ export default function ChecklistScreen() {
       if (rRes.ok) setReadiness(await rRes.json());
       if (tRes.ok) {
         const tData = await tRes.json();
-        setTemplates(Array.isArray(tData) ? tData : [tData]);
+        if (Array.isArray(tData)) {
+          setTemplates(tData);
+        } else if (tData && typeof tData === "object") {
+          const arr = Object.values(tData).filter((v: any) => v && v.sessions);
+          setTemplates(arr as any);
+        }
       }
     } catch {}
   }, []);
