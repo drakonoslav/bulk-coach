@@ -9,13 +9,15 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-10: v2 features - Daily Checklist tab, Deload Week flag, Cardio Fuel Guardrail
 - 2026-02-10: v3 body composition - BF% inputs (3 AM + optional 3 PM readings with auto-averaging), lean mass/fat mass auto-calculation, lean gain ratio (14d), BIA noise detection in diagnosis
 - 2026-02-10: v3.1 rolling lean gain ratio - rolling 14-day lean gain ratio series with color-coded trend chart in Report
+- 2026-02-11: v4 erection session tracking - Vitals tab with cumulative snapshot uploads, delta computation, gap-fill imputation (linear interpolation), androgen proxy calculation with 7d rolling averages, badges on Log screen, proxy chart on Report tab with imputed toggle
 
 ## Architecture
-- **Frontend**: Expo Router with file-based routing, 4-tab layout (Dashboard, Log, Plan, Report)
-- **Storage**: AsyncStorage for local data persistence
-- **Engine**: `lib/coaching-engine.ts` - all coaching logic (rolling averages, calorie suggestions, macro-safe adjustments, diet vs training diagnosis, cardio fuel notes, deload week handling)
-- **Data**: `lib/entry-storage.ts` - AsyncStorage CRUD for daily entries
-- **Design**: Dark theme with teal primary (#00D4AA), Rubik font family
+- **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
+- **Backend**: Express server on port 5000 with Postgres (Neon) via pg pool
+- **Storage**: Postgres for all data persistence, AsyncStorage for baseline only
+- **Engine**: `lib/coaching-engine.ts` - coaching logic; `server/erection-engine.ts` - snapshot parsing, delta computation, gap-fill imputation, androgen proxy calculation
+- **Data**: `lib/entry-storage.ts` - API-backed CRUD for daily entries
+- **Design**: Dark theme with teal primary (#00D4AA), purple accent (#8B5CF6) for vitals, Rubik font family
 
 ## Key Features
 - Date navigation on Log screen: prev/next day arrows, "Today"/"Yesterday" labels, "Logged" badge, "Jump to Today" chip, edit past entries
