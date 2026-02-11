@@ -247,4 +247,8 @@ function setupErrorHandler(app: express.Application) {
       log(`express server serving on port ${port}`);
     },
   );
+
+  server.requestTimeout = 300000;
+  server.headersTimeout = 300000;
+  server.keepAliveTimeout = 120000;
 })();

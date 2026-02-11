@@ -231,6 +231,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/import/fitbit_takeout", upload.single("file"), async (req: Request, res: Response) => {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });

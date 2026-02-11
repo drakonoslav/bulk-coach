@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
@@ -233,13 +232,15 @@ export default function ChecklistScreen() {
           Alert.alert("Duplicate File", "This file has already been imported.");
         }
       } else {
-        const file = new File(asset.uri);
-        formData.append("file", file as any);
+        formData.append("file", {
+          uri: asset.uri,
+          name: asset.name || "import.csv",
+          type: asset.mimeType || "text/csv",
+        } as any);
 
-        const uploadRes = await expoFetch(url.toString(), {
+        const uploadRes = await globalThis.fetch(url.toString(), {
           method: "POST",
           body: formData,
-          credentials: "include",
         });
         const data = await uploadRes.json();
         setLastResult(data);
@@ -250,9 +251,10 @@ export default function ChecklistScreen() {
 
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await loadHistory();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Import error:", err);
-      Alert.alert("Import Error", "Something went wrong. Make sure you selected a valid CSV file.");
+      const msg = err?.message || "Unknown error";
+      Alert.alert("Import Error", `Upload failed: ${msg}`);
     } finally {
       setUploading(false);
     }
@@ -277,42 +279,49 @@ export default function ChecklistScreen() {
 
       const formData = new FormData();
 
+      let uploadRes: Response;
       if (Platform.OS === "web") {
         const response = await globalThis.fetch(asset.uri);
         const blob = await response.blob();
         formData.append("file", blob, asset.name || "takeout.zip");
 
-        const uploadRes = await globalThis.fetch(url.toString(), {
+        uploadRes = await globalThis.fetch(url.toString(), {
           method: "POST",
           body: formData,
           credentials: "include",
         });
-        const data = await uploadRes.json();
-        setLastTakeoutResult(data);
-        if (data.status === "duplicate") {
-          Alert.alert("Duplicate File", "This ZIP has already been imported.");
-        }
       } else {
-        const file = new File(asset.uri);
-        formData.append("file", file as any);
+        formData.append("file", {
+          uri: asset.uri,
+          name: asset.name || "takeout.zip",
+          type: "application/zip",
+        } as any);
 
-        const uploadRes = await expoFetch(url.toString(), {
+        uploadRes = await globalThis.fetch(url.toString(), {
           method: "POST",
           body: formData,
-          credentials: "include",
         });
-        const data = await uploadRes.json();
-        setLastTakeoutResult(data);
-        if (data.status === "duplicate") {
-          Alert.alert("Duplicate File", "This ZIP has already been imported.");
-        }
+      }
+
+      if (!uploadRes.ok) {
+        let errMsg = `Server error ${uploadRes.status}`;
+        try { const j = await uploadRes.json(); errMsg = j.error || errMsg; } catch {}
+        Alert.alert("Import Error", errMsg);
+        return;
+      }
+
+      const data = await uploadRes.json();
+      setLastTakeoutResult(data);
+      if (data.status === "duplicate") {
+        Alert.alert("Duplicate File", "This ZIP has already been imported.");
       }
 
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await loadHistory();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Takeout import error:", err);
-      Alert.alert("Import Error", "Something went wrong. Make sure you selected a valid Google Takeout ZIP file.");
+      const msg = err?.message || "Unknown error";
+      Alert.alert("Import Error", `Upload failed: ${msg}`);
     } finally {
       setUploadingTakeout(false);
     }
