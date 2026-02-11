@@ -12,12 +12,15 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-11: v4 erection session tracking - Vitals tab with cumulative snapshot uploads, delta computation, gap-fill imputation (linear interpolation), androgen proxy calculation with 7d rolling averages, badges on Log screen, proxy chart on Report tab with imputed toggle
 - 2026-02-11: v4.1 data confidence - confidence endpoint with 7d/14d/30d rolling windows, grading (High/Med/Low/None), measured/imputed/multi-night counts; confidence strips on Vitals and Report tabs; snapshot cleanup on invalid delta; measured-only defaults audited
 - 2026-02-11: v4.2 chain recompute - when a snapshot N is inserted between existing snapshots, the next snapshot's derived session is re-derived using the new delta, gap-fill is re-run for the range, and proxy scores are recomputed; applies to all paths (baseline, baseline_seed, mid-chain)
+- 2026-02-11: v4.2.1 buffered recompute range - recompute uses min(sessionDate, next.sessionDate) - 30d through max + 1d for proper imputed gap re-evaluation and proxy rolling series; server-side future date validation on snapshot upload
+- 2026-02-11: v5 backup system - full backup export/import with versioned JSON; merge/replace modes; dry-run preview; schema-safe upserts; recompute-after-restore; Backup & Restore UI in Vitals tab with export (share sheet) and import (document picker with dry-run confirmation)
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
 - **Backend**: Express server on port 5000 with Postgres (Neon) via pg pool
 - **Storage**: Postgres for all data persistence, AsyncStorage for baseline only
 - **Engine**: `lib/coaching-engine.ts` - coaching logic; `server/erection-engine.ts` - snapshot parsing, delta computation, gap-fill imputation, androgen proxy calculation
+- **Backup**: `server/backup.ts` - versioned export/import with merge/replace modes, dry-run, schema migration safety, full recompute after restore
 - **Data**: `lib/entry-storage.ts` - API-backed CRUD for daily entries
 - **Design**: Dark theme with teal primary (#00D4AA), purple accent (#8B5CF6) for vitals, Rubik font family
 
