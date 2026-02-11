@@ -10,6 +10,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-10: v3 body composition - BF% inputs (3 AM + optional 3 PM readings with auto-averaging), lean mass/fat mass auto-calculation, lean gain ratio (14d), BIA noise detection in diagnosis
 - 2026-02-10: v3.1 rolling lean gain ratio - rolling 14-day lean gain ratio series with color-coded trend chart in Report
 - 2026-02-11: v4 erection session tracking - Vitals tab with cumulative snapshot uploads, delta computation, gap-fill imputation (linear interpolation), androgen proxy calculation with 7d rolling averages, badges on Log screen, proxy chart on Report tab with imputed toggle
+- 2026-02-11: v4.1 data confidence - confidence endpoint with 7d/14d/30d rolling windows, grading (High/Med/Low/None), measured/imputed/multi-night counts; confidence strips on Vitals and Report tabs; snapshot cleanup on invalid delta; measured-only defaults audited
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
