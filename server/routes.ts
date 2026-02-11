@@ -630,6 +630,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/sanity-check", async (req: Request, res: Response) => {
+    try {
+      const date = req.query.date as string;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
+      }
+
+      const { rows: logRows } = await pool.query(
+        `SELECT day, steps, cardio_min, active_zone_minutes, sleep_minutes,
+                energy_burned_kcal, resting_hr, hrv,
+                zone1_min, zone2_min, zone3_min, below_zone1_min,
+                morning_weight_lb, waist_in, sleep_start, sleep_end
+         FROM daily_log WHERE day = $1`,
+        [date],
+      );
+      const dailyLog = logRows[0] ? snakeToCamel(logRows[0]) : null;
+
+      const { rows: sourceRows } = await pool.query(
+        `SELECT metric, source, file_path, rows_consumed, value
+         FROM fitbit_daily_sources WHERE date = $1 ORDER BY metric`,
+        [date],
+      );
+      const fitbitSources: Record<string, unknown> = {};
+      for (const r of sourceRows) {
+        fitbitSources[r.metric] = {
+          source: r.source,
+          filePath: r.file_path,
+          rowsConsumed: r.rows_consumed,
+          value: r.value != null ? parseFloat(r.value) : null,
+        };
+      }
+
+      const { rows: sleepBucketRows } = await pool.query(
+        `SELECT sleep_end_raw, sleep_end_local, bucket_date, minutes, source
+         FROM fitbit_sleep_bucketing WHERE date = $1`,
+        [date],
+      );
+
+      const { rows: conflictRows } = await pool.query(
+        `SELECT metric, csv_value, json_value, chosen_source
+         FROM fitbit_import_conflicts WHERE date = $1`,
+        [date],
+      );
+
+      let readinessResult = null;
+      try {
+        readinessResult = await computeReadiness(date);
+      } catch {}
+
+      const { rows: storedReadiness } = await pool.query(
+        `SELECT * FROM readiness_daily WHERE date = $1::date`,
+        [date],
+      );
+
+      const sufficiency = await getDataSufficiency();
+
+      const { rows: proxyRows } = await pool.query(
+        `SELECT date::text, proxy_score, computed_with_imputed
+         FROM androgen_proxy_daily WHERE date = $1::date`,
+        [date],
+      );
+
+      res.json({
+        date,
+        section1_raw_imported: {
+          fitbitSources,
+          sleepBucketing: sleepBucketRows,
+          conflicts: conflictRows,
+        },
+        section2_daily_log: dailyLog,
+        section3_readiness_live: readinessResult ? {
+          score: readinessResult.readinessScore,
+          tier: readinessResult.readinessTier,
+          confidence: readinessResult.confidenceGrade,
+          cortisolFlag: readinessResult.cortisolFlag,
+          signals: {
+            hrv: { val7d: readinessResult.hrv7d, val28d: readinessResult.hrv28d, delta: readinessResult.hrvDelta },
+            rhr: { val7d: readinessResult.rhr7d, val28d: readinessResult.rhr28d, delta: readinessResult.rhrDelta },
+            sleep: { val7d: readinessResult.sleep7d, val28d: readinessResult.sleep28d, delta: readinessResult.sleepDelta },
+            proxy: { val7d: readinessResult.proxy7d, val28d: readinessResult.proxy28d, delta: readinessResult.proxyDelta },
+          },
+          typeLean: readinessResult.typeLean,
+          exerciseBias: readinessResult.exerciseBias,
+          drivers: readinessResult.drivers,
+          deltas: readinessResult.deltas,
+          analysisStartDate: readinessResult.analysisStartDate,
+          daysInWindow: readinessResult.daysInWindow,
+          gate: readinessResult.gate,
+        } : null,
+        section4_stored_readiness: storedReadiness[0] ? snakeToCamel(storedReadiness[0]) : null,
+        section5_sufficiency: sufficiency,
+        section6_proxy: proxyRows[0] ? {
+          proxyScore: parseFloat(proxyRows[0].proxy_score),
+          computedWithImputed: proxyRows[0].computed_with_imputed,
+        } : null,
+      });
+    } catch (err: unknown) {
+      console.error("sanity-check error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
