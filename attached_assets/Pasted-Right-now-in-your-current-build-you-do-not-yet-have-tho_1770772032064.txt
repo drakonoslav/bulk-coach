@@ -1,0 +1,57 @@
+Right now, in your current build, you do not yet have those androgen computations wired end-to-end — you mostly have the diet/training + body comp engine (daily logs → recompute → dashboard/report) working, plus the design/spec for androgen logging and the measured-vs-imputed import approach.
+
+So at this stage, you’re basically at:
+
+✅ “Locking data points uploading right” (the plan + data model + import/delta logic spec)
+❌ Not yet fully computing Androgen Readiness + Cortisol Suppression in the app UI (unless Replit already added new tables/screens for it, which from your screenshots, they haven’t).
+
+What you likely already have (based on what we validated)
+	•	Daily log persistence (Postgres)
+	•	Recompute pipeline for:
+	•	rolling weight averages
+	•	lean mass calculation
+	•	lean gain ratio rolling
+	•	deload handling
+	•	diet adjustment suggestions
+
+What’s next (minimal, correct order)
+
+To avoid “getting ahead,” the safest sequence is:
+	1.	Create androgen data storage (no fancy math yet)
+	•	erection_summary_snapshots
+	•	erection_sessions with:
+	•	date
+	•	nocturnal_count
+	•	nocturnal_duration_seconds
+	•	firmness_score (optional)
+	•	is_imputed, etc.
+	2.	Import pipeline works reliably
+	•	upload snapshot → delta → measured session row
+	•	optional imputation between measured anchors
+	•	badges show measured vs imputed
+	3.	Only then add computations
+	•	7-day rolling averages for:
+	•	nocturnal count
+	•	duration
+	•	firmness (if present)
+	•	Androgen Readiness Score (first version can be simple)
+	•	Cortisol Suppression Flag: (HRV ↓ + erections ↓)
+	4.	Only after you have 14–30 days of data
+	•	correlation panels
+	•	training/diet “cause” suggestions
+
+The key: what we should not do yet
+	•	We should not try to infer “male cycles” or do complex seasonality detection until you’ve built enough measured nightly history.
+	•	We should not let imputed values drive coaching decisions.
+
+Quick “definition of done” for Phase 1 (so you don’t overbuild)
+
+You’re ready to start collecting real signal when your app can:
+	•	✅ Upload a snapshot file + choose session date
+	•	✅ Produce a measured delta row for that date
+	•	✅ Show it in a timeline as “Measured”
+	•	✅ If there are gaps, optionally fill them as “Imputed”
+	•	✅ Charts can toggle measured-only vs include-imputed
+	•	✅ Rolling 7-day count/duration are displayed (even if the readiness score is not yet)
+
+If you show me your current DB tables list or the Report screen sections you have, I can tell you exactly which of these components are already implemented vs still missing — without guessing.

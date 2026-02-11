@@ -12,6 +12,8 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadEntries } from "@/lib/entry-storage";
+import { getApiUrl } from "@/lib/query-client";
+import { fetch as expoFetch } from "expo/fetch";
 import {
   DailyEntry,
   weeklyDelta,
@@ -312,23 +314,41 @@ export default function ReportScreen() {
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [proxyData, setProxyData] = useState<Array<{ date: string; proxyScore: number | null; proxy7dAvg: number | null }>>([]);
+  const [proxyImputed, setProxyImputed] = useState(false);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
     setEntries(data);
   }, []);
 
+  const fetchProxy = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" });
+      if (res.ok) {
+        const rows = await res.json();
+        setProxyData(rows.map((r: any) => ({
+          date: r.date,
+          proxyScore: r.proxyScore != null ? Number(r.proxyScore) : null,
+          proxy7dAvg: r.proxy7DAvg != null ? Number(r.proxy7DAvg) : null,
+        })));
+      }
+    } catch {}
+  }, [proxyImputed]);
+
   useFocusEffect(
     useCallback(() => {
       fetchEntries();
-    }, [fetchEntries])
+      fetchProxy();
+    }, [fetchEntries, fetchProxy])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchEntries();
+    await Promise.all([fetchEntries(), fetchProxy()]);
     setRefreshing(false);
-  }, [fetchEntries]);
+  }, [fetchEntries, fetchProxy]);
 
   const wkGain = weeklyDelta(entries);
   const wDelta = waistDelta(entries);
@@ -573,6 +593,39 @@ export default function ReportScreen() {
                 </View>
               );
             })()}
+
+            {proxyData.length >= 2 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Androgen Proxy Trend</Text>
+                <View style={styles.lgrCard}>
+                  <View style={{ marginBottom: 8 }}>
+                    <Text style={[styles.lgrLabel, { marginBottom: 4 }]}>
+                      7-day Rolling Average {proxyImputed ? "(incl. imputed)" : "(measured only)"}
+                    </Text>
+                    <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: "#8B5CF6" }}>
+                      {proxyData[proxyData.length - 1]?.proxy7dAvg?.toFixed(1) ?? proxyData[proxyData.length - 1]?.proxyScore?.toFixed(1) ?? "--"}
+                    </Text>
+                  </View>
+                  <WeightChart
+                    data={proxyData.slice(-21).map(d => ({ day: d.date, avg: d.proxy7dAvg ?? d.proxyScore ?? 0 }))}
+                    lineColor="#8B5CF6"
+                  />
+                  <Pressable
+                    style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border }}
+                    onPress={() => setProxyImputed(!proxyImputed)}
+                  >
+                    <Ionicons
+                      name={proxyImputed ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={proxyImputed ? "#FBBF24" : Colors.textTertiary}
+                    />
+                    <Text style={{ fontSize: 13, color: proxyImputed ? "#FBBF24" : Colors.textSecondary, fontFamily: "Rubik_400Regular" }}>
+                      Include imputed data
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Adjustment Priority</Text>
