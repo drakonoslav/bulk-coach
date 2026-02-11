@@ -1,15 +1,24 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   Platform,
+  Pressable,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as Haptics from "expo-haptics";
+import { File } from "expo-file-system/next";
+import { fetch } from "expo/fetch";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
+import { getApiUrl } from "@/lib/query-client";
 
 function getTimeCategory(time: string): { icon: string; color: string } {
   const h = parseInt(time.split(":")[0], 10);
@@ -41,9 +50,108 @@ function ChecklistRow({ time, label, detail, isLast }: { time: string; label: st
   );
 }
 
+interface ImportHistoryItem {
+  id: string;
+  uploadedAt: string;
+  originalFilename: string;
+  dateRangeStart: string;
+  dateRangeEnd: string;
+  rowsImported: number;
+  rowsUpserted: number;
+  rowsSkipped: number;
+}
+
 export default function ChecklistScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === "web" ? 67 : insets.top;
+
+  const [uploading, setUploading] = useState(false);
+  const [lastResult, setLastResult] = useState<{
+    status: string;
+    rowsImported: number;
+    rowsUpserted: number;
+    rowsSkipped: number;
+    dateRange: { start: string; end: string } | null;
+  } | null>(null);
+  const [importHistory, setImportHistory] = useState<ImportHistoryItem[]>([]);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/import/history", baseUrl);
+      const res = await fetch(url.toString(), { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setImportHistory(data);
+      }
+    } catch {}
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [])
+  );
+
+  const handleImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setUploading(true);
+      setLastResult(null);
+
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/import/fitbit", baseUrl);
+
+      const formData = new FormData();
+
+      if (Platform.OS === "web") {
+        const response = await globalThis.fetch(asset.uri);
+        const blob = await response.blob();
+        formData.append("file", blob, asset.name || "import.csv");
+
+        const uploadRes = await globalThis.fetch(url.toString(), {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        const data = await uploadRes.json();
+        setLastResult(data);
+        if (data.status === "duplicate") {
+          Alert.alert("Duplicate File", "This file has already been imported.");
+        }
+      } else {
+        const file = new File(asset.uri);
+        formData.append("file", file as any, asset.name || "import.csv");
+
+        const uploadRes = await fetch(url.toString(), {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        const data = await uploadRes.json();
+        setLastResult(data);
+        if (data.status === "duplicate") {
+          Alert.alert("Duplicate File", "This file has already been imported.");
+        }
+      }
+
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await loadHistory();
+    } catch (err) {
+      console.error("Import error:", err);
+      Alert.alert("Import Error", "Something went wrong. Make sure you selected a valid CSV file.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -127,6 +235,101 @@ export default function ChecklistScreen() {
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.importSection}>
+          <View style={styles.importHeader}>
+            <Ionicons name="cloud-upload-outline" size={20} color={Colors.primary} />
+            <Text style={styles.importTitle}>Import Fitbit Data</Text>
+          </View>
+          <Text style={styles.importDesc}>
+            Upload a CSV with daily aggregates (steps, cardio, sleep, heart rate, HRV). Existing manual entries are preserved.
+          </Text>
+
+          <Pressable
+            onPress={handleImport}
+            disabled={uploading}
+            style={({ pressed }) => [
+              styles.importBtn,
+              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+              uploading && { opacity: 0.6 },
+            ]}
+          >
+            {uploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="document-attach-outline" size={18} color="#fff" />
+            )}
+            <Text style={styles.importBtnText}>
+              {uploading ? "Importing..." : "Select CSV File"}
+            </Text>
+          </Pressable>
+
+          {lastResult && (
+            <View style={[
+              styles.importResult,
+              lastResult.status === "duplicate" && { borderColor: Colors.warning + "60", backgroundColor: Colors.warning + "10" },
+              lastResult.status === "ok" && { borderColor: Colors.success + "60", backgroundColor: Colors.success + "10" },
+            ]}>
+              {lastResult.status === "ok" ? (
+                <>
+                  <View style={styles.importResultRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                    <Text style={[styles.importResultText, { color: Colors.success }]}>
+                      Import complete
+                    </Text>
+                  </View>
+                  <Text style={styles.importResultDetail}>
+                    {lastResult.rowsImported} rows imported, {lastResult.rowsUpserted} upserted
+                    {lastResult.rowsSkipped > 0 ? `, ${lastResult.rowsSkipped} skipped` : ""}
+                  </Text>
+                  {lastResult.dateRange && (
+                    <Text style={styles.importResultDetail}>
+                      Range: {lastResult.dateRange.start} to {lastResult.dateRange.end}
+                    </Text>
+                  )}
+                </>
+              ) : lastResult.status === "duplicate" ? (
+                <View style={styles.importResultRow}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+                  <Text style={[styles.importResultText, { color: Colors.warning }]}>
+                    File already imported
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.importResultRow}>
+                  <Ionicons name="close-circle" size={16} color={Colors.danger} />
+                  <Text style={[styles.importResultText, { color: Colors.danger }]}>
+                    Import failed
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {importHistory.length > 0 && (
+            <View style={styles.historySection}>
+              <Text style={styles.historyTitle}>Recent Imports</Text>
+              {importHistory.slice(0, 3).map((item) => (
+                <View key={item.id} style={styles.historyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyFilename} numberOfLines={1}>
+                      {item.originalFilename || "Unknown file"}
+                    </Text>
+                    <Text style={styles.historyMeta}>
+                      {item.rowsImported} rows
+                      {item.dateRangeStart && item.dateRangeEnd
+                        ? ` | ${item.dateRangeStart} to ${item.dateRangeEnd}`
+                        : ""}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyDate}>
+                    {new Date(item.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -297,5 +500,109 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
+  },
+  importSection: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 20,
+  },
+  importHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  importTitle: {
+    fontSize: 16,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.text,
+  },
+  importDesc: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  importBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  importBtnText: {
+    fontSize: 15,
+    fontFamily: "Rubik_600SemiBold",
+    color: "#fff",
+  },
+  importResult: {
+    marginTop: 12,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.inputBg,
+  },
+  importResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  importResultText: {
+    fontSize: 14,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.text,
+  },
+  importResultDetail: {
+    fontSize: 12,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    marginTop: 4,
+    marginLeft: 22,
+  },
+  historySection: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+  },
+  historyTitle: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  historyFilename: {
+    fontSize: 13,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.text,
+  },
+  historyMeta: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  historyDate: {
+    fontSize: 12,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textSecondary,
+    marginLeft: 8,
   },
 });
