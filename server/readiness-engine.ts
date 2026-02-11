@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { computeReadinessDeltas, type ReadinessDeltas } from "./readiness-deltas";
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
@@ -52,6 +53,13 @@ export interface ReadinessResult {
   analysisStartDate: string;
   daysInWindow: number;
   gate: "NONE" | "LOW" | "MED" | "HIGH";
+  deltas: ReadinessDeltas;
+  confidenceBreakdown: {
+    grade: "High" | "Med" | "Low" | "None";
+    measured_7d: number;
+    imputed_7d: number;
+    combined_7d: number;
+  };
 }
 
 export async function getAnalysisStartDate(): Promise<string> {
@@ -225,11 +233,17 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
 
   const measuredNightsLast7 = last7(proxyAll).filter((v): v is number => v != null).length;
   const { rows: confRows } = await pool.query(
-    `SELECT COUNT(*) as cnt FROM erection_sessions
-     WHERE date BETWEEN $1::date AND $2::date AND is_imputed = FALSE`,
+    `SELECT
+       COUNT(*) FILTER (WHERE is_imputed = FALSE) as measured,
+       COUNT(*) FILTER (WHERE is_imputed = TRUE) as imputed,
+       COUNT(*) as combined
+     FROM erection_sessions
+     WHERE date BETWEEN $1::date AND $2::date`,
     [addDays(date, -6), date],
   );
-  const measuredSessions = Number(confRows[0]?.cnt ?? 0);
+  const measuredSessions = Number(confRows[0]?.measured ?? 0);
+  const imputedSessions = Number(confRows[0]?.imputed ?? 0);
+  const combinedSessions = Number(confRows[0]?.combined ?? 0);
 
   let confidenceGrade: "High" | "Med" | "Low" | "None";
   if (measuredSessions >= 5 && measuredNightsLast7 >= 4) {
@@ -313,6 +327,26 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
 
   const sufficiency = await getDataSufficiency();
 
+  const r_hrv7d = hrv7d != null ? Math.round(hrv7d * 100) / 100 : null;
+  const r_hrv28d = hrv28d != null ? Math.round(hrv28d * 100) / 100 : null;
+  const r_rhr7d = rhr7d != null ? Math.round(rhr7d * 100) / 100 : null;
+  const r_rhr28d = rhr28d != null ? Math.round(rhr28d * 100) / 100 : null;
+  const r_sleep7d = sleep7d != null ? Math.round(sleep7d * 100) / 100 : null;
+  const r_sleep28d = sleep28d != null ? Math.round(sleep28d * 100) / 100 : null;
+  const r_proxy7d = proxy7d != null ? Math.round(proxy7d * 100) / 100 : null;
+  const r_proxy28d = proxy28d != null ? Math.round(proxy28d * 100) / 100 : null;
+
+  const deltas = computeReadinessDeltas({
+    sleepMin_7d: r_sleep7d,
+    sleepMin_28d: r_sleep28d,
+    hrvMs_7d: r_hrv7d,
+    hrvMs_28d: r_hrv28d,
+    rhrBpm_7d: r_rhr7d,
+    rhrBpm_28d: r_rhr28d,
+    proxy_7d: r_proxy7d,
+    proxy_28d: r_proxy28d,
+  });
+
   return {
     date,
     readinessScore: readiness,
@@ -325,18 +359,25 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
     rhrDelta: rhrDelta != null ? Math.round(rhrDelta * 10000) / 10000 : null,
     sleepDelta: sleepDelta != null ? Math.round(sleepDelta * 10000) / 10000 : null,
     proxyDelta: proxyDelta != null ? Math.round(proxyDelta * 10000) / 10000 : null,
-    hrv7d: hrv7d != null ? Math.round(hrv7d * 100) / 100 : null,
-    hrv28d: hrv28d != null ? Math.round(hrv28d * 100) / 100 : null,
-    rhr7d: rhr7d != null ? Math.round(rhr7d * 100) / 100 : null,
-    rhr28d: rhr28d != null ? Math.round(rhr28d * 100) / 100 : null,
-    sleep7d: sleep7d != null ? Math.round(sleep7d * 100) / 100 : null,
-    sleep28d: sleep28d != null ? Math.round(sleep28d * 100) / 100 : null,
-    proxy7d: proxy7d != null ? Math.round(proxy7d * 100) / 100 : null,
-    proxy28d: proxy28d != null ? Math.round(proxy28d * 100) / 100 : null,
+    hrv7d: r_hrv7d,
+    hrv28d: r_hrv28d,
+    rhr7d: r_rhr7d,
+    rhr28d: r_rhr28d,
+    sleep7d: r_sleep7d,
+    sleep28d: r_sleep28d,
+    proxy7d: r_proxy7d,
+    proxy28d: r_proxy28d,
     drivers,
     analysisStartDate: sufficiency.analysisStartDate,
     daysInWindow: sufficiency.daysWithData,
     gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
+    deltas,
+    confidenceBreakdown: {
+      grade: confidenceGrade,
+      measured_7d: measuredSessions,
+      imputed_7d: imputedSessions,
+      combined_7d: combinedSessions,
+    },
   };
 }
 
@@ -390,6 +431,30 @@ export async function recomputeReadinessRange(targetDate: string): Promise<void>
   }
 }
 
+function buildDeltasFromRow(r: Record<string, unknown>) {
+  const h7 = r.hrv_7d != null ? Number(r.hrv_7d) : null;
+  const h28 = r.hrv_28d != null ? Number(r.hrv_28d) : null;
+  const rr7 = r.rhr_7d != null ? Number(r.rhr_7d) : null;
+  const rr28 = r.rhr_28d != null ? Number(r.rhr_28d) : null;
+  const s7 = r.sleep_7d != null ? Number(r.sleep_7d) : null;
+  const s28 = r.sleep_28d != null ? Number(r.sleep_28d) : null;
+  const p7 = r.proxy_7d != null ? Number(r.proxy_7d) : null;
+  const p28 = r.proxy_28d != null ? Number(r.proxy_28d) : null;
+  return computeReadinessDeltas({
+    sleepMin_7d: s7, sleepMin_28d: s28,
+    hrvMs_7d: h7, hrvMs_28d: h28,
+    rhrBpm_7d: rr7, rhrBpm_28d: rr28,
+    proxy_7d: p7, proxy_28d: p28,
+  });
+}
+
+const defaultConfBreakdown = (grade: string) => ({
+  grade: grade as "High" | "Med" | "Low" | "None",
+  measured_7d: 0,
+  imputed_7d: 0,
+  combined_7d: 0,
+});
+
 export async function getReadiness(date: string): Promise<ReadinessResult | null> {
   const { rows } = await pool.query(
     `SELECT * FROM readiness_daily WHERE date = $1::date`,
@@ -398,11 +463,12 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
   if (rows.length === 0) return null;
   const r = rows[0];
   const sufficiency = await getDataSufficiency();
+  const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
   return {
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
     readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
-    confidenceGrade: r.confidence_grade as "High" | "Med" | "Low" | "None",
+    confidenceGrade: grade,
     typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
     exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
     cortisolFlag: !!r.cortisol_flag,
@@ -422,6 +488,8 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
     analysisStartDate: sufficiency.analysisStartDate,
     daysInWindow: sufficiency.daysWithData,
     gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
+    deltas: buildDeltasFromRow(r),
+    confidenceBreakdown: defaultConfBreakdown(grade),
   };
 }
 
@@ -432,31 +500,36 @@ export async function getReadinessRange(from: string, to: string): Promise<Readi
   );
   const sufficiency = await getDataSufficiency();
   const gateValue: "NONE" | "LOW" | "MED" | "HIGH" = sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
-  return rows.map((r: Record<string, unknown>) => ({
-    date: (r.date as Date).toISOString().slice(0, 10),
-    readinessScore: Number(r.readiness_score),
-    readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
-    confidenceGrade: r.confidence_grade as "High" | "Med" | "Low" | "None",
-    typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
-    exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
-    cortisolFlag: !!(r.cortisol_flag),
-    hrvDelta: r.hrv_delta != null ? Number(r.hrv_delta) : null,
-    rhrDelta: r.rhr_delta != null ? Number(r.rhr_delta) : null,
-    sleepDelta: r.sleep_delta != null ? Number(r.sleep_delta) : null,
-    proxyDelta: r.proxy_delta != null ? Number(r.proxy_delta) : null,
-    hrv7d: r.hrv_7d != null ? Number(r.hrv_7d) : null,
-    hrv28d: r.hrv_28d != null ? Number(r.hrv_28d) : null,
-    rhr7d: r.rhr_7d != null ? Number(r.rhr_7d) : null,
-    rhr28d: r.rhr_28d != null ? Number(r.rhr_28d) : null,
-    sleep7d: r.sleep_7d != null ? Number(r.sleep_7d) : null,
-    sleep28d: r.sleep_28d != null ? Number(r.sleep_28d) : null,
-    proxy7d: r.proxy_7d != null ? Number(r.proxy_7d) : null,
-    proxy28d: r.proxy_28d != null ? Number(r.proxy_28d) : null,
-    drivers: Array.isArray(r.drivers) ? r.drivers : [],
-    analysisStartDate: sufficiency.analysisStartDate,
-    daysInWindow: sufficiency.daysWithData,
-    gate: gateValue,
-  }));
+  return rows.map((r: Record<string, unknown>) => {
+    const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
+    return {
+      date: (r.date as Date).toISOString().slice(0, 10),
+      readinessScore: Number(r.readiness_score),
+      readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
+      confidenceGrade: grade,
+      typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
+      exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
+      cortisolFlag: !!(r.cortisol_flag),
+      hrvDelta: r.hrv_delta != null ? Number(r.hrv_delta) : null,
+      rhrDelta: r.rhr_delta != null ? Number(r.rhr_delta) : null,
+      sleepDelta: r.sleep_delta != null ? Number(r.sleep_delta) : null,
+      proxyDelta: r.proxy_delta != null ? Number(r.proxy_delta) : null,
+      hrv7d: r.hrv_7d != null ? Number(r.hrv_7d) : null,
+      hrv28d: r.hrv_28d != null ? Number(r.hrv_28d) : null,
+      rhr7d: r.rhr_7d != null ? Number(r.rhr_7d) : null,
+      rhr28d: r.rhr_28d != null ? Number(r.rhr_28d) : null,
+      sleep7d: r.sleep_7d != null ? Number(r.sleep_7d) : null,
+      sleep28d: r.sleep_28d != null ? Number(r.sleep_28d) : null,
+      proxy7d: r.proxy_7d != null ? Number(r.proxy_7d) : null,
+      proxy28d: r.proxy_28d != null ? Number(r.proxy_28d) : null,
+      drivers: Array.isArray(r.drivers) ? r.drivers : [],
+      analysisStartDate: sufficiency.analysisStartDate,
+      daysInWindow: sufficiency.daysWithData,
+      gate: gateValue,
+      deltas: buildDeltasFromRow(r),
+      confidenceBreakdown: defaultConfBreakdown(grade),
+    };
+  });
 }
 
 export interface TrainingTemplate {
