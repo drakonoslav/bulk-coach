@@ -1,0 +1,83 @@
+Here’s a clean, implementation-ready message you can paste to Replit to add interpretability + simple rules (no overfitting), using the data you already store (7d vs 28d baselines + confidence grade).
+
+⸻
+
+Replit request: Add “Signal Breakdown” + “Rule Card” under Training Readiness
+
+1) Signal Breakdown (beneath Training Readiness)
+
+Under the main readiness badge (e.g., 41 • Blue • Low Conf), add a compact breakdown list that shows direction + magnitude vs baseline:
+
+Display exactly like:
+	•	Sleep: -6% vs baseline
+	•	HRV: +3% vs baseline
+	•	RHR: +1 bpm vs baseline
+	•	Proxy: -4% vs baseline
+	•	Confidence: Low (3 measured / 7 days)
+
+Rules:
+	•	Sleep, HRV, Proxy show % delta relative to baseline:
+	•	pct = ((roll7 - base28) / base28) * 100
+	•	round to nearest integer (or 1 decimal)
+	•	RHR shows absolute bpm delta:
+	•	bpm = roll7_rhr - base28_rhr
+	•	If any signal missing, show — (do not fabricate).
+	•	Confidence line must include:
+	•	grade (High/Med/Low/None)
+	•	measured_count_last_7d (from confidence endpoint or DB)
+
+Implementation note (backend):
+Return in readiness endpoint (or cached readiness object):
+
+{
+  deltas: {
+    sleep_pct: number|null,
+    hrv_pct: number|null,
+    rhr_bpm: number|null,
+    proxy_pct: number|null
+  },
+  confidence: {
+    grade: "High"|"Med"|"Low"|"None",
+    measured_7d: number,
+    imputed_7d: number,
+    combined_7d: number
+  }
+}
+
+2) Simple Rule Card (bottom of screen)
+
+Add a small card titled “Today’s Training Rule” that maps readiness + confidence to one of 3 prescriptions:
+
+Rule logic (exact):
+	•	If readiness >= 65 AND confidence >= Med → High Neural Day
+	•	Else if readiness >= 45 AND readiness < 65 → Moderate
+	•	Else if readiness < 45 → Pump / Technique
+
+Confidence ordering:
+High > Med > Low > None
+
+So confidence >= Med means grade is either High or Med.
+
+Copy text inside the card (keep it simple):
+	•	High Neural Day: heavy compounds / lower reps / longer rest
+	•	Moderate: controlled compounds + machines / moderate reps
+	•	Pump / Technique: isolation focus / easy volume / skill work
+
+No extra logic, no personalization here. Keep it stable.
+
+3) UI placement
+	•	Training Readiness block at top
+	•	Immediately below: Signal Breakdown (5 lines)
+	•	At bottom of same screen: Today’s Training Rule card
+
+4) Mindset copy (one line, optional)
+
+Add a tiny subtitle under the readiness number:
+
+“This doesn’t predict testosterone. It estimates recovery permissiveness (low stress + good restoration).”
+
+Keep it subtle.
+
+⸻
+
+If you want, I can also give you the exact TS function for computing the deltas (7d vs 28d) and formatting rules for plus/minus signs so Replit can drop it straight into the readiness cache.

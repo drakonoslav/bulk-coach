@@ -51,8 +51,94 @@ export interface ReadinessResult {
   drivers: string[];
 }
 
+export async function getAnalysisStartDate(): Promise<string> {
+  const { rows } = await pool.query(`SELECT value FROM app_settings WHERE key = 'analysis_start_date'`);
+  if (rows.length > 0) return rows[0].value;
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 60);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function setAnalysisStartDate(date: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('analysis_start_date', $1, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [date],
+  );
+}
+
+export interface DataSufficiency {
+  analysisStartDate: string;
+  daysWithData: number;
+  totalDaysInRange: number;
+  gate7: boolean;
+  gate14: boolean;
+  gate30: boolean;
+  gateLabel: string | null;
+  signals: {
+    hrv: number;
+    rhr: number;
+    sleep: number;
+    steps: number;
+    proxy: number;
+  };
+}
+
+export async function getDataSufficiency(): Promise<DataSufficiency> {
+  const startDate = await getAnalysisStartDate();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const totalDays = Math.max(1, Math.round((new Date(today + "T00:00:00Z").getTime() - new Date(startDate + "T00:00:00Z").getTime()) / 86400000) + 1);
+
+  const { rows } = await pool.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE morning_weight_lb IS NOT NULL OR steps IS NOT NULL OR sleep_minutes IS NOT NULL OR resting_hr IS NOT NULL OR hrv IS NOT NULL) AS days_with_data,
+       COUNT(*) FILTER (WHERE hrv IS NOT NULL) AS hrv_days,
+       COUNT(*) FILTER (WHERE resting_hr IS NOT NULL) AS rhr_days,
+       COUNT(*) FILTER (WHERE sleep_minutes IS NOT NULL) AS sleep_days,
+       COUNT(*) FILTER (WHERE steps IS NOT NULL) AS steps_days
+     FROM daily_log WHERE day >= $1 AND day <= $2`,
+    [startDate, today],
+  );
+
+  const { rows: proxyRows } = await pool.query(
+    `SELECT COUNT(*) AS proxy_days FROM androgen_proxy_daily
+     WHERE date >= $1::date AND date <= $2::date AND computed_with_imputed = FALSE`,
+    [startDate, today],
+  );
+
+  const daysWithData = Number(rows[0]?.days_with_data ?? 0);
+  const gate7 = daysWithData >= 7;
+  const gate14 = daysWithData >= 14;
+  const gate30 = daysWithData >= 30;
+
+  let gateLabel: string | null = null;
+  if (!gate7) gateLabel = `Need ${7 - daysWithData} more days for basic trends`;
+  else if (!gate14) gateLabel = `Need ${14 - daysWithData} more days for rolling averages`;
+  else if (!gate30) gateLabel = `Need ${30 - daysWithData} more days for full baselines`;
+
+  return {
+    analysisStartDate: startDate,
+    daysWithData,
+    totalDaysInRange: totalDays,
+    gate7,
+    gate14,
+    gate30,
+    gateLabel,
+    signals: {
+      hrv: Number(rows[0]?.hrv_days ?? 0),
+      rhr: Number(rows[0]?.rhr_days ?? 0),
+      sleep: Number(rows[0]?.sleep_days ?? 0),
+      steps: Number(rows[0]?.steps_days ?? 0),
+      proxy: Number(proxyRows[0]?.proxy_days ?? 0),
+    },
+  };
+}
+
 export async function computeReadiness(date: string): Promise<ReadinessResult> {
-  const pullFrom = addDays(date, -34);
+  const analysisStart = await getAnalysisStartDate();
+  const effectiveStart = date < analysisStart ? date : analysisStart;
+  const pullFrom = effectiveStart > addDays(date, -34) ? effectiveStart : addDays(date, -34);
 
   const { rows: logRows } = await pool.query(
     `SELECT day, hrv, resting_hr, sleep_minutes

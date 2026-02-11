@@ -251,6 +251,22 @@ export async function initDb(): Promise<void> {
     { name: "Pull", highLabel: "Heavy Rows / Deadlift", medLabel: "Normal Hypertrophy", lowLabel: "Cables / Light Rows / Technique" },
     { name: "Legs", highLabel: "Heavy Squat / RDL", medLabel: "Normal Hypertrophy", lowLabel: "Leg Press / Machines / Pump" },
   ])]);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  const defaultStart = new Date();
+  defaultStart.setUTCDate(defaultStart.getUTCDate() - 60);
+  const defaultStartStr = defaultStart.toISOString().slice(0, 10);
+  await pool.query(`
+    INSERT INTO app_settings (key, value) VALUES ('analysis_start_date', $1)
+    ON CONFLICT (key) DO NOTHING
+  `, [defaultStartStr]);
 }
 
 export { pool };

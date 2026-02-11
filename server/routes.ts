@@ -23,6 +23,9 @@ import {
   getReadinessRange,
   getTrainingTemplate,
   updateTrainingTemplate,
+  getAnalysisStartDate,
+  setAnalysisStartDate,
+  getDataSufficiency,
 } from "./readiness-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
@@ -418,6 +421,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("template update error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/settings/analysis-start-date", async (_req: Request, res: Response) => {
+    try {
+      const date = await getAnalysisStartDate();
+      res.json({ analysisStartDate: date });
+    } catch (err: unknown) {
+      console.error("get analysis start date error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.put("/api/settings/analysis-start-date", async (req: Request, res: Response) => {
+    try {
+      const { date } = req.body;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "Valid date (YYYY-MM-DD) required" });
+      }
+      await setAnalysisStartDate(date);
+      res.json({ ok: true, analysisStartDate: date });
+    } catch (err: unknown) {
+      console.error("set analysis start date error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/settings/rebaseline", async (req: Request, res: Response) => {
+    try {
+      const days = Number(req.body?.days) || 60;
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - days);
+      const newStart = d.toISOString().slice(0, 10);
+      await setAnalysisStartDate(newStart);
+
+      const today = new Date().toISOString().slice(0, 10);
+      recomputeReadinessRange(today).catch((err: unknown) =>
+        console.error("readiness recompute after rebaseline:", err)
+      );
+
+      res.json({ ok: true, analysisStartDate: newStart, recomputeTriggered: true });
+    } catch (err: unknown) {
+      console.error("rebaseline error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/data-sufficiency", async (_req: Request, res: Response) => {
+    try {
+      const result = await getDataSufficiency();
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("data sufficiency error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
