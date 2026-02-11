@@ -16,6 +16,8 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import Colors from "@/constants/colors";
 import { saveEntry, loadEntry } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
+import { getApiUrl } from "@/lib/query-client";
+import { fetch as expoFetch } from "expo/fetch";
 
 function formatDateLabel(dateStr: string): string {
   const today = todayStr();
@@ -198,6 +200,7 @@ export default function LogScreen() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [erectionBadges, setErectionBadges] = useState<Record<string, "measured" | "imputed">>({});
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -245,9 +248,18 @@ export default function LogScreen() {
     }
   }, []);
 
+  const loadErectionBadges = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL("/api/erection/badges", baseUrl).toString(), { credentials: "include" });
+      if (res.ok) setErectionBadges(await res.json());
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDateEntry(selectedDate);
+      loadErectionBadges();
     }, [selectedDate])
   );
 
@@ -375,6 +387,14 @@ export default function LogScreen() {
                 <View style={styles.dateNavBadge}>
                   <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
                   <Text style={styles.dateNavBadgeText}>Logged</Text>
+                </View>
+              )}
+              {erectionBadges[selectedDate] && (
+                <View style={[styles.dateNavBadge, { backgroundColor: erectionBadges[selectedDate] === "measured" ? "rgba(52, 211, 153, 0.12)" : "rgba(251, 191, 36, 0.12)" }]}>
+                  <Ionicons name="pulse" size={12} color={erectionBadges[selectedDate] === "measured" ? "#34D399" : "#FBBF24"} />
+                  <Text style={[styles.dateNavBadgeText, { color: erectionBadges[selectedDate] === "measured" ? "#34D399" : "#FBBF24" }]}>
+                    {erectionBadges[selectedDate] === "measured" ? "Vitals" : "Vitals (est.)"}
+                  </Text>
                 </View>
               )}
             </Pressable>
