@@ -333,6 +333,22 @@ export default function ReportScreen() {
     gate?: string;
     daysInWindow?: number;
     analysisStartDate?: string;
+    deltas?: {
+      sleep_pct: number | null;
+      hrv_pct: number | null;
+      rhr_bpm: number | null;
+      proxy_pct: number | null;
+      sleep_str: string;
+      hrv_str: string;
+      rhr_str: string;
+      proxy_str: string;
+    };
+    confidenceBreakdown?: {
+      grade: string;
+      measured_7d: number;
+      imputed_7d: number;
+      combined_7d: number;
+    };
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
   const [dataSuff, setDataSuff] = useState<{
@@ -689,6 +705,9 @@ export default function ReportScreen() {
                             <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: tierColor }}>
                               {score}
                             </Text>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                              Estimates recovery permissiveness
+                            </Text>
                           </View>
                         </View>
                         <View style={{ alignItems: "flex-end", gap: 4 }}>
@@ -816,6 +835,68 @@ export default function ReportScreen() {
                     />
                   </View>
                 )}
+
+                {readiness.gate !== "NONE" && (
+                  <View style={[styles.lgrCard, { marginTop: 12 }]}>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                      Signal Breakdown
+                    </Text>
+                    {[
+                      { label: "Sleep", value: readiness.deltas?.sleep_str ?? "\u2014", color: (readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
+                      { label: "HRV", value: readiness.deltas?.hrv_str ?? "\u2014", color: (readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
+                      { label: "RHR", value: readiness.deltas?.rhr_str ?? "\u2014", color: (readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444" },
+                      { label: "Proxy", value: readiness.deltas?.proxy_str ?? "\u2014", color: (readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
+                    ].map((sig) => (
+                      <View key={sig.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{sig.label}</Text>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{sig.value} vs baseline</Text>
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, marginTop: 2 }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Confidence</Text>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: (readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None") === "High" ? "#34D399" : (readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None") === "Med" ? "#FBBF24" : "#EF4444" }}>
+                        {readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None"} ({readiness.confidenceBreakdown?.measured_7d ?? 0} measured / 7 days)
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {readiness.gate !== "NONE" && (() => {
+                  const score = readiness.readinessScore ?? 0;
+                  const confGrade = readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None";
+                  const confOk = confGrade === "High" || confGrade === "Med";
+                  let ruleTitle = "Pump / Technique";
+                  let ruleDesc = "Isolation focus / easy volume / skill work";
+                  let ruleColor = "#60A5FA";
+                  let ruleIcon: "snow" | "pause-circle" | "flash" = "snow";
+                  if (score >= 65 && confOk) {
+                    ruleTitle = "High Neural Day";
+                    ruleDesc = "Heavy compounds / lower reps / longer rest";
+                    ruleColor = "#34D399";
+                    ruleIcon = "flash";
+                  } else if (score >= 45) {
+                    ruleTitle = "Moderate";
+                    ruleDesc = "Controlled compounds + machines / moderate reps";
+                    ruleColor = "#FBBF24";
+                    ruleIcon = "pause-circle";
+                  }
+                  return (
+                    <View style={[styles.lgrCard, { marginTop: 12, borderColor: ruleColor + "30" }]}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                        Today's Training Rule
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: ruleColor + "20", alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name={ruleIcon} size={18} color={ruleColor} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: ruleColor }}>{ruleTitle}</Text>
+                          <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>{ruleDesc}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
             )}
 
