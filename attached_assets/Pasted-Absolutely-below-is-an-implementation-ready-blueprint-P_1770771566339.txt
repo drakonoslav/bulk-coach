@@ -1,0 +1,415 @@
+Absolutely — below is an implementation-ready blueprint (Postgres SQL + TypeScript-ish logic) that Replit can drop into your Node/Express backend.
+
+It does exactly what you listed:
+	1.	insert measured day from snapshot delta
+	2.	detect gaps
+	3.	insert imputed rows between measured anchors
+	4.	recompute rolling androgen proxy using measured-only by default, with a toggle to include imputed
+
+⸻
+
+Data model assumptions
+
+erection_summary_snapshots
+
+Stores each uploaded cumulative snapshot (running totals + recordings count).
+
+Minimal columns used here:
+	•	id uuid
+	•	uploaded_at timestamptz
+	•	sha256 text unique
+	•	session_date date (the date you assign this new data to)
+	•	number_of_recordings int
+	•	cumulative totals (at least):
+	•	total_nocturnal_erections int
+	•	total_nocturnal_duration_seconds int
+
+erection_sessions
+
+Per-day derived rows.
+Columns (minimum):
+	•	date date primary key
+	•	nocturnal_erections int
+	•	nocturnal_duration_seconds int
+	•	snapshot_id uuid null
+	•	is_imputed boolean default false
+	•	imputed_method text null
+	•	imputed_source_date_start date null
+	•	imputed_source_date_end date null
+	•	multi_night_combined boolean default false
+	•	updated_at timestamptz default now()
+
+androgen_proxy_daily
+
+Cached daily proxy + rolling metrics (optional but recommended).
+	•	date date primary key
+	•	proxy_score numeric
+	•	proxy_7d_avg numeric
+	•	computed_with_imputed boolean
+	•	computed_at timestamptz
+
+⸻
+
+1) Exact UPSERTS
+
+1A) Upsert snapshot (idempotent via sha256)
+
+INSERT INTO erection_summary_snapshots (
+  id, uploaded_at, sha256, session_date,
+  number_of_recordings,
+  total_nocturnal_erections,
+  total_nocturnal_duration_seconds
+)
+VALUES (
+  gen_random_uuid(), now(), $1, $2,
+  $3,
+  $4,
+  $5
+)
+ON CONFLICT (sha256) DO UPDATE SET
+  session_date = EXCLUDED.session_date,
+  number_of_recordings = EXCLUDED.number_of_recordings,
+  total_nocturnal_erections = EXCLUDED.total_nocturnal_erections,
+  total_nocturnal_duration_seconds = EXCLUDED.total_nocturnal_duration_seconds
+RETURNING *;
+
+If you don’t want re-uploads to change a snapshot, replace DO UPDATE with DO NOTHING and return the existing row.
+
+1B) Upsert a measured session row (delta result)
+
+INSERT INTO erection_sessions (
+  date,
+  nocturnal_erections,
+  nocturnal_duration_seconds,
+  snapshot_id,
+  is_imputed,
+  imputed_method,
+  imputed_source_date_start,
+  imputed_source_date_end,
+  multi_night_combined,
+  updated_at
+)
+VALUES (
+  $1, $2, $3, $4,
+  FALSE, NULL, NULL, NULL,
+  $5, now()
+)
+ON CONFLICT (date) DO UPDATE SET
+  nocturnal_erections = EXCLUDED.nocturnal_erections,
+  nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
+  snapshot_id = EXCLUDED.snapshot_id,
+  is_imputed = FALSE,
+  imputed_method = NULL,
+  imputed_source_date_start = NULL,
+  imputed_source_date_end = NULL,
+  multi_night_combined = EXCLUDED.multi_night_combined,
+  updated_at = now();
+
+1C) Upsert an imputed session row
+
+INSERT INTO erection_sessions (
+  date,
+  nocturnal_erections,
+  nocturnal_duration_seconds,
+  snapshot_id,
+  is_imputed,
+  imputed_method,
+  imputed_source_date_start,
+  imputed_source_date_end,
+  multi_night_combined,
+  updated_at
+)
+VALUES (
+  $1, $2, $3, $4,
+  TRUE, $5, $6, $7,
+  FALSE, now()
+)
+ON CONFLICT (date) DO UPDATE SET
+  nocturnal_erections = EXCLUDED.nocturnal_erections,
+  nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
+  snapshot_id = EXCLUDED.snapshot_id,
+  is_imputed = TRUE,
+  imputed_method = EXCLUDED.imputed_method,
+  imputed_source_date_start = EXCLUDED.imputed_source_date_start,
+  imputed_source_date_end = EXCLUDED.imputed_source_date_end,
+  multi_night_combined = FALSE,
+  updated_at = now()
+WHERE erection_sessions.is_imputed = TRUE; 
+
+That WHERE prevents overwriting a real measured day with an imputed guess.
+
+⸻
+
+2) Recompute logic (TypeScript outline)
+
+Below is the exact pipeline Replit should implement. This is the “engine”:
+
+2A) Insert measured day from snapshot delta
+
+type Snapshot = {
+  id: string
+  sha256: string
+  session_date: string // YYYY-MM-DD
+  number_of_recordings: number
+  total_nocturnal_erections: number
+  total_nocturnal_duration_seconds: number
+}
+
+async function importSnapshotAndDeriveSession({
+  parsedSnapshot,
+  sessionDate,
+}: { parsedSnapshot: Omit<Snapshot, "id" | "session_date">; sessionDate: string }) {
+
+  // 1) Upsert snapshot row
+  const sNew: Snapshot = await db.one(SQL_UPSERT_SNAPSHOT, [
+    parsedSnapshot.sha256,
+    sessionDate,
+    parsedSnapshot.number_of_recordings,
+    parsedSnapshot.total_nocturnal_erections,
+    parsedSnapshot.total_nocturnal_duration_seconds,
+  ])
+
+  // 2) Find prev snapshot with smaller recordings count (closest)
+  const sPrev: Snapshot | null = await db.oneOrNone(`
+    SELECT *
+    FROM erection_summary_snapshots
+    WHERE number_of_recordings < $1
+    ORDER BY number_of_recordings DESC
+    LIMIT 1
+  `, [sNew.number_of_recordings])
+
+  // 3) If no previous snapshot exists, we cannot compute delta reliably.
+  // Treat first snapshot as "baseline" and do NOT create a session row.
+  if (!sPrev) {
+    return { sNew, derived: null, note: "baseline snapshot stored; no delta yet" }
+  }
+
+  const dRec = sNew.number_of_recordings - sPrev.number_of_recordings
+  if (dRec <= 0) {
+    return { sNew, derived: null, note: "no new recordings; nothing to derive" }
+  }
+
+  // 4) Delta totals
+  const deltaNoctErections = sNew.total_nocturnal_erections - sPrev.total_nocturnal_erections
+  const deltaNoctDur = sNew.total_nocturnal_duration_seconds - sPrev.total_nocturnal_duration_seconds
+
+  // 5) If multiple nights got bundled, mark combined
+  const multiNightCombined = dRec > 1
+
+  // 6) Insert measured session on the chosen sessionDate
+  await db.none(SQL_UPSERT_MEASURED_SESSION, [
+    sessionDate,
+    deltaNoctErections,
+    deltaNoctDur,
+    sNew.id,
+    multiNightCombined,
+  ])
+
+  return {
+    sNew,
+    derived: { sessionDate, deltaNoctErections, deltaNoctDur, multiNightCombined, dRec },
+  }
+}
+
+Important behavior choice: The first ever snapshot becomes your baseline and does not generate a “session” row, because we don’t know what portion of totals belong to “night 1” unless totals start at 0. If your device export always starts from 0 on first night, then you can treat first snapshot as night 1. (Replit can add a setting: treat_first_snapshot_as_night1.)
+
+⸻
+
+3) Detect gaps and insert imputed rows between measured anchors
+
+We’ll create imputed rows only between measured anchors.
+
+3A) Fetch measured anchor dates in a range
+
+type Session = {
+  date: string
+  nocturnal_erections: number | null
+  nocturnal_duration_seconds: number | null
+  is_imputed: boolean
+}
+
+async function detectAndFillGaps({
+  fromDate,
+  toDate,
+  snapshotIdForImputed, // can use latest snapshot id as provenance
+}: {
+  fromDate: string
+  toDate: string
+  snapshotIdForImputed: string | null
+}) {
+  // Anchors: measured-only
+  const anchors: Session[] = await db.manyOrNone(`
+    SELECT date, nocturnal_erections, nocturnal_duration_seconds, is_imputed
+    FROM erection_sessions
+    WHERE date BETWEEN $1 AND $2
+      AND is_imputed = FALSE
+    ORDER BY date ASC
+  `, [fromDate, toDate])
+
+  if (anchors.length < 2) return { filled: 0 }
+
+  let filled = 0
+
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const a = anchors[i]
+    const b = anchors[i + 1]
+
+    const daysBetween = daysDiff(a.date, b.date) // e.g. 5 if a=1st b=6th
+    if (daysBetween <= 1) continue // no gap
+
+    // Linear interpolation for each missing day
+    for (let k = 1; k < daysBetween; k++) {
+      const d = addDays(a.date, k)
+
+      // Interpolate integers safely
+      const t = k / daysBetween
+      const interpE = roundInt(lerp(a.nocturnal_erections ?? 0, b.nocturnal_erections ?? 0, t))
+      const interpDur = roundInt(lerp(a.nocturnal_duration_seconds ?? 0, b.nocturnal_duration_seconds ?? 0, t))
+
+      await db.none(SQL_UPSERT_IMPUTED_SESSION, [
+        d,
+        interpE,
+        interpDur,
+        snapshotIdForImputed,
+        "linear_interpolation",
+        a.date,
+        b.date
+      ])
+      filled++
+    }
+  }
+
+  return { filled }
+}
+
+Key safety properties:
+	•	Only interpolates between two real measured anchors
+	•	Won’t overwrite measured rows
+	•	Every imputed row is clearly flagged with provenance dates
+
+⸻
+
+4) Recompute rolling androgen proxy (measured-only default + toggle include-imputed)
+
+4A) Define the daily proxy score
+
+Keep it simple and stable. Example proxy:
+	•	Count is meaningful
+	•	Duration is meaningful
+	•	Use log scaling to reduce outlier dominance
+
+function computeProxyScore(noctCount: number, noctDurSec: number) {
+  const durMin = noctDurSec / 60
+  // weights can be tuned
+  return (noctCount * 1.0) + Math.log(1 + durMin) * 0.8
+}
+
+4B) Compute rolling 7-day average proxy
+
+Measured-only default:
+
+async function recomputeAndrogenProxy({
+  fromDate,
+  toDate,
+  includeImputed = false
+}: {
+  fromDate: string
+  toDate: string
+  includeImputed?: boolean
+}) {
+  const rows: Session[] = await db.manyOrNone(`
+    SELECT date, nocturnal_erections, nocturnal_duration_seconds, is_imputed
+    FROM erection_sessions
+    WHERE date BETWEEN $1 AND $2
+      AND ($3::boolean = TRUE OR is_imputed = FALSE)
+    ORDER BY date ASC
+  `, [fromDate, toDate, includeImputed])
+
+  // Build daily proxy
+  const daily = rows.map(r => ({
+    date: r.date,
+    proxy: (r.nocturnal_erections == null || r.nocturnal_duration_seconds == null)
+      ? null
+      : computeProxyScore(r.nocturnal_erections, r.nocturnal_duration_seconds)
+  }))
+
+  // Rolling 7-day average on available proxy values
+  const withRoll = daily.map((row, idx) => {
+    const window = daily.slice(Math.max(0, idx - 6), idx + 1)
+    const vals = window.map(x => x.proxy).filter(v => v != null) as number[]
+    const avg = vals.length ? (vals.reduce((a,b)=>a+b,0) / vals.length) : null
+    return { date: row.date, proxy: row.proxy, proxy7: avg }
+  })
+
+  // Upsert cache
+  for (const r of withRoll) {
+    await db.none(`
+      INSERT INTO androgen_proxy_daily (date, proxy_score, proxy_7d_avg, computed_with_imputed, computed_at)
+      VALUES ($1, $2, $3, $4, now())
+      ON CONFLICT (date) DO UPDATE SET
+        proxy_score = EXCLUDED.proxy_score,
+        proxy_7d_avg = EXCLUDED.proxy_7d_avg,
+        computed_with_imputed = EXCLUDED.computed_with_imputed,
+        computed_at = now()
+    `, [r.date, r.proxy, r.proxy7, includeImputed])
+  }
+}
+
+4C) Full recompute pipeline after an import
+
+async function recomputePipelineAfterImport({
+  sessionDate,
+  includeImputedForCharts = true // charts can include, decisions should not
+}: {
+  sessionDate: string
+  includeImputedForCharts?: boolean
+}) {
+  // Decide recompute range (buffer)
+  const from = addDays(sessionDate, -30)
+  const to = addDays(sessionDate, +30)
+
+  // 1) Fill gaps between measured anchors
+  // (use latest snapshot id optionally; if you want, fetch most recent snapshot id)
+  const latestSnapshotId = await db.oneOrNone(`
+    SELECT id FROM erection_summary_snapshots ORDER BY uploaded_at DESC LIMIT 1
+  `).then(r => r?.id ?? null)
+
+  await detectAndFillGaps({ fromDate: from, toDate: to, snapshotIdForImputed: latestSnapshotId })
+
+  // 2) Recompute proxy caches (measured-only default)
+  await recomputeAndrogenProxy({ fromDate: from, toDate: to, includeImputed: false })
+
+  // 3) Optionally recompute “include imputed” series for chart overlay
+  if (includeImputedForCharts) {
+    await recomputeAndrogenProxy({ fromDate: from, toDate: to, includeImputed: true })
+  }
+}
+
+
+⸻
+
+Implementation notes (so Replit doesn’t mess it up)
+
+✅ Measured vs imputed
+	•	Decision engine uses measured-only
+	•	Charts can optionally include imputed
+	•	Always badge rows in UI
+
+✅ Multi-night combined
+
+If recordings jumped by >1, the delta may represent multiple nights.
+Store it as measured but:
+	•	multi_night_combined = true
+	•	show warning in UI
+	•	do NOT interpolate inside that combined delta unless user provides dates
+
+✅ Never overwrite measured with imputed
+
+The WHERE erection_sessions.is_imputed = TRUE on imputed upsert protects this.
+
+⸻
+
+If you want, I can also provide:
+	•	the Express route handler skeleton (multer upload + CSV parsing)
+	•	the exact CSV parsing logic (header normalization, blank handling)
+	•	a small “dry run” mode: compute deltas + gap plan, but don’t write to DB until confirmed
