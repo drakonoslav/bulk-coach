@@ -55,13 +55,15 @@ function setupCors(app: express.Application) {
 function setupBodyParsing(app: express.Application) {
   app.use(
     express.json({
+      limit: "200mb",
       verify: (req, _res, buf) => {
         req.rawBody = buf;
       },
     }),
   );
 
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.urlencoded({ extended: false, limit: "200mb" }));
+  app.use(express.raw({ limit: "200mb", type: "application/octet-stream" }));
 }
 
 function setupRequestLogging(app: express.Application) {
