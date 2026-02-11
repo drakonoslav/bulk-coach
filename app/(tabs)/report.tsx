@@ -32,7 +32,7 @@ import {
   ITEM_UNITS,
   distributeDeltasToMeals,
   type AdjustmentItem,
-  type MealDelta,
+  type MealGuideEntry,
   type Diagnosis,
 } from "@/lib/coaching-engine";
 
@@ -313,13 +313,12 @@ function AdjustmentCard({ adjustments, kcalChange }: { adjustments: AdjustmentIt
 }
 
 function MealAdjustmentGuide({ adjustments, kcalChange }: { adjustments: AdjustmentItem[]; kcalChange: number }) {
-  if (kcalChange === 0 || adjustments.length === 0) return null;
+  const allMeals = distributeDeltasToMeals(adjustments);
+  const visibleMeals = allMeals.filter((m) => m.ingredients.length > 0);
 
-  const mealDeltas = distributeDeltasToMeals(adjustments);
-  if (mealDeltas.length === 0) return null;
-
-  const prepMeals = mealDeltas.filter((m) => m.prepZone === "prep");
-  const homeMeals = mealDeltas.filter((m) => m.prepZone === "home");
+  const changedCount = visibleMeals.filter((m) => m.changed).length;
+  const unchangedCount = visibleMeals.length - changedCount;
+  const prepChanged = visibleMeals.filter((m) => m.changed && m.prepZone === "prep").length;
 
   const summaryParts: string[] = [];
   for (const adj of adjustments) {
@@ -329,71 +328,101 @@ function MealAdjustmentGuide({ adjustments, kcalChange }: { adjustments: Adjustm
     summaryParts.push(`${sign}${adj.deltaAmount}${unit ? `${unit}` : ""} ${label}`);
   }
 
-  const renderMealRow = (meal: MealDelta) => (
-    <View key={meal.time} style={mealGuideStyles.mealRow}>
-      <View style={mealGuideStyles.mealHeader}>
-        <Text style={mealGuideStyles.mealTime}>{meal.time}</Text>
-        <Text style={mealGuideStyles.mealLabel}>{meal.label}</Text>
-      </View>
-      {meal.changes.map((c) => {
-        const label = ITEM_LABELS[c.item] || c.item;
-        const unit = ITEM_UNITS[c.item] || "";
-        const sign = c.delta > 0 ? "+" : "";
-        return (
-          <View key={c.item} style={mealGuideStyles.changeRow}>
-            <Feather name="arrow-right" size={12} color={c.delta > 0 ? Colors.success : Colors.danger} />
-            <Text style={mealGuideStyles.changeText}>
-              <Text style={{ color: c.delta > 0 ? Colors.success : Colors.danger, fontFamily: "Rubik_600SemiBold" }}>
-                {sign}{c.delta}{unit ? `${unit}` : ""}
-              </Text>
-              {" "}{label}
+  const formatAmount = (item: string, amount: number) => {
+    const unit = ITEM_UNITS[item] || "";
+    if (unit === "cup") return `${amount} ${unit}`;
+    if (unit) return `${amount}${unit}`;
+    return `${amount}`;
+  };
+
+  const renderIngredientLine = (ing: { item: string; baseline: number; adjusted: number; delta: number }) => {
+    const label = ITEM_LABELS[ing.item] || ing.item;
+    const hasDelta = ing.delta !== 0;
+
+    return (
+      <View key={ing.item} style={mealGuideStyles.ingredientRow}>
+        <View style={mealGuideStyles.ingredientLeft}>
+          <View style={[mealGuideStyles.ingredientDot, { backgroundColor: hasDelta ? (ing.delta > 0 ? Colors.success : Colors.danger) : Colors.textTertiary + "40" }]} />
+          <Text style={[mealGuideStyles.ingredientName, !hasDelta && { color: Colors.textTertiary }]}>
+            {label}
+          </Text>
+        </View>
+        {hasDelta ? (
+          <View style={mealGuideStyles.ingredientRight}>
+            <Text style={[mealGuideStyles.ingredientBaseline, { textDecorationLine: "line-through" as const }]}>
+              {formatAmount(ing.item, ing.baseline)}
             </Text>
-            <Text style={mealGuideStyles.newTotal}>
-              new: {c.newTotal}{unit}
+            <Feather name="arrow-right" size={10} color={ing.delta > 0 ? Colors.success : Colors.danger} />
+            <Text style={[mealGuideStyles.ingredientAdjusted, { color: ing.delta > 0 ? Colors.success : Colors.danger }]}>
+              {formatAmount(ing.item, ing.adjusted)}
+            </Text>
+            <Text style={[mealGuideStyles.ingredientDelta, { color: ing.delta > 0 ? Colors.success : Colors.danger }]}>
+              ({ing.delta > 0 ? "+" : ""}{formatAmount(ing.item, ing.delta)})
             </Text>
           </View>
-        );
-      })}
-    </View>
-  );
+        ) : (
+          <Text style={mealGuideStyles.ingredientUnchanged}>
+            {formatAmount(ing.item, ing.baseline)}
+          </Text>
+        )}
+      </View>
+    );
+  };
+
+  const renderMealCard = (meal: MealGuideEntry) => {
+    const zoneIcon = meal.prepZone === "prep" ? "briefcase-outline" : "home-outline";
+    const zoneColor = meal.prepZone === "prep" ? Colors.secondary : Colors.primary;
+    const zoneLabel = meal.prepZone === "prep" ? "PREP" : "HOME";
+
+    return (
+      <View key={meal.time} style={[mealGuideStyles.mealCard, meal.changed && { borderColor: Colors.primary + "40" }]}>
+        <View style={mealGuideStyles.mealHeader}>
+          <View style={mealGuideStyles.mealHeaderLeft}>
+            <Text style={mealGuideStyles.mealTime}>{meal.time}</Text>
+            <Text style={mealGuideStyles.mealLabel}>{meal.label}</Text>
+          </View>
+          <View style={mealGuideStyles.mealBadges}>
+            {meal.changed && (
+              <View style={[mealGuideStyles.changedBadge, { backgroundColor: Colors.primaryMuted }]}>
+                <Text style={[mealGuideStyles.changedBadgeText, { color: Colors.primary }]}>ADJUSTED</Text>
+              </View>
+            )}
+            <View style={[mealGuideStyles.zoneBadge, { backgroundColor: zoneColor + "15" }]}>
+              <Ionicons name={zoneIcon as any} size={10} color={zoneColor} />
+              <Text style={[mealGuideStyles.zoneBadgeText, { color: zoneColor }]}>{zoneLabel}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={mealGuideStyles.ingredientList}>
+          {meal.ingredients.map(renderIngredientLine)}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={mealGuideStyles.container}>
       <View style={mealGuideStyles.summaryBar}>
         <Ionicons name="restaurant-outline" size={16} color={Colors.primary} />
         <Text style={mealGuideStyles.summaryText}>
-          {prepMeals.length > 0 ? `Prep ${prepMeals.length} meal${prepMeals.length > 1 ? "s" : ""} before work.` : ""}
-          {prepMeals.length > 0 && homeMeals.length > 0 ? " " : ""}
-          {homeMeals.length > 0 ? `${homeMeals.length} can be made at home.` : ""}
+          {kcalChange === 0
+            ? "No changes this week. All meals unchanged."
+            : changedCount > 0
+            ? `${changedCount} meal${changedCount > 1 ? "s" : ""} adjusted${prepChanged > 0 ? ` (${prepChanged} need prep)` : ""}. ${unchangedCount} unchanged.`
+            : "All meals unchanged."}
         </Text>
       </View>
 
-      <View style={mealGuideStyles.deltaSummary}>
-        <Text style={mealGuideStyles.deltaSummaryLabel}>Total Adjustments</Text>
-        <Text style={mealGuideStyles.deltaSummaryValue}>{summaryParts.join("  /  ")}</Text>
+      {adjustments.length > 0 && kcalChange !== 0 && (
+        <View style={mealGuideStyles.deltaSummary}>
+          <Text style={mealGuideStyles.deltaSummaryLabel}>Total Adjustments</Text>
+          <Text style={mealGuideStyles.deltaSummaryValue}>{summaryParts.join("  /  ")}</Text>
+        </View>
+      )}
+
+      <View style={mealGuideStyles.mealsContainer}>
+        {visibleMeals.map(renderMealCard)}
       </View>
-
-      {prepMeals.length > 0 && (
-        <View style={mealGuideStyles.zoneBlock}>
-          <View style={mealGuideStyles.zoneHeader}>
-            <Feather name="clock" size={14} color={Colors.secondary} />
-            <Text style={[mealGuideStyles.zoneTitle, { color: Colors.secondary }]}>PREP REQUIRED</Text>
-            <Text style={mealGuideStyles.zoneSubtitle}>Before leaving for work</Text>
-          </View>
-          {prepMeals.map(renderMealRow)}
-        </View>
-      )}
-
-      {homeMeals.length > 0 && (
-        <View style={mealGuideStyles.zoneBlock}>
-          <View style={mealGuideStyles.zoneHeader}>
-            <Ionicons name="home-outline" size={14} color={Colors.primary} />
-            <Text style={[mealGuideStyles.zoneTitle, { color: Colors.primary }]}>AT HOME</Text>
-            <Text style={mealGuideStyles.zoneSubtitle}>No advance prep needed</Text>
-          </View>
-          {homeMeals.map(renderMealRow)}
-        </View>
-      )}
     </View>
   );
 }
@@ -1061,7 +1090,7 @@ export default function ReportScreen() {
               </View>
             ) : null}
 
-            {kcalAdj != null && adjustments.length > 0 ? (
+            {kcalAdj != null ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Meal Adjustment Guide</Text>
                 <MealAdjustmentGuide adjustments={adjustments} kcalChange={kcalAdj} />
@@ -1597,8 +1626,6 @@ const mealGuideStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     backgroundColor: Colors.primaryMuted,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   summaryText: {
     fontSize: 13,
@@ -1625,68 +1652,116 @@ const mealGuideStyles = StyleSheet.create({
     fontFamily: "Rubik_500Medium",
     color: Colors.text,
   },
-  zoneBlock: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  zoneHeader: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 6,
-    marginBottom: 8,
-  },
-  zoneTitle: {
-    fontSize: 11,
-    fontFamily: "Rubik_700Bold",
-    letterSpacing: 0.8,
-  },
-  zoneSubtitle: {
-    fontSize: 11,
-    fontFamily: "Rubik_400Regular",
-    color: Colors.textTertiary,
-    marginLeft: 4,
-  },
-  mealRow: {
-    backgroundColor: Colors.cardBgElevated,
-    borderRadius: 10,
+  mealsContainer: {
     padding: 10,
-    marginBottom: 6,
+    gap: 8,
+  },
+  mealCard: {
+    backgroundColor: Colors.cardBgElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden" as const,
   },
   mealHeader: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  mealHeaderLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 8,
-    marginBottom: 4,
+    flex: 1,
   },
   mealTime: {
     fontSize: 12,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textTertiary,
-    width: 42,
   },
   mealLabel: {
     fontSize: 13,
-    fontFamily: "Rubik_500Medium",
+    fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
   },
-  changeRow: {
+  mealBadges: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 6,
-    paddingLeft: 50,
-    marginTop: 2,
   },
-  changeText: {
-    fontSize: 13,
+  changedBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  changedBadgeText: {
+    fontSize: 9,
+    fontFamily: "Rubik_700Bold",
+    letterSpacing: 0.5,
+  },
+  zoneBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  zoneBadgeText: {
+    fontSize: 9,
+    fontFamily: "Rubik_600SemiBold",
+    letterSpacing: 0.3,
+  },
+  ingredientList: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  ingredientRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    paddingVertical: 3,
+  },
+  ingredientLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+  },
+  ingredientDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  ingredientName: {
+    fontSize: 12,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
-    flex: 1,
   },
-  newTotal: {
+  ingredientRight: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+  },
+  ingredientBaseline: {
     fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
+  },
+  ingredientAdjusted: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+  },
+  ingredientDelta: {
+    fontSize: 10,
     fontFamily: "Rubik_500Medium",
+  },
+  ingredientUnchanged: {
+    fontSize: 12,
+    fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
   },
 });

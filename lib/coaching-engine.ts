@@ -492,45 +492,77 @@ export const MEAL_SLOTS: MealSlot[] = [
   { time: "14:45", label: "Pre-lift shake", ingredients: { dextrin_g: 80, whey_g: 20 }, prepZone: "prep" },
   { time: "17:10", label: "Post-lift shake", ingredients: { dextrin_g: 40, whey_g: 30 }, prepZone: "home" },
   { time: "20:00", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home" },
+  { time: "21:30", label: "Evening protein", ingredients: { whey_g: 0 }, prepZone: "home" },
 ];
 
-export interface MealDelta {
+export interface MealIngredientLine {
+  item: string;
+  baseline: number;
+  adjusted: number;
+  delta: number;
+}
+
+export interface MealGuideEntry {
   time: string;
   label: string;
   prepZone: "prep" | "home";
-  changes: Array<{ item: string; delta: number; newTotal: number }>;
+  ingredients: MealIngredientLine[];
+  changed: boolean;
 }
 
-export function distributeDeltasToMeals(adjustments: AdjustmentItem[]): MealDelta[] {
-  if (adjustments.length === 0) return [];
-
-  const result: MealDelta[] = [];
+export function distributeDeltasToMeals(adjustments: AdjustmentItem[]): MealGuideEntry[] {
+  const meals: MealGuideEntry[] = MEAL_SLOTS.map((slot) => ({
+    time: slot.time,
+    label: slot.label,
+    prepZone: slot.prepZone,
+    ingredients: Object.entries(slot.ingredients).map(([item, baseline]) => ({
+      item,
+      baseline,
+      adjusted: baseline,
+      delta: 0,
+    })),
+    changed: false,
+  }));
 
   for (const adj of adjustments) {
-    const mealsWithItem = MEAL_SLOTS.filter((m) => m.ingredients[adj.item] != null);
-    if (mealsWithItem.length === 0) continue;
+    if (adj.item === "whey_g") {
+      const eveningProtein = meals.find((m) => m.time === "21:30");
+      if (eveningProtein) {
+        const line = eveningProtein.ingredients.find((i) => i.item === "whey_g");
+        if (line) {
+          line.delta += adj.deltaAmount;
+          line.adjusted = line.baseline + line.delta;
+          eveningProtein.changed = true;
+        }
+      }
+      continue;
+    }
 
-    if (mealsWithItem.length === 1) {
-      const meal = mealsWithItem[0];
-      const existing = result.find((r) => r.time === meal.time);
-      const baseAmount = meal.ingredients[adj.item];
-      const change = { item: adj.item, delta: adj.deltaAmount, newTotal: baseAmount + adj.deltaAmount };
-      if (existing) {
-        existing.changes.push(change);
-      } else {
-        result.push({ time: meal.time, label: meal.label, prepZone: meal.prepZone, changes: [change] });
+    const slotsWithItem = MEAL_SLOTS
+      .map((s, idx) => ({ slot: s, idx }))
+      .filter((x) => x.slot.ingredients[adj.item] != null && x.slot.time !== "21:30");
+
+    if (slotsWithItem.length === 0) continue;
+
+    if (slotsWithItem.length === 1) {
+      const { idx } = slotsWithItem[0];
+      const line = meals[idx].ingredients.find((i) => i.item === adj.item);
+      if (line) {
+        line.delta += adj.deltaAmount;
+        line.adjusted = line.baseline + line.delta;
+        meals[idx].changed = true;
       }
     } else {
-      const totalBase = mealsWithItem.reduce((s, m) => s + m.ingredients[adj.item], 0);
+      const totalBase = slotsWithItem.reduce((s, x) => s + x.slot.ingredients[adj.item], 0);
       let remaining = adj.deltaAmount;
 
-      for (let i = 0; i < mealsWithItem.length; i++) {
-        const meal = mealsWithItem[i];
-        const baseAmount = meal.ingredients[adj.item];
-        const proportion = totalBase > 0 ? baseAmount / totalBase : 1 / mealsWithItem.length;
+      for (let i = 0; i < slotsWithItem.length; i++) {
+        const { slot, idx } = slotsWithItem[i];
+        const baseAmount = slot.ingredients[adj.item];
+        const proportion = totalBase > 0 ? baseAmount / totalBase : 1 / slotsWithItem.length;
         let share: number;
 
-        if (i === mealsWithItem.length - 1) {
+        if (i === slotsWithItem.length - 1) {
           share = remaining;
         } else {
           const unit = adj.item.endsWith("_g") ? 5 : 1;
@@ -541,18 +573,20 @@ export function distributeDeltasToMeals(adjustments: AdjustmentItem[]): MealDelt
 
         if (share === 0) continue;
 
-        const existing = result.find((r) => r.time === meal.time);
-        const change = { item: adj.item, delta: share, newTotal: baseAmount + share };
-        if (existing) {
-          existing.changes.push(change);
-        } else {
-          result.push({ time: meal.time, label: meal.label, prepZone: meal.prepZone, changes: [change] });
+        const line = meals[idx].ingredients.find((ing) => ing.item === adj.item);
+        if (line) {
+          line.delta += share;
+          line.adjusted = line.baseline + line.delta;
+          meals[idx].changed = true;
         }
       }
     }
   }
 
-  const timeOrder = MEAL_SLOTS.map((m) => m.time);
-  result.sort((a, b) => timeOrder.indexOf(a.time) - timeOrder.indexOf(b.time));
-  return result;
+  const eveningProtein = meals.find((m) => m.time === "21:30");
+  if (eveningProtein && eveningProtein.ingredients.every((i) => i.adjusted === 0 && i.delta === 0)) {
+    eveningProtein.ingredients = [];
+  }
+
+  return meals;
 }
