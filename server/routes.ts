@@ -4,6 +4,7 @@ import multer from "multer";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
+import { importFitbitTakeout } from "./fitbit-takeout";
 import {
   parseSnapshotFile,
   importSnapshotAndDerive,
@@ -24,7 +25,7 @@ import {
   updateTrainingTemplate,
 } from "./readiness-engine";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
   const vals = [r1, r2, r3].filter((v): v is number => v != null && !isNaN(v));
@@ -222,6 +223,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(rows.map(snakeToCamel));
     } catch (err: unknown) {
       console.error("import history error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/import/fitbit_takeout", upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const overwriteFields = req.body?.overwrite_fields === "true";
+      const timezone = req.body?.timezone || "America/New_York";
+      const result = await importFitbitTakeout(req.file.buffer, req.file.originalname, overwriteFields, timezone);
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("fitbit takeout import error:", err);
+      const message = err instanceof Error ? err.message : "Import failed";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/import/takeout_history", async (_req: Request, res: Response) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT * FROM fitbit_takeout_imports ORDER BY uploaded_at DESC LIMIT 10`,
+      );
+      res.json(rows.map(snakeToCamel));
+    } catch (err: unknown) {
+      console.error("takeout history error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

@@ -77,6 +77,26 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS energy_burned_kcal INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS resting_hr INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS hrv INTEGER`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone1_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone2_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone3_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS below_zone1_min REAL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_takeout_imports (
+      id TEXT PRIMARY KEY,
+      uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      original_filename TEXT,
+      sha256 TEXT UNIQUE,
+      timezone TEXT,
+      date_range_start TEXT,
+      date_range_end TEXT,
+      days_affected INTEGER DEFAULT 0,
+      rows_upserted INTEGER DEFAULT 0,
+      rows_skipped INTEGER DEFAULT 0,
+      notes TEXT
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS erection_summary_snapshots (

@@ -65,6 +65,7 @@ export default function ChecklistScreen() {
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
   const [uploading, setUploading] = useState(false);
+  const [uploadingTakeout, setUploadingTakeout] = useState(false);
   const [lastResult, setLastResult] = useState<{
     status: string;
     rowsImported: number;
@@ -72,7 +73,26 @@ export default function ChecklistScreen() {
     rowsSkipped: number;
     dateRange: { start: string; end: string } | null;
   } | null>(null);
+  const [lastTakeoutResult, setLastTakeoutResult] = useState<{
+    status: string;
+    daysAffected: number;
+    rowsUpserted: number;
+    rowsSkipped: number;
+    filesProcessed: number;
+    dateRange: { start: string; end: string } | null;
+    parseDetails: Record<string, number>;
+  } | null>(null);
   const [importHistory, setImportHistory] = useState<ImportHistoryItem[]>([]);
+  const [takeoutHistory, setTakeoutHistory] = useState<Array<{
+    id: string;
+    uploadedAt: string;
+    originalFilename: string;
+    dateRangeStart: string;
+    dateRangeEnd: string;
+    daysAffected: number;
+    rowsUpserted: number;
+    timezone: string;
+  }>>([]);
   const [readiness, setReadiness] = useState<{
     readinessScore: number;
     readinessTier: string;
@@ -91,12 +111,12 @@ export default function ChecklistScreen() {
   const loadHistory = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
-      const url = new URL("/api/import/history", baseUrl);
-      const res = await fetch(url.toString(), { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setImportHistory(data);
-      }
+      const [csvRes, takeoutRes] = await Promise.all([
+        fetch(new URL("/api/import/history", baseUrl).toString(), { credentials: "include" }),
+        fetch(new URL("/api/import/takeout_history", baseUrl).toString(), { credentials: "include" }),
+      ]);
+      if (csvRes.ok) setImportHistory(await csvRes.json());
+      if (takeoutRes.ok) setTakeoutHistory(await takeoutRes.json());
     } catch {}
   }, []);
 
@@ -187,6 +207,68 @@ export default function ChecklistScreen() {
       Alert.alert("Import Error", "Something went wrong. Make sure you selected a valid CSV file.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleTakeoutImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/zip", "application/x-zip-compressed", "application/x-zip", "*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setUploadingTakeout(true);
+      setLastTakeoutResult(null);
+
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/import/fitbit_takeout", baseUrl);
+
+      const formData = new FormData();
+
+      if (Platform.OS === "web") {
+        const response = await globalThis.fetch(asset.uri);
+        const blob = await response.blob();
+        formData.append("file", blob, asset.name || "takeout.zip");
+
+        const uploadRes = await globalThis.fetch(url.toString(), {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        const data = await uploadRes.json();
+        setLastTakeoutResult(data);
+        if (data.status === "duplicate") {
+          Alert.alert("Duplicate File", "This ZIP has already been imported.");
+        }
+      } else {
+        formData.append("file", {
+          uri: asset.uri,
+          name: asset.name || "takeout.zip",
+          type: asset.mimeType || "application/zip",
+        } as any);
+
+        const uploadRes = await globalThis.fetch(url.toString(), {
+          method: "POST",
+          body: formData,
+        });
+        const data = await uploadRes.json();
+        setLastTakeoutResult(data);
+        if (data.status === "duplicate") {
+          Alert.alert("Duplicate File", "This ZIP has already been imported.");
+        }
+      }
+
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await loadHistory();
+    } catch (err) {
+      console.error("Takeout import error:", err);
+      Alert.alert("Import Error", "Something went wrong. Make sure you selected a valid Google Takeout ZIP file.");
+    } finally {
+      setUploadingTakeout(false);
     }
   };
 
@@ -476,7 +558,7 @@ export default function ChecklistScreen() {
 
           {importHistory.length > 0 && (
             <View style={styles.historySection}>
-              <Text style={styles.historyTitle}>Recent Imports</Text>
+              <Text style={styles.historyTitle}>Recent CSV Imports</Text>
               {importHistory.slice(0, 3).map((item) => (
                 <View key={item.id} style={styles.historyRow}>
                   <View style={{ flex: 1 }}>
@@ -485,6 +567,120 @@ export default function ChecklistScreen() {
                     </Text>
                     <Text style={styles.historyMeta}>
                       {item.rowsImported} rows
+                      {item.dateRangeStart && item.dateRangeEnd
+                        ? ` | ${item.dateRangeStart} to ${item.dateRangeEnd}`
+                        : ""}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyDate}>
+                    {new Date(item.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.importSection}>
+          <View style={styles.importHeader}>
+            <Ionicons name="archive-outline" size={20} color="#8B5CF6" />
+            <Text style={[styles.importTitle, { color: "#8B5CF6" }]}>Import Google Takeout ZIP</Text>
+          </View>
+          <Text style={styles.importDesc}>
+            Upload your Google Takeout ZIP containing Fitbit data. Auto-detects steps, calories, heart rate zones, resting HR, and sleep. Fitbit directory is found dynamically.
+          </Text>
+
+          <Pressable
+            onPress={handleTakeoutImport}
+            disabled={uploadingTakeout}
+            style={({ pressed }) => [
+              styles.importBtn,
+              { backgroundColor: "#8B5CF6" },
+              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+              uploadingTakeout && { opacity: 0.6 },
+            ]}
+          >
+            {uploadingTakeout ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="folder-open-outline" size={18} color="#fff" />
+            )}
+            <Text style={styles.importBtnText}>
+              {uploadingTakeout ? "Importing ZIP..." : "Select Takeout ZIP"}
+            </Text>
+          </Pressable>
+
+          {lastTakeoutResult && (
+            <View style={[
+              styles.importResult,
+              lastTakeoutResult.status === "duplicate" && { borderColor: Colors.warning + "60", backgroundColor: Colors.warning + "10" },
+              lastTakeoutResult.status === "ok" && { borderColor: Colors.success + "60", backgroundColor: Colors.success + "10" },
+              lastTakeoutResult.status === "no_data" && { borderColor: Colors.warning + "60", backgroundColor: Colors.warning + "10" },
+            ]}>
+              {lastTakeoutResult.status === "ok" ? (
+                <>
+                  <View style={styles.importResultRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                    <Text style={[styles.importResultText, { color: Colors.success }]}>
+                      Takeout import complete
+                    </Text>
+                  </View>
+                  <Text style={styles.importResultDetail}>
+                    {lastTakeoutResult.daysAffected} days, {lastTakeoutResult.rowsUpserted} upserted, {lastTakeoutResult.filesProcessed} files parsed
+                  </Text>
+                  {lastTakeoutResult.dateRange && (
+                    <Text style={styles.importResultDetail}>
+                      Range: {lastTakeoutResult.dateRange.start} to {lastTakeoutResult.dateRange.end}
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                    {Object.entries(lastTakeoutResult.parseDetails || {}).map(([key, val]) => (
+                      val > 0 ? (
+                        <View key={key} style={{ backgroundColor: "#8B5CF610", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#8B5CF6" }}>
+                            {key}: {val}
+                          </Text>
+                        </View>
+                      ) : null
+                    ))}
+                  </View>
+                </>
+              ) : lastTakeoutResult.status === "duplicate" ? (
+                <View style={styles.importResultRow}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+                  <Text style={[styles.importResultText, { color: Colors.warning }]}>
+                    ZIP already imported
+                  </Text>
+                </View>
+              ) : lastTakeoutResult.status === "no_data" ? (
+                <View style={styles.importResultRow}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+                  <Text style={[styles.importResultText, { color: Colors.warning }]}>
+                    No Fitbit data found in ZIP
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.importResultRow}>
+                  <Ionicons name="close-circle" size={16} color={Colors.danger} />
+                  <Text style={[styles.importResultText, { color: Colors.danger }]}>
+                    Import failed
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {takeoutHistory.length > 0 && (
+            <View style={styles.historySection}>
+              <Text style={styles.historyTitle}>Recent Takeout Imports</Text>
+              {takeoutHistory.slice(0, 3).map((item) => (
+                <View key={item.id} style={styles.historyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyFilename} numberOfLines={1}>
+                      {item.originalFilename || "Unknown file"}
+                    </Text>
+                    <Text style={styles.historyMeta}>
+                      {item.daysAffected} days, {item.rowsUpserted} upserted
                       {item.dateRangeStart && item.dateRangeEnd
                         ? ` | ${item.dateRangeStart} to ${item.dateRangeEnd}`
                         : ""}
