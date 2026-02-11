@@ -1,0 +1,71 @@
+1) Sleep day correctness (wake-date bucketing)
+
+Invariant: sleep belongs to the day you wake up, in your local timezone.
+
+Ask Replit to implement + prove:
+	•	Convert sleep_end (or endTime) to user timezone.
+	•	sleep_date = DATE(sleep_end_local) (wake date)
+	•	If multiple sleep segments exist in one wake-date, sum minutes.
+	•	If a sleep segment crosses midnight, it still counts toward the wake-date.
+
+Acceptance test you can do without Fitbit UI:
+	•	Pick a night you know crossed midnight (most do).
+	•	Ensure it shows up on the morning you woke up, not the day before.
+
+2) Timezone alignment (all metrics)
+
+Invariant: every timestamp in takeout is interpreted consistently.
+
+Ask Replit to:
+	•	Store a user_timezone (e.g. America/New_York) and use it everywhere.
+	•	For any row with a timestamp:
+	•	parse timestamp → convert to user TZ → bucket by local_date
+	•	Log the timezone used on every import.
+
+Acceptance test:
+	•	Choose a day where you traveled timezones (if applicable) or a DST boundary week.
+	•	Confirm no duplicated/missing day around DST transition.
+
+3) JSON + CSV overlap (double-counting protection)
+
+Invariant: A day’s metric must come from one canonical source per metric.
+
+Ask Replit to implement one of these (either is fine):
+
+Option A (simple, safest)
+	•	If CSV exists for metric+day → use CSV and ignore JSON for that metric+day.
+	•	Else fallback to JSON.
+
+Option B (merge with guardrails)
+	•	Load both, but if both present:
+	•	if values differ beyond tolerance → mark conflict
+	•	choose preferred source and record the other as “shadow” value
+
+Acceptance test:
+	•	Add an import summary that reports:
+	•	days_with_csv
+	•	days_with_json
+	•	days_with_both
+	•	conflicts_count
+	•	You want days_with_both allowed, but conflicts should be near zero and double-counting must be impossible.
+
+⸻
+
+The one endpoint that makes this bulletproof
+
+Tell Replit to add:
+
+GET /api/import/fitbit/takeout/diagnostics?date=YYYY-MM-DD
+
+Return for that date (and optionally D±1):
+	•	timezone used
+	•	per metric:
+	•	chosen source (csv|json|none)
+	•	filenames used
+	•	rows consumed
+	•	computed value
+	•	sleep bucketing:
+	•	sleep_end_local timestamps used
+	•	resulting bucket date
+
+If they can show you diagnostics for 3 dates (old/mid/recent) and it matches expectations, you’re basically done.

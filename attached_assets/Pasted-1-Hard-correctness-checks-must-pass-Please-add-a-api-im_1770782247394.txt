@@ -1,0 +1,58 @@
+1) Hard correctness checks (must pass)
+
+Please add a /api/import/fitbit/takeout/diagnostics?date=YYYY-MM-DD endpoint (or print these in server logs after import) that returns:
+
+For a chosen date D (and its neighbors D-1, D+1):
+	•	raw_files_contributing: list of filenames that contributed to D for each metric (steps, sleep, RHR, calories, active minutes)
+	•	raw_rows_count: how many rows were consumed per metric for D
+	•	computed_values: steps, sleep_minutes, resting_hr, calories, active_zone_minutes (and any zone breakdown)
+	•	timezone_used: e.g., America/New_York
+	•	sleep_bucket_rule: confirm sleep is bucketed by wake date
+
+This lets us verify no double-counting and correct day alignment.
+
+2) Sleep bucketing correctness (biggest risk)
+
+Implement explicitly:
+	•	Use sleep end_time (or sleep_end) → convert to user TZ → bucket to that local date
+	•	Do NOT bucket by sleep start date
+	•	If only a date field exists, treat it as local and still normalize
+
+Add a quick unit test: a sleep that starts 23:30 and ends 07:00 must count toward the wake date.
+
+3) Prevent double-counting when JSON + CSV overlap
+
+Right now you parse both CSV shards and JSON daily files. That can inflate totals.
+
+Rule:
+	•	Prefer one source per metric per day:
+	•	If CSV exists for that metric/day → use CSV and ignore JSON for that metric/day
+	•	Else fallback to JSON
+	•	Log conflicts: conflicts_detected: [{date, metric, csv, json}]
+
+4) Steps/calories aggregation rule
+
+Confirm whether CSV rows are already daily totals or intraday rows:
+	•	If multiple rows per day exist, sum.
+	•	If exactly one row per day exists, take it.
+	•	Always log rows_per_day_distribution per file type (min/median/max) to detect mistaken assumptions.
+
+5) COALESCE upsert rules (confirm explicitly)
+
+For daily_logs upsert:
+	•	COALESCE for Fitbit fields as well: steps = COALESCE(EXCLUDED.steps, daily_logs.steps)
+	•	Never overwrite user-entered weight/waist/notes/adherence
+	•	Add overwrite_fields=true only if I explicitly choose it in UI
+
+6) Performance + reliability
+	•	ZIP is ~50MB; ensure route timeout/body limit handled
+	•	Parse in streaming mode where possible (avoid loading all text at once)
+	•	Store import metadata: files_seen, files_parsed, days_affected, conflicts_detected
+
+7) Show me this test
+
+Pick 3 random dates:
+	•	one early (2019)
+	•	one mid
+	•	one recent
+…and show diagnostics output so I can compare against Fitbit UI quickly.

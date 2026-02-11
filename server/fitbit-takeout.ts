@@ -5,11 +5,14 @@ import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
 
+type Metric = "steps" | "calories" | "activeMinutes" | "zones" | "restingHr" | "sleep";
+
 export interface TakeoutImportResult {
   status: string;
   dateRange: { start: string; end: string } | null;
   fitbitRootPrefix: string | null;
   filesParsed: number;
+  filesSeen: number;
   daysAffected: number;
   daysInserted: number;
   daysUpdated: number;
@@ -17,6 +20,18 @@ export interface TakeoutImportResult {
   recomputeRan: boolean;
   parseDetails: Record<string, number>;
   filePatterns: string[];
+  conflictsDetected: ConflictEntry[];
+  rowsPerDayDistribution: Record<string, { min: number; max: number; median: number }>;
+  timezoneUsed: string;
+  sleepBucketRule: string;
+}
+
+interface ConflictEntry {
+  date: string;
+  metric: Metric;
+  csvValue: number;
+  jsonValue: number;
+  resolution: string;
 }
 
 interface DayBucket {
@@ -33,6 +48,46 @@ interface DayBucket {
   hrv: number | null;
 }
 
+interface DiagnosticDay {
+  rawFiles: Record<Metric, string[]>;
+  rawRowCounts: Record<Metric, number>;
+  computedValues: Partial<DayBucket>;
+  source: Record<Metric, "csv" | "json" | "both" | "none">;
+}
+
+let lastDiagnostics: Map<string, DiagnosticDay> | null = null;
+let lastTimezone: string = "America/New_York";
+let lastFitbitRoot: string | null = null;
+
+export function getDiagnostics(date: string): {
+  date: string;
+  diagnostics: DiagnosticDay | null;
+  neighbors: Record<string, DiagnosticDay | null>;
+  timezoneUsed: string;
+  fitbitRootPrefix: string | null;
+  sleepBucketRule: string;
+  dbValues: Record<string, unknown> | null;
+} {
+  const diag = lastDiagnostics?.get(date) ?? null;
+  const prev = lastDiagnostics?.get(shiftDate(date, -1)) ?? null;
+  const next = lastDiagnostics?.get(shiftDate(date, 1)) ?? null;
+  return {
+    date,
+    diagnostics: diag,
+    neighbors: { [shiftDate(date, -1)]: prev, [shiftDate(date, 1)]: next },
+    timezoneUsed: lastTimezone,
+    fitbitRootPrefix: lastFitbitRoot,
+    sleepBucketRule: "wake_date: sleep bucketed by endTime local date (or dateOfSleep from Fitbit API which is already wake date)",
+    dbValues: null,
+  };
+}
+
+function shiftDate(d: string, offset: number): string {
+  const dt = new Date(d + "T12:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() + offset);
+  return dt.toISOString().slice(0, 10);
+}
+
 function emptyBucket(): DayBucket {
   return {
     steps: null, energyBurnedKcal: null,
@@ -42,9 +97,23 @@ function emptyBucket(): DayBucket {
   };
 }
 
+function emptyDiagnostic(): DiagnosticDay {
+  return {
+    rawFiles: { steps: [], calories: [], activeMinutes: [], zones: [], restingHr: [], sleep: [] },
+    rawRowCounts: { steps: 0, calories: 0, activeMinutes: 0, zones: 0, restingHr: 0, sleep: 0 },
+    computedValues: {},
+    source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none" },
+  };
+}
+
 function ensureBucket(buckets: Map<string, DayBucket>, date: string): DayBucket {
   if (!buckets.has(date)) buckets.set(date, emptyBucket());
   return buckets.get(date)!;
+}
+
+function ensureDiag(diags: Map<string, DiagnosticDay>, date: string): DiagnosticDay {
+  if (!diags.has(date)) diags.set(date, emptyDiagnostic());
+  return diags.get(date)!;
 }
 
 function extractDateFromISO(ts: string): string | null {
@@ -60,6 +129,30 @@ function parseFitbitDateTime(dt: string): string | null {
     return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
   }
   return extractDateFromISO(dt);
+}
+
+function parseFitbitEndTimeToWakeDate(endTime: string, tz: string): string | null {
+  const isoMatch = endTime.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+  return parseFitbitDateTime(endTime);
+}
+
+function parseUTCTimestampToLocalDate(utcTs: string, offsetStr: string): string | null {
+  const m = utcTs.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return extractDateFromISO(utcTs);
+  const dt = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
+  if (isNaN(dt.getTime())) return extractDateFromISO(utcTs);
+  if (offsetStr && offsetStr !== "+00:00") {
+    const offMatch = offsetStr.match(/^([+-])(\d{2}):(\d{2})$/);
+    if (offMatch) {
+      const sign = offMatch[1] === "+" ? 1 : -1;
+      const offMinutes = sign * (parseInt(offMatch[2]) * 60 + parseInt(offMatch[3]));
+      dt.setUTCMinutes(dt.getUTCMinutes() + offMinutes);
+    }
+  }
+  return dt.toISOString().slice(0, 10);
 }
 
 function parseCSVRows(buf: Buffer): { headers: string[]; rows: string[][] } {
@@ -83,16 +176,12 @@ function colIdx(headers: string[], ...names: string[]): number {
 function findFitbitRoot(entryPaths: string[]): string | null {
   for (const p of entryPaths) {
     const idx = p.indexOf("/Fitbit/");
-    if (idx !== -1) {
-      return p.slice(0, idx) + "/Fitbit/";
-    }
+    if (idx !== -1) return p.slice(0, idx) + "/Fitbit/";
   }
   for (const p of entryPaths) {
     const lower = p.toLowerCase();
     const idx = lower.indexOf("/fitbit/");
-    if (idx !== -1) {
-      return p.slice(0, idx + 8);
-    }
+    if (idx !== -1) return p.slice(0, idx + 8);
   }
   return null;
 }
@@ -121,12 +210,29 @@ async function extractZipEntries(fileBuffer: Buffer): Promise<Map<string, Buffer
   return entries;
 }
 
-function parseStepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function trackRowsPerDay(dist: Record<string, number[]>, key: string, dayCounts: Map<string, number>): void {
+  if (!dist[key]) dist[key] = [];
+  for (const count of dayCounts.values()) {
+    dist[key].push(count);
+  }
+}
+
+function computeDistribution(vals: number[]): { min: number; max: number; median: number } {
+  if (vals.length === 0) return { min: 0, max: 0, median: 0 };
+  vals.sort((a, b) => a - b);
+  return { min: vals[0], max: vals[vals.length - 1], median: vals[Math.floor(vals.length / 2)] };
+}
+
+function parseStepsCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string, rowDist: Record<string, number[]>,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date", "datetime");
   const stepsCol = colIdx(headers, "steps", "value");
   if (tsCol === -1 || stepsCol === -1) return 0;
   let count = 0;
+  const dayCounts = new Map<string, number>();
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
@@ -134,17 +240,27 @@ function parseStepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
     if (isNaN(val)) continue;
     const b = ensureBucket(buckets, date);
     b.steps = (b.steps || 0) + val;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.steps.includes(filename)) d.rawFiles.steps.push(filename);
+    d.rawRowCounts.steps++;
+    d.source.steps = "csv";
+    dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
     count++;
   }
+  trackRowsPerDay(rowDist, "stepsCSV", dayCounts);
   return count;
 }
 
-function parseCaloriesCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseCaloriesCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string, rowDist: Record<string, number[]>,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date", "datetime");
   const calCol = colIdx(headers, "calories", "kcal", "value");
   if (tsCol === -1 || calCol === -1) return 0;
   let count = 0;
+  const dayCounts = new Map<string, number>();
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
@@ -152,30 +268,21 @@ function parseCaloriesCSV(buf: Buffer, buckets: Map<string, DayBucket>): number 
     if (isNaN(val)) continue;
     const b = ensureBucket(buckets, date);
     b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.calories.includes(filename)) d.rawFiles.calories.push(filename);
+    d.rawRowCounts.calories++;
+    d.source.calories = "csv";
+    dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
     count++;
   }
+  trackRowsPerDay(rowDist, "caloriesCSV", dayCounts);
   return count;
 }
 
-function parseCaloriesInZoneCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
-  const { headers, rows } = parseCSVRows(buf);
-  const tsCol = colIdx(headers, "timestamp", "date");
-  const kcalCol = colIdx(headers, "kcal", "calories");
-  if (tsCol === -1 || kcalCol === -1) return 0;
-  let count = 0;
-  for (const row of rows) {
-    const date = extractDateFromISO(row[tsCol] || "");
-    if (!date) continue;
-    const val = parseFloat(row[kcalCol]);
-    if (isNaN(val)) continue;
-    const b = ensureBucket(buckets, date);
-    b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
-    count++;
-  }
-  return count;
-}
-
-function parseActiveMinutesCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseActiveMinutesCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string, rowDist: Record<string, number[]>,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date");
   const lightCol = colIdx(headers, "light");
@@ -183,6 +290,7 @@ function parseActiveMinutesCSV(buf: Buffer, buckets: Map<string, DayBucket>): nu
   const veryCol = colIdx(headers, "very");
   if (tsCol === -1) return 0;
   let count = 0;
+  const dayCounts = new Map<string, number>();
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
@@ -195,17 +303,27 @@ function parseActiveMinutesCSV(buf: Buffer, buckets: Map<string, DayBucket>): nu
     b.zone1Min = (b.zone1Min || 0) + light;
     b.zone2Min = (b.zone2Min || 0) + mod;
     b.zone3Min = (b.zone3Min || 0) + very;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.activeMinutes.includes(filename)) d.rawFiles.activeMinutes.push(filename);
+    d.rawRowCounts.activeMinutes++;
+    d.source.activeMinutes = "csv";
+    dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
     count++;
   }
+  trackRowsPerDay(rowDist, "activeMinutesCSV", dayCounts);
   return count;
 }
 
-function parseTimeInZoneCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseTimeInZoneCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string, rowDist: Record<string, number[]>,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date");
   const zoneCol = colIdx(headers, "heart rate zone type", "zone", "zone_type");
   if (tsCol === -1) return 0;
   let count = 0;
+  const dayCounts = new Map<string, number>();
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
@@ -222,12 +340,38 @@ function parseTimeInZoneCSV(buf: Buffer, buckets: Map<string, DayBucket>): numbe
       b.activeZoneMinutes = (b.activeZoneMinutes || 0) + 2;
       b.cardioMin = (b.cardioMin || 0) + 1;
     }
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.zones.includes(filename)) d.rawFiles.zones.push(filename);
+    d.rawRowCounts.zones++;
+    d.source.zones = "csv";
+    dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
+    count++;
+  }
+  trackRowsPerDay(rowDist, "timeInZoneCSV", dayCounts);
+  return count;
+}
+
+function parseCaloriesInZoneCSV(
+  buf: Buffer, diags: Map<string, DiagnosticDay>, filename: string,
+): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  if (tsCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.zones.includes(filename)) d.rawFiles.zones.push(filename);
     count++;
   }
   return count;
 }
 
-function parseDailyRestingHrCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseDailyRestingHrCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date");
   const bpmCol = colIdx(headers, "beats per minute", "bpm", "resting_heart_rate", "value");
@@ -239,15 +383,23 @@ function parseDailyRestingHrCSV(buf: Buffer, buckets: Map<string, DayBucket>): n
     const val = Math.round(parseFloat(row[bpmCol]));
     if (isNaN(val) || val <= 0) continue;
     ensureBucket(buckets, date).restingHr = val;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.restingHr.includes(filename)) d.rawFiles.restingHr.push(filename);
+    d.rawRowCounts.restingHr++;
+    d.source.restingHr = "csv";
     count++;
   }
   return count;
 }
 
-function parseUserSleepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseUserSleepsCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const sleepMinCol = colIdx(headers, "minutes_asleep", "minutesasleep");
   const endCol = colIdx(headers, "sleep_end", "end_time");
+  const endOffsetCol = colIdx(headers, "end_utc_offset");
   if (sleepMinCol === -1) return 0;
   let count = 0;
   for (const row of rows) {
@@ -255,7 +407,8 @@ function parseUserSleepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): numbe
     if (isNaN(mins) || mins <= 0) continue;
     let date: string | null = null;
     if (endCol !== -1 && row[endCol]) {
-      date = extractDateFromISO(row[endCol]);
+      const offset = endOffsetCol !== -1 ? row[endOffsetCol] || "+00:00" : "+00:00";
+      date = parseUTCTimestampToLocalDate(row[endCol], offset);
     }
     if (!date) {
       const startCol = colIdx(headers, "sleep_start", "start_time");
@@ -266,12 +419,19 @@ function parseUserSleepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): numbe
     if (!date) continue;
     const b = ensureBucket(buckets, date);
     b.sleepMinutes = (b.sleepMinutes || 0) + mins;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.sleep.includes(filename)) d.rawFiles.sleep.push(filename);
+    d.rawRowCounts.sleep++;
+    d.source.sleep = "csv";
     count++;
   }
   return count;
 }
 
-function parseSleepScoreCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseSleepScoreCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string,
+): number {
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date");
   const rhrCol = colIdx(headers, "resting_heart_rate", "restingheartrate");
@@ -291,6 +451,9 @@ function parseSleepScoreCSV(buf: Buffer, buckets: Map<string, DayBucket>): numbe
       if (!isNaN(hr) && hr > 0) {
         const b = ensureBucket(buckets, date);
         if (b.restingHr == null) b.restingHr = hr;
+        const diag = ensureDiag(diags, date);
+        if (!diag.rawFiles.restingHr.includes(filename)) diag.rawFiles.restingHr.push(filename);
+        if (diag.source.restingHr === "none") diag.source.restingHr = "csv";
       }
     }
     count++;
@@ -298,42 +461,86 @@ function parseSleepScoreCSV(buf: Buffer, buckets: Map<string, DayBucket>): numbe
   return count;
 }
 
-function parseStepsJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseStepsJSON(
+  buf: Buffer, csvDays: Set<string>, buckets: Map<string, DayBucket>,
+  diags: Map<string, DiagnosticDay>, filename: string, conflicts: ConflictEntry[],
+  rowDist: Record<string, number[]>,
+): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
     let count = 0;
+    const jsonDayTotals = new Map<string, number>();
+    const dayCounts = new Map<string, number>();
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
       const val = parseInt(item.value, 10);
       if (isNaN(val)) continue;
-      ensureBucket(buckets, date).steps = (ensureBucket(buckets, date).steps || 0) + val;
+      jsonDayTotals.set(date, (jsonDayTotals.get(date) || 0) + val);
+      dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
       count++;
+    }
+    trackRowsPerDay(rowDist, "stepsJSON", dayCounts);
+    for (const [date, total] of jsonDayTotals) {
+      const d = ensureDiag(diags, date);
+      if (!d.rawFiles.steps.includes(filename)) d.rawFiles.steps.push(filename);
+      if (csvDays.has(date)) {
+        const csvVal = buckets.get(date)?.steps ?? 0;
+        conflicts.push({ date, metric: "steps", csvValue: csvVal, jsonValue: total, resolution: "csv_preferred" });
+        continue;
+      }
+      const b = ensureBucket(buckets, date);
+      b.steps = (b.steps || 0) + total;
+      d.rawRowCounts.steps += dayCounts.get(date) || 0;
+      d.source.steps = d.source.steps === "csv" ? "both" : "json";
     }
     return count;
   } catch { return 0; }
 }
 
-function parseCaloriesJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseCaloriesJSON(
+  buf: Buffer, csvDays: Set<string>, buckets: Map<string, DayBucket>,
+  diags: Map<string, DiagnosticDay>, filename: string, conflicts: ConflictEntry[],
+  rowDist: Record<string, number[]>,
+): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
     let count = 0;
+    const jsonDayTotals = new Map<string, number>();
+    const dayCounts = new Map<string, number>();
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
       const val = parseFloat(item.value);
       if (isNaN(val)) continue;
-      const b = ensureBucket(buckets, date);
-      b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
+      jsonDayTotals.set(date, (jsonDayTotals.get(date) || 0) + val);
+      dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
       count++;
+    }
+    trackRowsPerDay(rowDist, "caloriesJSON", dayCounts);
+    for (const [date, total] of jsonDayTotals) {
+      const d = ensureDiag(diags, date);
+      if (!d.rawFiles.calories.includes(filename)) d.rawFiles.calories.push(filename);
+      if (csvDays.has(date)) {
+        const csvVal = buckets.get(date)?.energyBurnedKcal ?? 0;
+        conflicts.push({ date, metric: "calories", csvValue: csvVal, jsonValue: Math.round(total), resolution: "csv_preferred" });
+        continue;
+      }
+      const b = ensureBucket(buckets, date);
+      b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + total);
+      d.rawRowCounts.calories += dayCounts.get(date) || 0;
+      d.source.calories = d.source.calories === "csv" ? "both" : "json";
     }
     return count;
   } catch { return 0; }
 }
 
-function parseHeartRateZonesJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseHeartRateZonesJSON(
+  buf: Buffer, csvDays: Set<string>, buckets: Map<string, DayBucket>,
+  diags: Map<string, DiagnosticDay>, filename: string, conflicts: ConflictEntry[],
+): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -343,6 +550,12 @@ function parseHeartRateZonesJSON(buf: Buffer, buckets: Map<string, DayBucket>): 
       if (!date) continue;
       const zones = item.value?.valuesInZones;
       if (!zones) continue;
+      const d = ensureDiag(diags, date);
+      if (!d.rawFiles.zones.includes(filename)) d.rawFiles.zones.push(filename);
+      if (csvDays.has(date)) {
+        conflicts.push({ date, metric: "zones", csvValue: buckets.get(date)?.zone2Min ?? 0, jsonValue: parseFloat(zones.IN_DEFAULT_ZONE_2) || 0, resolution: "csv_preferred" });
+        continue;
+      }
       const b = ensureBucket(buckets, date);
       const z1 = parseFloat(zones.IN_DEFAULT_ZONE_1) || 0;
       const z2 = parseFloat(zones.IN_DEFAULT_ZONE_2) || 0;
@@ -353,13 +566,18 @@ function parseHeartRateZonesJSON(buf: Buffer, buckets: Map<string, DayBucket>): 
       b.zone3Min = (b.zone3Min || 0) + z3;
       b.belowZone1Min = (b.belowZone1Min || 0) + below;
       b.activeZoneMinutes = Math.round((b.zone2Min || 0) + 2 * (b.zone3Min || 0));
+      d.rawRowCounts.zones++;
+      d.source.zones = d.source.zones === "csv" ? "both" : "json";
       count++;
     }
     return count;
   } catch { return 0; }
 }
 
-function parseRestingHrJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseRestingHrJSON(
+  buf: Buffer, csvDays: Set<string>, buckets: Map<string, DayBucket>,
+  diags: Map<string, DiagnosticDay>, filename: string, conflicts: ConflictEntry[],
+): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -371,29 +589,53 @@ function parseRestingHrJSON(buf: Buffer, buckets: Map<string, DayBucket>): numbe
       if (val == null || val <= 0) continue;
       const hr = Math.round(parseFloat(val));
       if (isNaN(hr) || hr <= 0) continue;
+      const d = ensureDiag(diags, date);
+      if (!d.rawFiles.restingHr.includes(filename)) d.rawFiles.restingHr.push(filename);
+      if (csvDays.has(date)) {
+        conflicts.push({ date, metric: "restingHr", csvValue: buckets.get(date)?.restingHr ?? 0, jsonValue: hr, resolution: "csv_preferred" });
+        continue;
+      }
       ensureBucket(buckets, date).restingHr = hr;
+      d.rawRowCounts.restingHr++;
+      d.source.restingHr = d.source.restingHr === "csv" ? "both" : "json";
       count++;
     }
     return count;
   } catch { return 0; }
 }
 
-function parseSleepJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseSleepJSON(
+  buf: Buffer, csvDays: Set<string>, buckets: Map<string, DayBucket>,
+  diags: Map<string, DiagnosticDay>, filename: string, conflicts: ConflictEntry[],
+  tz: string,
+): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
     let count = 0;
     for (const item of data) {
       let date: string | null = null;
-      if (item.endTime) date = parseFitbitDateTime(item.endTime);
-      if (!date && item.dateOfSleep) date = item.dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? item.dateOfSleep.slice(0, 10) : null;
+      if (item.endTime) {
+        date = parseFitbitEndTimeToWakeDate(item.endTime, tz);
+      }
+      if (!date && item.dateOfSleep) {
+        date = item.dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? item.dateOfSleep.slice(0, 10) : null;
+      }
       if (!date) continue;
-      const mins = item.minutesAsleep ?? item.duration;
+      const mins = item.minutesAsleep;
       if (mins == null) continue;
       const minsVal = parseInt(mins, 10);
       if (isNaN(minsVal) || minsVal <= 0) continue;
+      const d = ensureDiag(diags, date);
+      if (!d.rawFiles.sleep.includes(filename)) d.rawFiles.sleep.push(filename);
+      if (csvDays.has(date)) {
+        conflicts.push({ date, metric: "sleep", csvValue: buckets.get(date)?.sleepMinutes ?? 0, jsonValue: minsVal, resolution: "csv_preferred" });
+        continue;
+      }
       const b = ensureBucket(buckets, date);
       b.sleepMinutes = (b.sleepMinutes || 0) + minsVal;
+      d.rawRowCounts.sleep++;
+      d.source.sleep = d.source.sleep === "csv" ? "both" : "json";
       count++;
     }
     return count;
@@ -406,6 +648,7 @@ export async function importFitbitTakeout(
   overwriteFields: boolean = false,
   timezone: string = "America/New_York",
 ): Promise<TakeoutImportResult> {
+  lastTimezone = timezone;
   const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
   const { rows: existing } = await pool.query(
@@ -416,8 +659,10 @@ export async function importFitbitTakeout(
     return {
       status: "duplicate",
       dateRange: null, fitbitRootPrefix: null,
-      filesParsed: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      filesParsed: 0, filesSeen: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
       rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
+      conflictsDetected: [], rowsPerDayDistribution: {},
+      timezoneUsed: timezone, sleepBucketRule: "wake_date",
     };
   }
 
@@ -426,21 +671,28 @@ export async function importFitbitTakeout(
   console.log(`[takeout] Found ${entries.size} files in ZIP`);
 
   const fitbitRoot = findFitbitRoot(Array.from(entries.keys()));
+  lastFitbitRoot = fitbitRoot;
   if (!fitbitRoot) {
     return {
-      status: "error",
+      status: "error_no_fitbit_root",
       dateRange: null, fitbitRootPrefix: null,
-      filesParsed: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
-      rowsSkipped: 0, recomputeRan: false, parseDetails: {},
-      filePatterns: [],
+      filesParsed: 0, filesSeen: entries.size, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
+      conflictsDetected: [], rowsPerDayDistribution: {},
+      timezoneUsed: timezone, sleepBucketRule: "wake_date",
     };
   }
 
   console.log(`[takeout] Fitbit root: ${fitbitRoot}`);
 
-  const buckets = new Map<string, DayBucket>();
+  const csvBuckets = new Map<string, DayBucket>();
+  const diags = new Map<string, DiagnosticDay>();
+  const conflicts: ConflictEntry[] = [];
   let filesParsed = 0;
+  let filesSeen = 0;
   const filePatterns: string[] = [];
+  const rowDistRaw: Record<string, number[]> = {};
+
   const parseDetails: Record<string, number> = {
     stepsCSV: 0, stepsJSON: 0,
     caloriesCSV: 0, caloriesJSON: 0,
@@ -451,84 +703,123 @@ export async function importFitbitTakeout(
     sleepScoreCSV: 0, userSleepsCSV: 0, sleepJSON: 0,
   };
 
+  const csvStepsDays = new Set<string>();
+  const csvCaloriesDays = new Set<string>();
+  const csvActiveMinDays = new Set<string>();
+  const csvZonesDays = new Set<string>();
+  const csvRestingHrDays = new Set<string>();
+  const csvSleepDays = new Set<string>();
+
+  const csvFiles: Array<{ path: string; filename: string; fnLower: string; buf: Buffer }> = [];
+  const jsonFiles: Array<{ path: string; filename: string; fnLower: string; buf: Buffer }> = [];
+
   for (const [path, buf] of entries.entries()) {
     if (!path.startsWith(fitbitRoot)) continue;
-
-    const relativePath = path.slice(fitbitRoot.length);
     const filename = path.split("/").pop() || "";
     const fnLower = filename.toLowerCase();
-
     if (fnLower.endsWith(".txt")) continue;
+    filesSeen++;
+    if (fnLower.endsWith(".csv")) csvFiles.push({ path, filename, fnLower, buf });
+    else if (fnLower.endsWith(".json")) jsonFiles.push({ path, filename, fnLower, buf });
+  }
 
+  for (const { filename, fnLower, buf } of csvFiles) {
     if (fnLower.startsWith("steps_") && fnLower.endsWith(".csv")) {
-      parseDetails.stepsCSV += parseStepsCSV(buf, buckets);
+      const beforeDays = new Set(csvBuckets.keys());
+      parseDetails.stepsCSV += parseStepsCSV(buf, csvBuckets, diags, filename, rowDistRaw);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.steps != null) csvStepsDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("steps_*.csv")) filePatterns.push("steps_*.csv");
-    } else if (fnLower.startsWith("steps-") && fnLower.endsWith(".json")) {
-      parseDetails.stepsJSON += parseStepsJSON(buf, buckets);
-      filesParsed++;
-      if (!filePatterns.includes("steps-*.json")) filePatterns.push("steps-*.json");
     } else if (fnLower.startsWith("calories_in_heart_rate_zone_") && fnLower.endsWith(".csv")) {
-      parseDetails.caloriesInZoneCSV += parseCaloriesInZoneCSV(buf, buckets);
+      parseDetails.caloriesInZoneCSV += parseCaloriesInZoneCSV(buf, diags, filename);
       filesParsed++;
       if (!filePatterns.includes("calories_in_heart_rate_zone_*.csv")) filePatterns.push("calories_in_heart_rate_zone_*.csv");
     } else if (fnLower.startsWith("calories_") && fnLower.endsWith(".csv")) {
-      parseDetails.caloriesCSV += parseCaloriesCSV(buf, buckets);
+      parseDetails.caloriesCSV += parseCaloriesCSV(buf, csvBuckets, diags, filename, rowDistRaw);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.energyBurnedKcal != null) csvCaloriesDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("calories_*.csv")) filePatterns.push("calories_*.csv");
-    } else if (fnLower.startsWith("calories-") && fnLower.endsWith(".json")) {
-      parseDetails.caloriesJSON += parseCaloriesJSON(buf, buckets);
-      filesParsed++;
-      if (!filePatterns.includes("calories-*.json")) filePatterns.push("calories-*.json");
     } else if (fnLower.startsWith("active_minutes_") && fnLower.endsWith(".csv")) {
-      parseDetails.activeMinutesCSV += parseActiveMinutesCSV(buf, buckets);
+      parseDetails.activeMinutesCSV += parseActiveMinutesCSV(buf, csvBuckets, diags, filename, rowDistRaw);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.activeZoneMinutes != null) csvActiveMinDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("active_minutes_*.csv")) filePatterns.push("active_minutes_*.csv");
     } else if (fnLower.startsWith("time_in_heart_rate_zone_") && fnLower.endsWith(".csv")) {
-      parseDetails.timeInZoneCSV += parseTimeInZoneCSV(buf, buckets);
+      parseDetails.timeInZoneCSV += parseTimeInZoneCSV(buf, csvBuckets, diags, filename, rowDistRaw);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.zone2Min != null) csvZonesDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("time_in_heart_rate_zone_*.csv")) filePatterns.push("time_in_heart_rate_zone_*.csv");
     } else if (fnLower === "daily_resting_heart_rate.csv") {
-      parseDetails.dailyRestingHrCSV += parseDailyRestingHrCSV(buf, buckets);
+      parseDetails.dailyRestingHrCSV += parseDailyRestingHrCSV(buf, csvBuckets, diags, filename);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.restingHr != null) csvRestingHrDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("daily_resting_heart_rate.csv")) filePatterns.push("daily_resting_heart_rate.csv");
-    } else if (fnLower.startsWith("time_in_heart_rate_zones-") && fnLower.endsWith(".json")) {
-      parseDetails.heartRateZonesJSON += parseHeartRateZonesJSON(buf, buckets);
-      filesParsed++;
-      if (!filePatterns.includes("time_in_heart_rate_zones-*.json")) filePatterns.push("time_in_heart_rate_zones-*.json");
-    } else if (fnLower.startsWith("resting_heart_rate-") && fnLower.endsWith(".json")) {
-      parseDetails.restingHrJSON += parseRestingHrJSON(buf, buckets);
-      filesParsed++;
-      if (!filePatterns.includes("resting_heart_rate-*.json")) filePatterns.push("resting_heart_rate-*.json");
-    } else if (fnLower.startsWith("sleep-") && fnLower.endsWith(".json")) {
-      parseDetails.sleepJSON += parseSleepJSON(buf, buckets);
-      filesParsed++;
-      if (!filePatterns.includes("sleep-*.json")) filePatterns.push("sleep-*.json");
     } else if (fnLower === "sleep_score.csv" || (fnLower.includes("sleep") && fnLower.includes("score") && fnLower.endsWith(".csv"))) {
-      parseDetails.sleepScoreCSV += parseSleepScoreCSV(buf, buckets);
+      parseDetails.sleepScoreCSV += parseSleepScoreCSV(buf, csvBuckets, diags, filename);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.restingHr != null) csvRestingHrDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("sleep_score.csv")) filePatterns.push("sleep_score.csv");
     } else if (fnLower.startsWith("usersleeps") && fnLower.endsWith(".csv")) {
-      parseDetails.userSleepsCSV += parseUserSleepsCSV(buf, buckets);
+      parseDetails.userSleepsCSV += parseUserSleepsCSV(buf, csvBuckets, diags, filename);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.sleepMinutes != null) csvSleepDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("UserSleeps_*.csv")) filePatterns.push("UserSleeps_*.csv");
     }
   }
 
-  console.log(`[takeout] Parsed ${filesParsed} files, ${buckets.size} unique days`);
-  console.log(`[takeout] Parse details:`, JSON.stringify(parseDetails));
-  console.log(`[takeout] File patterns:`, filePatterns);
+  console.log(`[takeout] CSV pass done: ${filesParsed} files, ${csvBuckets.size} days`);
+  console.log(`[takeout] CSV coverage: steps=${csvStepsDays.size}d, cal=${csvCaloriesDays.size}d, azm=${csvActiveMinDays.size}d, zones=${csvZonesDays.size}d, rhr=${csvRestingHrDays.size}d, sleep=${csvSleepDays.size}d`);
 
-  if (buckets.size === 0) {
+  for (const { filename, fnLower, buf } of jsonFiles) {
+    if (fnLower.startsWith("steps-") && fnLower.endsWith(".json")) {
+      parseDetails.stepsJSON += parseStepsJSON(buf, csvStepsDays, csvBuckets, diags, filename, conflicts, rowDistRaw);
+      filesParsed++;
+      if (!filePatterns.includes("steps-*.json")) filePatterns.push("steps-*.json");
+    } else if (fnLower.startsWith("calories-") && fnLower.endsWith(".json")) {
+      parseDetails.caloriesJSON += parseCaloriesJSON(buf, csvCaloriesDays, csvBuckets, diags, filename, conflicts, rowDistRaw);
+      filesParsed++;
+      if (!filePatterns.includes("calories-*.json")) filePatterns.push("calories-*.json");
+    } else if (fnLower.startsWith("time_in_heart_rate_zones-") && fnLower.endsWith(".json")) {
+      parseDetails.heartRateZonesJSON += parseHeartRateZonesJSON(buf, csvZonesDays, csvBuckets, diags, filename, conflicts);
+      filesParsed++;
+      if (!filePatterns.includes("time_in_heart_rate_zones-*.json")) filePatterns.push("time_in_heart_rate_zones-*.json");
+    } else if (fnLower.startsWith("resting_heart_rate-") && fnLower.endsWith(".json")) {
+      parseDetails.restingHrJSON += parseRestingHrJSON(buf, csvRestingHrDays, csvBuckets, diags, filename, conflicts);
+      filesParsed++;
+      if (!filePatterns.includes("resting_heart_rate-*.json")) filePatterns.push("resting_heart_rate-*.json");
+    } else if (fnLower.startsWith("sleep-") && fnLower.endsWith(".json")) {
+      parseDetails.sleepJSON += parseSleepJSON(buf, csvSleepDays, csvBuckets, diags, filename, conflicts, timezone);
+      filesParsed++;
+      if (!filePatterns.includes("sleep-*.json")) filePatterns.push("sleep-*.json");
+    }
+  }
+
+  for (const [date, b] of csvBuckets) {
+    const d = ensureDiag(diags, date);
+    d.computedValues = { ...b };
+  }
+
+  lastDiagnostics = diags;
+
+  console.log(`[takeout] Total parsed: ${filesParsed} files, ${csvBuckets.size} unique days, ${conflicts.length} conflicts resolved (CSV preferred)`);
+
+  const rowsPerDayDistribution: Record<string, { min: number; max: number; median: number }> = {};
+  for (const [key, vals] of Object.entries(rowDistRaw)) {
+    rowsPerDayDistribution[key] = computeDistribution(vals);
+  }
+
+  if (csvBuckets.size === 0) {
     return {
       status: "no_data",
       dateRange: null, fitbitRootPrefix: fitbitRoot,
-      filesParsed, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      filesParsed, filesSeen, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
       rowsSkipped: 0, recomputeRan: false, parseDetails, filePatterns,
+      conflictsDetected: conflicts.slice(0, 50), rowsPerDayDistribution,
+      timezoneUsed: timezone, sleepBucketRule: "wake_date",
     };
   }
 
-  const sortedDates = Array.from(buckets.keys()).sort();
+  const sortedDates = Array.from(csvBuckets.keys()).sort();
   const minDate = sortedDates[0];
   const maxDate = sortedDates[sortedDates.length - 1];
 
@@ -536,13 +827,13 @@ export async function importFitbitTakeout(
     `SELECT day FROM daily_log WHERE day >= $1 AND day <= $2`,
     [minDate, maxDate],
   );
-  const existingDaySet = new Set(existingDays.map((r) => r.day));
+  const existingDaySet = new Set(existingDays.map((r: { day: string }) => r.day));
 
   let daysInserted = 0;
   let daysUpdated = 0;
   let rowsSkipped = 0;
 
-  for (const [date, b] of buckets.entries()) {
+  for (const [date, b] of csvBuckets.entries()) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       rowsSkipped++;
       continue;
@@ -611,16 +902,17 @@ export async function importFitbitTakeout(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [importId, originalFilename, sha256, timezone, fitbitRoot, minDate, maxDate,
       daysInserted + daysUpdated, daysInserted + daysUpdated, rowsSkipped,
-      `Patterns: ${filePatterns.join(", ")}`],
+      JSON.stringify({ filePatterns, conflictsCount: conflicts.length, filesSeen, filesParsed })],
   );
 
-  console.log(`[takeout] Import complete: ${daysInserted} inserted, ${daysUpdated} updated, ${rowsSkipped} skipped`);
+  console.log(`[takeout] Import complete: ${daysInserted} inserted, ${daysUpdated} updated, ${rowsSkipped} skipped, ${conflicts.length} conflicts resolved`);
 
   return {
     status: "ok",
     dateRange: { start: minDate, end: maxDate },
     fitbitRootPrefix: fitbitRoot,
     filesParsed,
+    filesSeen,
     daysAffected: daysInserted + daysUpdated,
     daysInserted,
     daysUpdated,
@@ -628,6 +920,10 @@ export async function importFitbitTakeout(
     recomputeRan,
     parseDetails,
     filePatterns,
+    conflictsDetected: conflicts.slice(0, 100),
+    rowsPerDayDistribution,
+    timezoneUsed: timezone,
+    sleepBucketRule: "wake_date: sleep bucketed by endTime local date (or dateOfSleep from Fitbit which is already wake date)",
   };
 }
 

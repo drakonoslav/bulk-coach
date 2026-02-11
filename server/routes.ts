@@ -4,7 +4,7 @@ import multer from "multer";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
-import { importFitbitTakeout } from "./fitbit-takeout";
+import { importFitbitTakeout, getDiagnostics } from "./fitbit-takeout";
 import {
   parseSnapshotFile,
   importSnapshotAndDerive,
@@ -251,6 +251,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(rows.map(snakeToCamel));
     } catch (err: unknown) {
       console.error("takeout history error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  const shiftDateStr = (d: string, offset: number): string => {
+    const dt = new Date(d + "T12:00:00Z");
+    dt.setUTCDate(dt.getUTCDate() + offset);
+    return dt.toISOString().slice(0, 10);
+  };
+
+  app.get("/api/import/fitbit/takeout/diagnostics", async (req: Request, res: Response) => {
+    try {
+      const date = req.query.date as string;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
+      }
+      const diagData = getDiagnostics(date);
+      const { rows: dbRows } = await pool.query(
+        `SELECT day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
+          zone1_min, zone2_min, zone3_min, below_zone1_min, morning_weight_lb, waist_in, adherence, notes
+         FROM daily_log WHERE day >= $1 AND day <= $2 ORDER BY day`,
+        [shiftDateStr(date, -1), shiftDateStr(date, 1)],
+      );
+      diagData.dbValues = {};
+      for (const row of dbRows) {
+        (diagData.dbValues as Record<string, unknown>)[row.day] = snakeToCamel(row);
+      }
+      res.json(diagData);
+    } catch (err: unknown) {
+      console.error("diagnostics error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
