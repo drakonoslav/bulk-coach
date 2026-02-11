@@ -194,6 +194,11 @@ export default function LogScreen() {
   const [sleepEnd, setSleepEnd] = useState("");
   const [sleepQuality, setSleepQuality] = useState<number | undefined>();
   const [tossedMinutes, setTossedMinutes] = useState("");
+  const [actualBedTime, setActualBedTime] = useState("");
+  const [actualWakeTime, setActualWakeTime] = useState("");
+  const [sleepLatency, setSleepLatency] = useState("");
+  const [sleepWaso, setSleepWaso] = useState("");
+  const [napMinutes, setNapMinutes] = useState("");
   const [water, setWater] = useState("");
   const [steps, setSteps] = useState("");
   const [cardio, setCardio] = useState("");
@@ -229,6 +234,11 @@ export default function LogScreen() {
       setSleepEnd(existing.sleepEnd || "");
       setSleepQuality(existing.sleepQuality);
       setTossedMinutes((existing as any).tossedMinutes?.toString() || "");
+      setActualBedTime(existing.actualBedTime || "");
+      setActualWakeTime(existing.actualWakeTime || "");
+      setSleepLatency(existing.sleepLatencyMin?.toString() || "");
+      setSleepWaso(existing.sleepWasoMin?.toString() || "");
+      setNapMinutes(existing.napMinutes?.toString() || "");
       setWater(existing.waterLiters?.toString() || "");
       setSteps(existing.steps?.toString() || "");
       setCardio(existing.cardioMin?.toString() || "");
@@ -417,6 +427,11 @@ export default function LogScreen() {
     setSleepEnd("");
     setSleepQuality(undefined);
     setTossedMinutes("");
+    setActualBedTime("");
+    setActualWakeTime("");
+    setSleepLatency("");
+    setSleepWaso("");
+    setNapMinutes("");
     setWater("");
     setSteps("");
     setCardio("");
@@ -458,6 +473,11 @@ export default function LogScreen() {
         sleepEnd: sleepEnd || undefined,
         sleepQuality,
         tossedMinutes: tossedMinutes ? parseInt(tossedMinutes, 10) : undefined,
+        actualBedTime: actualBedTime || undefined,
+        actualWakeTime: actualWakeTime || undefined,
+        sleepLatencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
+        sleepWasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
+        napMinutes: napMinutes ? parseInt(napMinutes, 10) : undefined,
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
@@ -695,7 +715,91 @@ export default function LogScreen() {
         </View>
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>Sleep</Text>
+          <Text style={styles.sectionLabel}>Sleep — Self-Report</Text>
+          <View style={styles.timeRow}>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Actual Bed</Text>
+              <TextInput
+                style={styles.timeInput}
+                value={actualBedTime}
+                onChangeText={setActualBedTime}
+                placeholder="22:15"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardAppearance="dark"
+              />
+            </View>
+            <Ionicons name="arrow-forward" size={16} color={Colors.textTertiary} style={{ marginTop: 24 }} />
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Actual Wake</Text>
+              <TextInput
+                style={styles.timeInput}
+                value={actualWakeTime}
+                onChangeText={setActualWakeTime}
+                placeholder="05:45"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardAppearance="dark"
+              />
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="time-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Latency (min)</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepLatency}
+                onChangeText={setSleepLatency}
+                placeholder="10"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="alert-circle-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>WASO (min)</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepWaso}
+                onChangeText={setSleepWaso}
+                placeholder="0"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="sunny-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Nap (min)</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={napMinutes}
+                onChangeText={setNapMinutes}
+                placeholder="0"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="star-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Quality</Text>
+              </View>
+              <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
+            </View>
+          </View>
+          <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4, fontFamily: "Rubik_400Regular" }}>
+            Legacy bed/wake below (kept for backward compat)
+          </Text>
           <View style={styles.timeRow}>
             <View style={styles.timeField}>
               <Text style={styles.timeLabel}>Bedtime</Text>
@@ -720,13 +824,6 @@ export default function LogScreen() {
                 keyboardAppearance="dark"
               />
             </View>
-          </View>
-          <View style={styles.inputGroup}>
-            <View style={styles.inputLabel}>
-              <Ionicons name="star-outline" size={16} color={Colors.secondary} />
-              <Text style={styles.inputLabelText}>Sleep Quality</Text>
-            </View>
-            <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
           </View>
           <View style={styles.inputGroup}>
             <View style={styles.inputLabel}>

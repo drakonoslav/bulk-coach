@@ -1,7 +1,7 @@
 import { pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { recomputeReadinessRange, computeReadiness, persistReadiness, getAnalysisStartDate } from "./readiness-engine";
-import { computeSleepAlignment } from "./sleep-alignment";
+import { computeSleepBlock } from "./sleep-alignment";
 import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
@@ -1140,7 +1140,7 @@ export async function importFitbitTakeout(
   }
 
   for (const [date] of csvBuckets.entries()) {
-    await computeSleepAlignment(date);
+    await computeSleepBlock(date);
   }
 
   let recomputeRan = false;

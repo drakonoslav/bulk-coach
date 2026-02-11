@@ -46,6 +46,7 @@ export interface SleepBlock {
 
   timeInBedMin: number | null;
   estimatedSleepMin: number | null;
+  fitbitVsReportedDeltaMin: number | null;
 }
 
 export async function computeSleepBlock(date: string): Promise<SleepBlock | null> {
@@ -113,6 +114,11 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
     }
   }
 
+  let fitbitVsReportedDeltaMin: number | null = null;
+  if (estimatedSleepMin != null && fitbitMin != null) {
+    fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
+  }
+
   return {
     plannedBedTime: plannedBed,
     plannedWakeTime: plannedWake,
@@ -133,6 +139,7 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
 
     timeInBedMin,
     estimatedSleepMin,
+    fitbitVsReportedDeltaMin,
   };
 }
 
@@ -146,6 +153,86 @@ export async function getSleepPlanSettings(): Promise<{ bedtime: string; wake: s
   return {
     bedtime: rows[0]?.value || DEFAULT_PLAN_BED,
     wake: rows2[0]?.value || DEFAULT_PLAN_WAKE,
+  };
+}
+
+export interface SleepTrending {
+  adherence7d: number | null;
+  adherence28d: number | null;
+  adequacy7d: number | null;
+  adequacy28d: number | null;
+  avgDebt7d: number | null;
+  avgDebt28d: number | null;
+  daysWithSchedule7d: number;
+  daysWithAdequacy7d: number;
+}
+
+export async function computeSleepTrending(date: string): Promise<SleepTrending> {
+  const d = new Date(date + "T00:00:00Z");
+  const d7 = new Date(d);
+  d7.setUTCDate(d7.getUTCDate() - 6);
+  const d28 = new Date(d);
+  d28.setUTCDate(d28.getUTCDate() - 27);
+  const from28 = d28.toISOString().slice(0, 10);
+  const from7 = d7.toISOString().slice(0, 10);
+
+  const { rows } = await pool.query(
+    `SELECT day, planned_bed_time, planned_wake_time,
+            actual_bed_time, actual_wake_time, sleep_minutes
+     FROM daily_log
+     WHERE day BETWEEN $1 AND $2
+     ORDER BY day ASC`,
+    [from28, date]
+  );
+
+  const blocks: Array<{ day: string; adherence: number | null; adequacy: number | null; debt: number | null }> = [];
+
+  for (const r of rows) {
+    const plannedBed = r.planned_bed_time || null;
+    const plannedWake = r.planned_wake_time || null;
+    const actualBed = r.actual_bed_time || null;
+    const actualWake = r.actual_wake_time || null;
+    const fitbit = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
+
+    let adherence: number | null = null;
+    let adequacy: number | null = null;
+    let debt: number | null = null;
+
+    if (plannedBed && plannedWake && actualBed && actualWake) {
+      const bedDev = wrapDev(toMin(actualBed) - toMin(plannedBed));
+      const wakeDev = wrapDev(toMin(actualWake) - toMin(plannedWake));
+      const absBed = Math.min(Math.abs(bedDev), 120);
+      const absWake = Math.min(Math.abs(wakeDev), 120);
+      adherence = clamp(Math.round(100 - (absBed + absWake) / 2.4), 0, 100);
+    }
+
+    if (plannedBed && plannedWake && fitbit != null) {
+      const plannedMin = spanMinutes(toMin(plannedBed), toMin(plannedWake));
+      debt = plannedMin - fitbit;
+      const ratio = fitbit / plannedMin;
+      adequacy = clamp(Math.round(ratio * 100), 0, 100);
+    }
+
+    blocks.push({ day: r.day, adherence, adequacy, debt });
+  }
+
+  const last7 = blocks.filter(b => b.day >= from7);
+  const last28 = blocks;
+
+  const avg = (arr: (number | null)[]) => {
+    const valid = arr.filter((v): v is number => v != null);
+    return valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : null;
+  };
+
+  return {
+    adherence7d: avg(last7.map(b => b.adherence)),
+    adherence28d: avg(last28.map(b => b.adherence)),
+    adequacy7d: avg(last7.map(b => b.adequacy)),
+    adequacy28d: avg(last28.map(b => b.adequacy)),
+    avgDebt7d: avg(last7.map(b => b.debt)),
+    avgDebt28d: avg(last28.map(b => b.debt)),
+    daysWithSchedule7d: last7.filter(b => b.adherence != null).length,
+    daysWithAdequacy7d: last7.filter(b => b.adequacy != null).length,
   };
 }
 

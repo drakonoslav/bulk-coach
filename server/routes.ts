@@ -18,7 +18,7 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
-import { computeSleepBlock, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
+import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
   computeReadiness,
   persistReadiness,
@@ -523,7 +523,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await persistReadiness(result);
       }
       const sleepBlock = await computeSleepBlock(date);
-      res.json({ ...result, sleepBlock });
+      const sleepTrending = await computeSleepTrending(date);
+      res.json({ ...result, sleepBlock, sleepTrending });
     } catch (err: unknown) {
       console.error("readiness error:", err);
       res.status(500).json({ error: "Internal server error" });
