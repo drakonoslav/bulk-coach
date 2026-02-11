@@ -14,8 +14,6 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
-import { File } from "expo-file-system/next";
-import { fetch } from "expo/fetch";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
 import { getApiUrl } from "@/lib/query-client";
@@ -128,13 +126,15 @@ export default function ChecklistScreen() {
           Alert.alert("Duplicate File", "This file has already been imported.");
         }
       } else {
-        const file = new File(asset.uri);
-        formData.append("file", file as any, asset.name || "import.csv");
+        formData.append("file", {
+          uri: asset.uri,
+          name: asset.name || "import.csv",
+          type: asset.mimeType || "text/csv",
+        } as any);
 
-        const uploadRes = await fetch(url.toString(), {
+        const uploadRes = await globalThis.fetch(url.toString(), {
           method: "POST",
           body: formData,
-          credentials: "include",
         });
         const data = await uploadRes.json();
         setLastResult(data);
