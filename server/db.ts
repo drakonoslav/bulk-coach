@@ -84,7 +84,7 @@ export async function initDb(): Promise<void> {
       uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       sha256 TEXT UNIQUE NOT NULL,
       session_date DATE NOT NULL,
-      number_of_recordings INTEGER NOT NULL,
+      total_nights INTEGER NOT NULL,
       total_nocturnal_erections INTEGER NOT NULL DEFAULT 0,
       total_nocturnal_duration_seconds INTEGER NOT NULL DEFAULT 0,
       original_filename TEXT

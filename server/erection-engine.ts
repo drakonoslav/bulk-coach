@@ -5,26 +5,26 @@ interface Snapshot {
   id: string;
   sha256: string;
   session_date: string;
-  number_of_recordings: number;
-  total_nocturnal_erections: number;
-  total_nocturnal_duration_seconds: number;
+  total_nights: number;
+  total_erections: number;
+  total_duration_sec: number;
 }
 
 interface ParsedSnapshot {
   sha256: string;
-  number_of_recordings: number;
-  total_nocturnal_erections: number;
-  total_nocturnal_duration_seconds: number;
+  total_nights: number;
+  total_erections: number;
+  total_duration_sec: number;
 }
 
 interface DeriveResult {
   snapshot: Snapshot;
   derived: {
     sessionDate: string;
-    deltaNoctErections: number;
-    deltaNoctDur: number;
+    deltaErections: number;
+    deltaDurationSec: number;
     multiNightCombined: boolean;
-    deltaRecordings: number;
+    deltaNights: number;
   } | null;
   note: string;
   gapsFilled: number;
@@ -50,61 +50,49 @@ function roundInt(v: number): number {
   return Math.round(v);
 }
 
-function computeProxyScore(noctCount: number, noctDurSec: number): number {
-  const durMin = noctDurSec / 60;
-  return Math.round(((noctCount * 1.0) + Math.log(1 + durMin) * 0.8) * 100) / 100;
+function computeProxyScore(erections: number, durationSec: number): number {
+  const durMin = durationSec / 60;
+  return Math.round(((erections * 1.0) + Math.log(1 + durMin) * 0.8) * 100) / 100;
 }
 
 function parseHmsToSeconds(val: string): number {
   val = val.trim();
   const asNum = Number(val);
   if (!isNaN(asNum) && !val.includes(":")) return Math.round(asNum);
-  const parts = val.split(":").map(p => parseInt(p, 10));
-  if (parts.length === 3 && parts.every(p => !isNaN(p))) {
+  const parts = val.split(":").map((p: string) => parseInt(p, 10));
+  if (parts.length === 3 && parts.every((p: number) => !isNaN(p))) {
     return parts[0] * 3600 + parts[1] * 60 + parts[2];
   }
-  if (parts.length === 2 && parts.every(p => !isNaN(p))) {
+  if (parts.length === 2 && parts.every((p: number) => !isNaN(p))) {
     return parts[0] * 60 + parts[1];
   }
   throw new Error(`Cannot parse duration value: "${val}". Expected HH:MM:SS, MM:SS, or seconds.`);
 }
 
-export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedSnapshot {
+export function parseSnapshotFile(fileBuffer: Buffer, _filename: string): ParsedSnapshot {
   const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
   let text = fileBuffer.toString("utf-8");
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const lines = text.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
 
   if (lines.length < 2) {
     throw new Error("File must have a header row and at least one data row");
   }
 
   const headerLine = lines[0].toLowerCase();
-  const headers = headerLine.split(",").map(h => h.trim().replace(/[^a-z0-9_]/g, "_"));
-  const values = lines[lines.length - 1].split(",").map(v => v.trim());
+  const headers = headerLine.split(",").map((h: string) => h.trim().replace(/[^a-z0-9_]/g, "_"));
+  const values = lines[lines.length - 1].split(",").map((v: string) => v.trim());
 
   const colMap: Record<string, number> = {};
   for (let i = 0; i < headers.length; i++) {
     colMap[headers[i]] = i;
   }
 
-  function findColExact(...aliases: string[]): number {
+  function findCol(...aliases: string[]): number {
     for (const alias of aliases) {
       const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
       if (colMap[normalized] !== undefined) return colMap[normalized];
-    }
-    return -1;
-  }
-
-  function findColFuzzy(...aliases: string[]): number {
-    const exact = findColExact(...aliases);
-    if (exact !== -1) return exact;
-    for (const alias of aliases) {
-      const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
-      for (const key of Object.keys(colMap)) {
-        if (key === normalized) return colMap[key];
-      }
     }
     for (const alias of aliases) {
       const normalized = alias.toLowerCase().replace(/[^a-z0-9_]/g, "_");
@@ -115,16 +103,19 @@ export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedS
     return -1;
   }
 
-  const recIdx = findColFuzzy("number_of_recordings");
-  const erIdx = findColExact(
+  const nightsIdx = findCol(
+    "number_of_recordings_with_nocturnal_or_morning_erections",
+    "number_of_recordings_with_nocturnal",
+    "recordings_with_nocturnal",
+  );
+  const erIdx = findCol(
     "total_number_of_nocturnal_and_morning_erections",
     "total_nocturnal_erections",
     "total_number_of_erections",
     "nocturnal_erections",
     "total_erections",
-    "erections",
   );
-  const durIdx = findColExact(
+  const durIdx = findCol(
     "total_duration_of_all_nocturnal_and_morning_erections",
     "total_nocturnal_duration_seconds",
     "total_duration_of_all_nocturnal_erections",
@@ -132,22 +123,22 @@ export function parseSnapshotFile(fileBuffer: Buffer, filename: string): ParsedS
     "total_duration_seconds",
   );
 
-  if (recIdx === -1) throw new Error("Missing column: number_of_recordings");
-  if (erIdx === -1) throw new Error("Missing column for erection count (tried: total_number_of_nocturnal_and_morning_erections, total_nocturnal_erections, total_number_of_erections)");
+  if (nightsIdx === -1) throw new Error("Missing column: number_of_recordings_with_nocturnal_or_morning_erections");
+  if (erIdx === -1) throw new Error("Missing column for erection count (tried: total_number_of_nocturnal_and_morning_erections, total_nocturnal_erections)");
   if (durIdx === -1) throw new Error("Missing column for duration (tried: total_duration_of_all_nocturnal_and_morning_erections, total_nocturnal_duration_seconds)");
 
-  const numRec = parseInt(values[recIdx], 10);
-  const totalEr = parseInt(values[erIdx], 10);
-  const totalDur = parseHmsToSeconds(values[durIdx]);
+  const totalNights = parseInt(values[nightsIdx], 10);
+  const totalErections = parseInt(values[erIdx], 10);
+  const totalDurationSec = parseHmsToSeconds(values[durIdx]);
 
-  if (isNaN(numRec)) throw new Error("Invalid number_of_recordings value");
-  if (isNaN(totalEr)) throw new Error("Invalid erection count value");
+  if (isNaN(totalNights)) throw new Error("Invalid total_nights value");
+  if (isNaN(totalErections)) throw new Error("Invalid erection count value");
 
   return {
     sha256,
-    number_of_recordings: numRec,
-    total_nocturnal_erections: totalEr,
-    total_nocturnal_duration_seconds: totalDur,
+    total_nights: totalNights,
+    total_erections: totalErections,
+    total_duration_sec: totalDurationSec,
   };
 }
 
@@ -171,78 +162,96 @@ export async function importSnapshotAndDerive(
   }
 
   const { rows: insertedRows } = await pool.query(
-    `INSERT INTO erection_summary_snapshots (sha256, session_date, number_of_recordings, total_nocturnal_erections, total_nocturnal_duration_seconds, original_filename)
+    `INSERT INTO erection_summary_snapshots (sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds, original_filename)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [parsed.sha256, sessionDate, parsed.number_of_recordings, parsed.total_nocturnal_erections, parsed.total_nocturnal_duration_seconds, originalFilename],
+    [parsed.sha256, sessionDate, parsed.total_nights, parsed.total_erections, parsed.total_duration_sec, originalFilename],
   );
   const sNew = rowToSnapshot(insertedRows[0]);
 
   const { rows: prevRows } = await pool.query(
     `SELECT * FROM erection_summary_snapshots
-     WHERE number_of_recordings < $1
-     ORDER BY number_of_recordings DESC
+     WHERE total_nights < $1
+     ORDER BY total_nights DESC
      LIMIT 1`,
-    [sNew.number_of_recordings],
+    [sNew.total_nights],
   );
 
   if (prevRows.length === 0) {
-    if (sNew.number_of_recordings === 1) {
-      await pool.query(
-        `INSERT INTO erection_sessions (date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
-         VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, FALSE, NOW())
-         ON CONFLICT (date) DO UPDATE SET
-           nocturnal_erections = EXCLUDED.nocturnal_erections,
-           nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
-           snapshot_id = EXCLUDED.snapshot_id,
-           is_imputed = FALSE,
-           imputed_method = NULL,
-           imputed_source_date_start = NULL,
-           imputed_source_date_end = NULL,
-           multi_night_combined = FALSE,
-           updated_at = NOW()`,
-        [sessionDate, sNew.total_nocturnal_erections, sNew.total_nocturnal_duration_seconds, sNew.id],
-      );
+    await upsertMeasuredSession(
+      sessionDate,
+      sNew.total_erections,
+      sNew.total_duration_sec,
+      sNew.id,
+      false,
+    );
 
-      await recomputeProxyPipeline(sessionDate);
-
-      return {
-        snapshot: sNew,
-        derived: {
-          sessionDate,
-          deltaNoctErections: sNew.total_nocturnal_erections,
-          deltaNoctDur: sNew.total_nocturnal_duration_seconds,
-          multiNightCombined: false,
-          deltaRecordings: 1,
-        },
-        note: "single_night_measured",
-        gapsFilled: 0,
-      };
-    }
+    await recomputeGapsAndProxy(sessionDate);
 
     return {
       snapshot: sNew,
-      derived: null,
-      note: "baseline_stored",
+      derived: {
+        sessionDate,
+        deltaErections: sNew.total_erections,
+        deltaDurationSec: sNew.total_duration_sec,
+        multiNightCombined: false,
+        deltaNights: sNew.total_nights,
+      },
+      note: "baseline_measured",
       gapsFilled: 0,
     };
   }
 
   const sPrev = rowToSnapshot(prevRows[0]);
-  const dRec = sNew.number_of_recordings - sPrev.number_of_recordings;
-  if (dRec <= 0) {
-    return {
-      snapshot: sNew,
-      derived: null,
-      note: "no_new_recordings",
-      gapsFilled: 0,
-    };
+  const dn = sNew.total_nights - sPrev.total_nights;
+  const de = sNew.total_erections - sPrev.total_erections;
+  const dd = sNew.total_duration_sec - sPrev.total_duration_sec;
+
+  if (dn <= 0 || de < 0 || dd < 0) {
+    throw new Error(
+      `Snapshot not cumulative / ordering invalid: dn=${dn}, de=${de}, dd=${dd}`
+    );
   }
 
-  const deltaNoctErections = sNew.total_nocturnal_erections - sPrev.total_nocturnal_erections;
-  const deltaNoctDur = sNew.total_nocturnal_duration_seconds - sPrev.total_nocturnal_duration_seconds;
-  const multiNightCombined = dRec > 1;
+  const multiNightCombined = dn > 1;
 
+  await upsertMeasuredSession(
+    sessionDate,
+    de,
+    dd,
+    sNew.id,
+    multiNightCombined,
+  );
+
+  const gapsFilled = await detectAndFillGaps(
+    addDays(sessionDate, -60),
+    addDays(sessionDate, 60),
+    sNew.id,
+  );
+
+  await recomputeGapsAndProxy(sessionDate);
+
+  return {
+    snapshot: sNew,
+    derived: {
+      sessionDate,
+      deltaErections: de,
+      deltaDurationSec: dd,
+      multiNightCombined,
+      deltaNights: dn,
+    },
+    note: multiNightCombined ? "multi_night_measured" : "single_night_measured",
+    gapsFilled,
+  };
+}
+
+async function upsertMeasuredSession(
+  date: string,
+  erections: number,
+  durationSec: number,
+  snapshotId: string,
+  multiNightCombined: boolean,
+): Promise<void> {
   await pool.query(
     `INSERT INTO erection_sessions (date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
      VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, $5, NOW())
@@ -256,29 +265,8 @@ export async function importSnapshotAndDerive(
        imputed_source_date_end = NULL,
        multi_night_combined = EXCLUDED.multi_night_combined,
        updated_at = NOW()`,
-    [sessionDate, deltaNoctErections, deltaNoctDur, sNew.id, multiNightCombined],
+    [date, erections, durationSec, snapshotId, multiNightCombined],
   );
-
-  const gapsFilled = await detectAndFillGaps(
-    addDays(sessionDate, -60),
-    addDays(sessionDate, 60),
-    sNew.id,
-  );
-
-  await recomputeProxyPipeline(sessionDate);
-
-  return {
-    snapshot: sNew,
-    derived: {
-      sessionDate,
-      deltaNoctErections,
-      deltaNoctDur,
-      multiNightCombined,
-      deltaRecordings: dRec,
-    },
-    note: "ok",
-    gapsFilled,
-  };
 }
 
 async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: string | null): Promise<number> {
@@ -295,8 +283,8 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
   let filled = 0;
 
   for (let i = 0; i < anchors.length - 1; i++) {
-    const a = anchors[i];
-    const b = anchors[i + 1];
+    const a = anchors[i] as { date: string; nocturnal_erections: number; nocturnal_duration_seconds: number };
+    const b = anchors[i + 1] as { date: string; nocturnal_erections: number; nocturnal_duration_seconds: number };
     const gap = daysDiff(a.date, b.date);
     if (gap <= 1) continue;
 
@@ -329,7 +317,7 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
   return filled;
 }
 
-async function recomputeProxyPipeline(sessionDate: string): Promise<void> {
+async function recomputeGapsAndProxy(sessionDate: string): Promise<void> {
   const from = addDays(sessionDate, -30);
   const to = addDays(sessionDate, 30);
 
@@ -349,21 +337,26 @@ async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeI
     [pullFrom, toDate, includeImputed],
   );
 
-  const daily = rows.map(r => ({
+  interface DailyProxy {
+    date: string;
+    proxy: number | null;
+  }
+
+  const daily: DailyProxy[] = rows.map((r: { date: string; nocturnal_erections: number | null; nocturnal_duration_seconds: number | null }) => ({
     date: r.date,
     proxy: (r.nocturnal_erections == null || r.nocturnal_duration_seconds == null)
       ? null
       : computeProxyScore(r.nocturnal_erections, r.nocturnal_duration_seconds),
   }));
 
-  const targetRows = daily.filter(r => r.date >= fromDate && r.date <= toDate);
+  const targetRows = daily.filter((r: DailyProxy) => r.date >= fromDate && r.date <= toDate);
 
   for (const row of targetRows) {
-    const idx = daily.findIndex(d => d.date === row.date);
+    const idx = daily.findIndex((d: DailyProxy) => d.date === row.date);
     const window = daily.slice(Math.max(0, idx - 6), idx + 1);
-    const vals = window.map(x => x.proxy).filter((v): v is number => v != null);
+    const vals = window.map((x: DailyProxy) => x.proxy).filter((v: number | null): v is number => v != null);
     const avg7 = vals.length > 0
-      ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100
+      ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100) / 100
       : null;
 
     await pool.query(
@@ -380,14 +373,14 @@ async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeI
 
 export async function getSnapshots(): Promise<Snapshot[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM erection_summary_snapshots ORDER BY number_of_recordings ASC`,
+    `SELECT * FROM erection_summary_snapshots ORDER BY total_nights ASC`,
   );
   return rows.map(rowToSnapshot);
 }
 
-export async function getSessions(fromDate?: string, toDate?: string, includeImputed: boolean = true): Promise<any[]> {
+export async function getSessions(fromDate?: string, toDate?: string, includeImputed: boolean = true): Promise<Record<string, unknown>[]> {
   let query = `SELECT date::text as date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start::text, imputed_source_date_end::text, multi_night_combined, updated_at FROM erection_sessions`;
-  const params: any[] = [];
+  const params: (string | boolean)[] = [];
 
   const conditions: string[] = [];
   if (fromDate) { params.push(fromDate); conditions.push(`date >= $${params.length}`); }
@@ -398,19 +391,19 @@ export async function getSessions(fromDate?: string, toDate?: string, includeImp
   query += ` ORDER BY date ASC`;
 
   const { rows } = await pool.query(query, params);
-  return rows;
+  return rows as Record<string, unknown>[];
 }
 
-export async function getProxyData(fromDate?: string, toDate?: string, includeImputed: boolean = false): Promise<any[]> {
+export async function getProxyData(fromDate?: string, toDate?: string, includeImputed: boolean = false): Promise<Record<string, unknown>[]> {
   let query = `SELECT date::text as date, proxy_score, proxy_7d_avg, computed_with_imputed FROM androgen_proxy_daily WHERE computed_with_imputed = $1`;
-  const params: any[] = [includeImputed];
+  const params: (string | boolean)[] = [includeImputed];
 
   if (fromDate) { params.push(fromDate); query += ` AND date >= $${params.length}`; }
   if (toDate) { params.push(toDate); query += ` AND date <= $${params.length}`; }
   query += ` ORDER BY date ASC`;
 
   const { rows } = await pool.query(query, params);
-  return rows;
+  return rows as Record<string, unknown>[];
 }
 
 export async function getSessionBadges(): Promise<Record<string, "measured" | "imputed">> {
@@ -418,19 +411,23 @@ export async function getSessionBadges(): Promise<Record<string, "measured" | "i
     `SELECT date::text as date, is_imputed FROM erection_sessions ORDER BY date ASC`,
   );
   const badges: Record<string, "measured" | "imputed"> = {};
-  for (const r of rows) {
+  for (const r of rows as { date: string; is_imputed: boolean }[]) {
     badges[r.date] = r.is_imputed ? "imputed" : "measured";
   }
   return badges;
 }
 
-function rowToSnapshot(row: any): Snapshot {
+function rowToSnapshot(row: Record<string, unknown>): Snapshot {
+  const sessionDate = row.session_date;
+  const dateStr = sessionDate instanceof Date
+    ? sessionDate.toISOString().slice(0, 10)
+    : String(sessionDate);
   return {
-    id: row.id,
-    sha256: row.sha256,
-    session_date: typeof row.session_date === "object" ? row.session_date.toISOString().slice(0, 10) : String(row.session_date),
-    number_of_recordings: Number(row.number_of_recordings),
-    total_nocturnal_erections: Number(row.total_nocturnal_erections),
-    total_nocturnal_duration_seconds: Number(row.total_nocturnal_duration_seconds),
+    id: String(row.id),
+    sha256: String(row.sha256),
+    session_date: dateStr,
+    total_nights: Number(row.total_nights),
+    total_erections: Number(row.total_nocturnal_erections),
+    total_duration_sec: Number(row.total_nocturnal_duration_seconds),
   };
 }
