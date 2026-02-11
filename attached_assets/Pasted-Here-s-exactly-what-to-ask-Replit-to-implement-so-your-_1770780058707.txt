@@ -1,0 +1,268 @@
+Here’s exactly what to ask Replit to implement so your app can accept a Fitbit Takeout ZIP (like the one you just downloaded) and import it accurately + durably into your existing Postgres + recompute pipeline.
+
+Copy/paste this whole thing to Replit.
+
+⸻
+
+✅ Request to Replit: “Fitbit Takeout ZIP Import (Google Takeout) → daily_logs upsert + recompute”
+
+What I’m uploading
+
+I’m uploading a Google Takeout ZIP that contains Fitbit exports in paths like:
+	•	Takeout/Fitbit/Global Export Data/steps-YYYY-MM-DD.json
+	•	Takeout/Fitbit/Global Export Data/calories-YYYY-MM-DD.json
+	•	Takeout/Fitbit/Global Export Data/heart_rate-YYYY-MM-DD.json
+	•	Takeout/Fitbit/Global Export Data/time_in_heart_rate_zones-YYYY-MM-DD.json
+	•	Takeout/Fitbit/Global Export Data/resting_heart_rate-YYYY-MM-DD.json (may exist)
+	•	Sleep files may be either:
+	•	Takeout/Fitbit/Global Export Data/sleep-YYYY-MM-DD.json (sometimes missing for recent dates)
+	•	Or older CSVs in Takeout/Fitbit/Sleep Score/sleep_score.csv
+
+I need the backend to support importing this ZIP, extracting the relevant files, aggregating into per-day totals, and upserting into Postgres.
+
+⸻
+
+1) Add a new import endpoint
+
+Route
+	•	POST /api/import/fitbit_takeout
+	•	Accepts multipart/form-data with:
+	•	file = the ZIP
+	•	optional: timezone (default user setting; required for correct date alignment)
+	•	optional: mode = "upsert" (default)
+	•	optional: overwrite_fields boolean (default false)
+
+Behavior
+	•	Unzip in memory or temp dir
+	•	Detect and parse the known Fitbit file patterns
+	•	Aggregate to daily rows
+	•	Upsert into daily_logs
+	•	Recompute derived metrics and dashboard caches for the affected date range
+	•	Return summary stats
+
+⸻
+
+2) Persist import metadata (audit trail)
+
+Create table:
+
+fitbit_takeout_imports
+	•	id uuid pk
+	•	uploaded_at timestamptz
+	•	original_filename text
+	•	sha256 text unique
+	•	timezone text
+	•	date_range_start date
+	•	date_range_end date
+	•	days_affected int
+	•	rows_upserted int
+	•	rows_skipped int
+	•	notes text
+
+Store at least metadata + SHA; raw zip storage optional.
+
+⸻
+
+3) Parsing rules (accurate for Takeout “Global Export Data”)
+
+3.1 Steps (minute-level)
+
+Files look like:
+Takeout/Fitbit/Global Export Data/steps-YYYY-MM-DD.json
+
+Format example:
+
+[
+  {"dateTime":"02/11/26 00:00:00","value":"25"},
+  {"dateTime":"02/11/26 00:01:00","value":"28"}
+]
+
+Rule
+	•	Parse dateTime as local time in provided timezone (or assume already local, but still normalize)
+	•	Aggregate per local date:
+	•	steps = SUM(value) for that date
+
+3.2 Calories burned (minute-level kcal)
+
+Files:
+calories-YYYY-MM-DD.json
+
+Format:
+
+{"dateTime":"01/25/26 00:00:00","value":"1.11"}
+
+Rule
+	•	Aggregate per day:
+	•	energy_burned_kcal = SUM(value) for that date
+
+3.3 Heart rate zones (daily)
+
+File:
+time_in_heart_rate_zones-YYYY-MM-DD.json
+
+Format:
+
+{
+ "dateTime":"02/10/26 00:00:00",
+ "value":{"valuesInZones":{
+   "IN_DEFAULT_ZONE_2": 1.0,
+   "IN_DEFAULT_ZONE_3": 0.0,
+   "IN_DEFAULT_ZONE_1": 1.0,
+   "BELOW_DEFAULT_ZONE_1": 13.0
+ }}
+}
+
+Store raw zone minutes
+	•	zone1_min = IN_DEFAULT_ZONE_1
+	•	zone2_min = IN_DEFAULT_ZONE_2
+	•	zone3_min = IN_DEFAULT_ZONE_3
+	•	below_zone1_min = BELOW_DEFAULT_ZONE_1
+
+Derive
+	•	active_zone_minutes = zone2_min + (2 * zone3_min)  (Fitbit AZM convention: vigorous counts double; we keep raw mins too)
+	•	Optionally:
+	•	cardio_minutes = zone3_min (or another mapping; keep it simple v1)
+
+3.4 Resting HR (daily, if present)
+
+File:
+resting_heart_rate-YYYY-MM-DD.json
+
+Format:
+
+{"dateTime":"11/26/25 00:00:00","value":{"value":58}}
+
+Rule
+	•	resting_hr = value.value if > 0 else ignore
+
+3.5 HRV (may be missing)
+
+If Takeout contains HRV summaries, parse them.
+If it doesn’t exist, leave HRV null. Do not fabricate it.
+
+3.6 Sleep (may be missing for recent dates)
+
+Support both, if present:
+
+A) Global Export Data/sleep-*.json
+	•	Use minutesAsleep (or compute from start/end)
+	•	daily sleep_minutes
+
+B) Sleep Score/sleep_score.csv
+	•	timestamp is UTC Z; convert to user timezone and map to sleep day
+	•	use resting_heart_rate there if useful
+	•	overall_score optional
+
+If neither exists, do nothing for sleep and let manual entry continue.
+
+⸻
+
+4) Date alignment (critical trap)
+
+Requirement
+	•	All timestamps must be normalized into the user timezone
+	•	Aggregate by local date
+	•	Prevent “midday upload creates split days”
+
+Implementation rule
+	•	Parse dateTime strings → timezone-aware DateTime → local date key
+
+⸻
+
+5) Upsert strategy (must not wipe existing values)
+
+Upsert by (date).
+
+Default behavior:
+	•	Only update fields present in import
+	•	Never overwrite manually-entered metrics with nulls
+
+SQL pattern:
+
+INSERT INTO daily_logs (
+  date,
+  steps,
+  active_zone_minutes,
+  cardio_minutes,
+  sleep_minutes,
+  energy_burned_kcal,
+  resting_hr,
+  hrv,
+  updated_at
+) VALUES (...)
+ON CONFLICT (date) DO UPDATE SET
+  steps = COALESCE(EXCLUDED.steps, daily_logs.steps),
+  active_zone_minutes = COALESCE(EXCLUDED.active_zone_minutes, daily_logs.active_zone_minutes),
+  cardio_minutes = COALESCE(EXCLUDED.cardio_minutes, daily_logs.cardio_minutes),
+  sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, daily_logs.sleep_minutes),
+  energy_burned_kcal = COALESCE(EXCLUDED.energy_burned_kcal, daily_logs.energy_burned_kcal),
+  resting_hr = COALESCE(EXCLUDED.resting_hr, daily_logs.resting_hr),
+  hrv = COALESCE(EXCLUDED.hrv, daily_logs.hrv),
+  updated_at = NOW();
+
+If overwrite_fields=true, then overwrite with EXCLUDED even if null (rare; optional).
+
+⸻
+
+6) Recompute after import
+
+After parsing all files, determine:
+	•	min_date, max_date across all affected days
+
+Then:
+	•	call the existing recompute pipeline:
+	•	recompute(from_date=min_date, to_date=max_date)
+	•	refresh dashboard caches / readiness caches / confidence strips
+
+Return JSON:
+
+{
+  "status": "ok",
+  "dateRange": {"start":"...", "end":"..."},
+  "daysAffected": 42,
+  "rowsUpserted": 42,
+  "rowsSkipped": 0,
+  "recomputeRan": true
+}
+
+
+⸻
+
+7) Frontend UX
+
+Add a button/screen:
+	•	“Import Fitbit Takeout ZIP”
+	•	shows:
+	•	last import timestamp
+	•	date range imported
+	•	rows updated
+
+After import:
+	•	reload dashboard + report screens
+
+⸻
+
+8) Implementation detail (important)
+
+Because the Takeout ZIP contains thousands of files, we should:
+	•	only parse the relevant directory:
+	•	Takeout/Fitbit/Global Export Data/
+	•	and only specific prefixes:
+	•	steps-
+	•	calories-
+	•	time_in_heart_rate_zones-
+	•	resting_heart_rate-
+	•	sleep-
+	•	Ignore everything else.
+
+This keeps it fast and reliable.
+
+⸻
+
+Optional (but recommended): Keep raw zone mins columns
+
+Even if the app only shows active zone minutes, store raw zone mins because it’s useful later and prevents recalculation issues.
+
+⸻
+
+If you want, paste back Replit’s response/error logs after they implement it and I’ll tell you exactly what to adjust (especially around timezone/day bucketing and zone-minute mapping).
