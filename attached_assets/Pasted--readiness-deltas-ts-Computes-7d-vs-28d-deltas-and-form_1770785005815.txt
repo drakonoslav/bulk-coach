@@ -1,0 +1,173 @@
+// readiness-deltas.ts
+// Computes 7d vs 28d deltas and formats them for UI display.
+// Assumes you already have rolling 7-day averages and 28-day baselines computed elsewhere.
+//
+// Conventions:
+// - Sleep/HRV/Proxy: percent delta vs baseline
+// - RHR: absolute bpm delta (7d - 28d)
+// - Formatting: always show + or - for numbers; "—" if missing or invalid
+// - Guardrails: avoid divide-by-zero and nonsense baselines
+
+export type ConfidenceGrade = "High" | "Med" | "Low" | "None";
+
+export type ReadinessInputs = {
+  // Rolling averages (last 7 days)
+  sleepMin_7d?: number | null;
+  hrvMs_7d?: number | null;
+  rhrBpm_7d?: number | null;
+  proxy_7d?: number | null;
+
+  // Baselines (last 28 days, or 30—whatever you standardize on)
+  sleepMin_28d?: number | null;
+  hrvMs_28d?: number | null;
+  rhrBpm_28d?: number | null;
+  proxy_28d?: number | null;
+};
+
+export type ReadinessDeltas = {
+  // Signed numeric deltas (raw values)
+  sleep_pct: number | null;
+  hrv_pct: number | null;
+  rhr_bpm: number | null;
+  proxy_pct: number | null;
+
+  // UI strings like "+3%", "-6%", "+1 bpm", "—"
+  sleep_str: string;
+  hrv_str: string;
+  rhr_str: string;
+  proxy_str: string;
+};
+
+/** Minimum baseline to allow percent delta computation (prevents extreme % from tiny denominators). */
+const MIN_BASELINE_FOR_PCT = 1e-6;
+
+/** Clamp to keep UI sane (optional). */
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** Round helper */
+const round = (v: number, decimals = 0) => {
+  const p = Math.pow(10, decimals);
+  return Math.round(v * p) / p;
+};
+
+/** Returns null if inputs are null/undefined/NaN */
+const safeNum = (v: number | null | undefined): number | null => {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Compute signed percent delta: (curr - base) / base * 100 */
+const pctDelta = (curr: number | null, base: number | null): number | null => {
+  if (curr === null || base === null) return null;
+  if (Math.abs(base) < MIN_BASELINE_FOR_PCT) return null;
+  return ((curr - base) / base) * 100;
+};
+
+/** Compute signed absolute delta: (curr - base) */
+const absDelta = (curr: number | null, base: number | null): number | null => {
+  if (curr === null || base === null) return null;
+  return curr - base;
+};
+
+/**
+ * Formats a signed number with +/-, a unit suffix, and optional decimals.
+ * - If value is null => "—"
+ * - If value is 0 => "+0" (keeps explicit sign for readability)
+ */
+export const formatSigned = (
+  value: number | null,
+  opts: { suffix?: string; decimals?: number; clampLo?: number; clampHi?: number } = {}
+): string => {
+  if (value === null) return "—";
+  const decimals = opts.decimals ?? 0;
+
+  let v = value;
+  if (opts.clampLo !== undefined && opts.clampHi !== undefined) {
+    v = clamp(v, opts.clampLo, opts.clampHi);
+  }
+
+  const r = round(v, decimals);
+  const sign = r >= 0 ? "+" : ""; // negative already includes "-"
+  const suffix = opts.suffix ? ` ${opts.suffix}` : "";
+  return `${sign}${r}${suffix}`;
+};
+
+/**
+ * Formats a signed percent value as "+3%" "-6%" etc.
+ */
+export const formatSignedPct = (value: number | null, decimals = 0): string => {
+  const str = formatSigned(value, { decimals, suffix: "%" });
+  // formatSigned adds a space before suffix; for percent we usually want no space.
+  return str === "—" ? "—" : str.replace(" %", "%");
+};
+
+/**
+ * Main function: compute 7d vs 28d deltas for Sleep/HRV/RHR/Proxy.
+ * - Sleep/HRV/Proxy returned as % deltas
+ * - RHR returned as bpm delta
+ */
+export function computeReadinessDeltas(inputs: ReadinessInputs): ReadinessDeltas {
+  const sleep7 = safeNum(inputs.sleepMin_7d);
+  const sleep28 = safeNum(inputs.sleepMin_28d);
+
+  const hrv7 = safeNum(inputs.hrvMs_7d);
+  const hrv28 = safeNum(inputs.hrvMs_28d);
+
+  const rhr7 = safeNum(inputs.rhrBpm_7d);
+  const rhr28 = safeNum(inputs.rhrBpm_28d);
+
+  const proxy7 = safeNum(inputs.proxy_7d);
+  const proxy28 = safeNum(inputs.proxy_28d);
+
+  // Percent deltas
+  const sleep_pct_raw = pctDelta(sleep7, sleep28);
+  const hrv_pct_raw = pctDelta(hrv7, hrv28);
+  const proxy_pct_raw = pctDelta(proxy7, proxy28);
+
+  // RHR absolute delta (bpm)
+  const rhr_bpm_raw = absDelta(rhr7, rhr28);
+
+  // Optional clamps to avoid ridiculous UI values if baselines are unstable.
+  // You can remove these if you prefer raw truth.
+  const sleep_pct = sleep_pct_raw === null ? null : clamp(sleep_pct_raw, -50, 50);
+  const hrv_pct = hrv_pct_raw === null ? null : clamp(hrv_pct_raw, -50, 50);
+  const proxy_pct = proxy_pct_raw === null ? null : clamp(proxy_pct_raw, -80, 80);
+  const rhr_bpm = rhr_bpm_raw === null ? null : clamp(rhr_bpm_raw, -20, 20);
+
+  return {
+    sleep_pct,
+    hrv_pct,
+    rhr_bpm,
+    proxy_pct,
+
+    // UI formatting rules:
+    // - Percent: integer % with +/-
+    // - RHR: integer bpm with +/-
+    // - Missing: "—"
+    sleep_str: formatSignedPct(sleep_pct, 0),
+    hrv_str: formatSignedPct(hrv_pct, 0),
+    proxy_str: formatSignedPct(proxy_pct, 0),
+    rhr_str: formatSigned(rhr_bpm, { decimals: 0, suffix: "bpm" }),
+  };
+}
+
+/**
+ * Example usage:
+ *
+ * const deltas = computeReadinessDeltas({
+ *   sleepMin_7d: 420,
+ *   sleepMin_28d: 447,
+ *   hrvMs_7d: 62,
+ *   hrvMs_28d: 60,
+ *   rhrBpm_7d: 58,
+ *   rhrBpm_28d: 57,
+ *   proxy_7d: 7.8,
+ *   proxy_28d: 8.1,
+ * });
+ *
+ * // deltas.sleep_str => "-6%"
+ * // deltas.hrv_str   => "+3%"
+ * // deltas.rhr_str   => "+1 bpm"
+ * // deltas.proxy_str => "-4%"
+ */
