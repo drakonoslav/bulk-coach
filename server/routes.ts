@@ -505,7 +505,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         result = await computeReadiness(date);
         await persistReadiness(result);
       }
-      res.json(result);
+      const alignment = await computeSleepAlignment(date);
+      res.json({ ...result, sleepAlignment: alignment });
     } catch (err: unknown) {
       console.error("readiness error:", err);
       res.status(500).json({ error: "Internal server error" });

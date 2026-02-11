@@ -861,14 +861,20 @@ export default function ReportScreen() {
                       </View>
                     )}
                     {[
-                      { label: "Sleep", value: insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
-                      { label: "HRV", value: insufficientData ? "\u2014" : (readiness.deltas?.hrv_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
-                      { label: "RHR", value: insufficientData ? "\u2014" : (readiness.deltas?.rhr_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444") },
-                      { label: "Proxy", value: insufficientData ? "\u2014" : (readiness.deltas?.proxy_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
+                      { label: "Sleep", value: insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
+                      { label: "HRV", value: insufficientData ? "\u2014" : (readiness.deltas?.hrv_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
+                      { label: "RHR", value: insufficientData ? "\u2014" : (readiness.deltas?.rhr_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
+                      { label: "Proxy", value: insufficientData ? "\u2014" : (readiness.deltas?.proxy_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
+                      {
+                        label: "Sleep Timing",
+                        value: readiness.sleepAlignment?.alignmentScore != null ? `${Math.round(readiness.sleepAlignment.alignmentScore)}` : "\u2014",
+                        color: readiness.sleepAlignment?.alignmentScore != null ? (readiness.sleepAlignment.alignmentScore >= 80 ? "#34D399" : readiness.sleepAlignment.alignmentScore >= 50 ? "#FBBF24" : "#EF4444") : "#6B7280",
+                        suffix: readiness.sleepAlignment?.alignmentScore != null ? `/ 100 (bed ${readiness.sleepAlignment.bedtimeDeviationMin != null ? (readiness.sleepAlignment.bedtimeDeviationMin > 0 ? "+" : "") + readiness.sleepAlignment.bedtimeDeviationMin + "m" : "?"}  wake ${readiness.sleepAlignment.wakeDeviationMin != null ? (readiness.sleepAlignment.wakeDeviationMin > 0 ? "+" : "") + readiness.sleepAlignment.wakeDeviationMin + "m" : "?"})` : "no observed times",
+                      },
                     ].map((sig) => (
                       <View key={sig.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                         <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{sig.label}</Text>
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{insufficientData ? "\u2014" : sig.value} vs baseline</Text>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{insufficientData && sig.label !== "Sleep Timing" ? "\u2014" : sig.value} {sig.suffix}</Text>
                       </View>
                     ))}
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, marginTop: 2 }}>
