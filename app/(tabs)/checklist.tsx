@@ -377,14 +377,43 @@ export default function ChecklistScreen() {
         return;
       }
 
-      const data = await finalRes.json();
-      setLastTakeoutResult(data);
-      if (data.status === "duplicate") {
-        Alert.alert("Duplicate File", "This ZIP has already been imported.");
+      const finalData = await finalRes.json();
+      if (!finalData.jobId) {
+        setLastTakeoutResult(finalData);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await loadHistory();
+        return;
       }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await loadHistory();
+      const jobId = finalData.jobId;
+      let attempts = 0;
+      const maxAttempts = 120;
+      while (attempts < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 3000));
+        attempts++;
+        try {
+          const pollRes = await globalThis.fetch(
+            new URL(`/api/import/takeout_job/${jobId}`, baseUrl).toString()
+          );
+          if (!pollRes.ok) continue;
+          const job = await pollRes.json();
+          if (job.status === "processing") continue;
+          if (job.status === "done") {
+            setLastTakeoutResult(job.result);
+            if (job.result?.status === "duplicate") {
+              Alert.alert("Duplicate File", "This ZIP has already been imported.");
+            }
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await loadHistory();
+            return;
+          }
+          if (job.status === "error") {
+            Alert.alert("Import Error", job.error || "Processing failed");
+            return;
+          }
+        } catch {}
+      }
+      Alert.alert("Import Error", "Processing timed out. Please try again.");
     } catch (err: any) {
       console.error("Takeout import error:", err);
       const msg = err?.message || "Unknown error";

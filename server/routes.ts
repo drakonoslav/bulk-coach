@@ -349,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/import/takeout_job/:jobId", async (req: Request, res: Response) => {
     const { jobId } = req.params;
-    const job = jobResults.get(jobId);
+    const job = jobResults.get(jobId as string);
     if (!job) {
       return res.status(404).json({ error: "Job not found or expired" });
     }
