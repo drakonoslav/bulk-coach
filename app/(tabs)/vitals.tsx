@@ -16,8 +16,8 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
 import { File } from "expo-file-system";
+import * as LegacyFS from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
@@ -261,8 +261,8 @@ export default function VitalsScreen() {
         URL.revokeObjectURL(a.href);
         setBackupStatus("Backup downloaded");
       } else {
-        const path = FileSystem.documentDirectory + filename;
-        await FileSystem.writeAsStringAsync(path, JSON.stringify(json, null, 2));
+        const path = LegacyFS.documentDirectory + filename;
+        await LegacyFS.writeAsStringAsync(path, JSON.stringify(json, null, 2));
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: "Save Backup" });

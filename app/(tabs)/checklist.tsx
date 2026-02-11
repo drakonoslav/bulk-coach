@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
@@ -232,15 +233,13 @@ export default function ChecklistScreen() {
           Alert.alert("Duplicate File", "This file has already been imported.");
         }
       } else {
-        formData.append("file", {
-          uri: asset.uri,
-          name: asset.name || "import.csv",
-          type: asset.mimeType || "text/csv",
-        } as any);
+        const file = new File(asset.uri);
+        formData.append("file", file as any);
 
-        const uploadRes = await globalThis.fetch(url.toString(), {
+        const uploadRes = await expoFetch(url.toString(), {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
         const data = await uploadRes.json();
         setLastResult(data);
@@ -294,15 +293,13 @@ export default function ChecklistScreen() {
           Alert.alert("Duplicate File", "This ZIP has already been imported.");
         }
       } else {
-        formData.append("file", {
-          uri: asset.uri,
-          name: asset.name || "takeout.zip",
-          type: asset.mimeType || "application/zip",
-        } as any);
+        const file = new File(asset.uri);
+        formData.append("file", file as any);
 
-        const uploadRes = await globalThis.fetch(url.toString(), {
+        const uploadRes = await expoFetch(url.toString(), {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
         const data = await uploadRes.json();
         setLastTakeoutResult(data);
