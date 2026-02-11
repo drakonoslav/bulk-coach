@@ -16,7 +16,9 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { File } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
 import { getApiUrl } from "@/lib/query-client";
@@ -164,6 +166,9 @@ export default function VitalsScreen() {
   const [sessionDate, setSessionDate] = useState(todayStr());
   const [refreshing, setRefreshing] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const [backupExporting, setBackupExporting] = useState(false);
+  const [backupImporting, setBackupImporting] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -227,6 +232,158 @@ export default function VitalsScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const handleBackupExport = async () => {
+    try {
+      setBackupExporting(true);
+      setBackupStatus(null);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/backup/export", baseUrl).toString();
+      const resp = await expoFetch(url, { credentials: "include" });
+      if (!resp.ok) {
+        setBackupStatus("Export failed");
+        return;
+      }
+
+      const json = await resp.json();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `bulk-coach-backup-${dateStr}.json`;
+
+      if (Platform.OS === "web") {
+        const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setBackupStatus("Backup downloaded");
+      } else {
+        const path = FileSystem.documentDirectory + filename;
+        await FileSystem.writeAsStringAsync(path, JSON.stringify(json, null, 2));
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: "Save Backup" });
+          setBackupStatus("Backup exported");
+        } else {
+          setBackupStatus(`Saved to ${path}`);
+        }
+      }
+    } catch (err) {
+      console.error("backup export error:", err);
+      setBackupStatus("Export failed");
+    } finally {
+      setBackupExporting(false);
+    }
+  };
+
+  const handleBackupImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/json", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      setBackupImporting(true);
+      setBackupStatus(null);
+
+      const baseUrl = getApiUrl();
+
+      const dryRunForm = new FormData();
+      if (Platform.OS === "web") {
+        const resp = await globalThis.fetch(asset.uri);
+        const blob = await resp.blob();
+        dryRunForm.append("file", blob, asset.name || "backup.json");
+      } else {
+        const file = new File(asset.uri);
+        dryRunForm.append("file", file as any);
+      }
+      dryRunForm.append("mode", "merge");
+      dryRunForm.append("dry_run", "true");
+
+      const dryRes = await expoFetch(
+        new URL("/api/backup/import", baseUrl).toString(),
+        { method: "POST", body: dryRunForm, credentials: "include" },
+      );
+      const dryJson = await dryRes.json();
+
+      if (!dryRes.ok) {
+        setBackupStatus(dryJson.error || "Invalid backup file");
+        setBackupImporting(false);
+        return;
+      }
+
+      const wi = dryJson.would_insert || {};
+      const wu = dryJson.would_update || {};
+      const summary = Object.entries(wi)
+        .filter(([, v]) => (v as number) > 0)
+        .map(([k, v]) => `${k}: +${v}`)
+        .concat(
+          Object.entries(wu)
+            .filter(([, v]) => (v as number) > 0)
+            .map(([k, v]) => `${k}: ~${v}`)
+        )
+        .join("\n");
+
+      const msg = summary || "No new data to import";
+
+      Alert.alert(
+        "Import Preview",
+        `Dry run result:\n${msg}\n\nProceed with import?`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => setBackupImporting(false) },
+          {
+            text: "Import",
+            style: "default",
+            onPress: async () => {
+              try {
+                const importForm = new FormData();
+                if (Platform.OS === "web") {
+                  const resp2 = await globalThis.fetch(asset.uri);
+                  const blob2 = await resp2.blob();
+                  importForm.append("file", blob2, asset.name || "backup.json");
+                } else {
+                  const file2 = new File(asset.uri);
+                  importForm.append("file", file2 as any);
+                }
+                importForm.append("mode", "merge");
+                importForm.append("dry_run", "false");
+
+                const importRes = await expoFetch(
+                  new URL("/api/backup/import", baseUrl).toString(),
+                  { method: "POST", body: importForm, credentials: "include" },
+                );
+                const importJson = await importRes.json();
+
+                if (importRes.ok && importJson.status === "ok") {
+                  const counts = importJson.imported || {};
+                  const total = Object.values(counts).reduce((s: number, v: unknown) => s + (v as number), 0);
+                  setBackupStatus(`Restored ${total} rows${importJson.recomputed ? " (recomputed)" : ""}`);
+                  loadData();
+                } else {
+                  setBackupStatus(importJson.error || "Import failed");
+                }
+              } catch (err2) {
+                console.error("backup import error:", err2);
+                setBackupStatus("Import failed");
+              } finally {
+                setBackupImporting(false);
+              }
+            },
+          },
+        ],
+      );
+    } catch (err) {
+      console.error("backup import error:", err);
+      setBackupStatus("Import failed");
+      setBackupImporting(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -482,6 +639,51 @@ export default function VitalsScreen() {
             ))
           )}
         </View>
+
+        <View style={[styles.card, { borderColor: "#374151" }]}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="cloud-download-outline" size={18} color="#60A5FA" />
+            <Text style={styles.cardTitle}>Backup & Restore</Text>
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+            <Pressable
+              style={[styles.backupBtn, { backgroundColor: "rgba(96, 165, 250, 0.15)", flex: 1 }, backupExporting && styles.uploadBtnDisabled]}
+              onPress={handleBackupExport}
+              disabled={backupExporting || backupImporting}
+            >
+              {backupExporting ? (
+                <ActivityIndicator size="small" color="#60A5FA" />
+              ) : (
+                <Feather name="download" size={16} color="#60A5FA" />
+              )}
+              <Text style={[styles.backupBtnText, { color: "#60A5FA" }]}>Export</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.backupBtn, { backgroundColor: "rgba(251, 191, 36, 0.15)", flex: 1 }, backupImporting && styles.uploadBtnDisabled]}
+              onPress={handleBackupImport}
+              disabled={backupExporting || backupImporting}
+            >
+              {backupImporting ? (
+                <ActivityIndicator size="small" color={IMPUTED_COLOR} />
+              ) : (
+                <Feather name="upload" size={16} color={IMPUTED_COLOR} />
+              )}
+              <Text style={[styles.backupBtnText, { color: IMPUTED_COLOR }]}>Restore</Text>
+            </Pressable>
+          </View>
+
+          {backupStatus && (
+            <Text style={{ fontSize: 13, color: MEASURED_COLOR, textAlign: "center", marginBottom: 4 }}>{backupStatus}</Text>
+          )}
+
+          <Text style={styles.backupHint}>
+            Export saves all logs, snapshots, sessions, and caches. Restore merges data without duplicating.
+          </Text>
+        </View>
+
+        <View style={{ height: 20 }} />
       </ScrollView>
     </View>
   );
@@ -780,5 +982,24 @@ const styles = StyleSheet.create({
   confCountText: {
     fontSize: 11,
     fontWeight: "600" as const,
+  },
+  backupBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 13,
+  },
+  backupBtnText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
+  backupHint: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    textAlign: "center" as const,
+    marginTop: 6,
+    lineHeight: 16,
   },
 });
