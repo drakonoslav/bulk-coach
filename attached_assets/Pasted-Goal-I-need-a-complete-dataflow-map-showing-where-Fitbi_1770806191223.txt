@@ -1,0 +1,63 @@
+Goal: I need a complete dataflow map showing where Fitbit data enters Postgres, which daily_log columns it populates, and exactly which downstream computations depend on each column (readiness, workout type, signal breakdown, cortisol flag, etc.). I want this as a written spec + references to code locations.
+
+1) Provide a “Dataflow Map” (Fitbit → DB → Engine → UI)
+
+Please output:
+	1.	Importer outputs
+	•	List every Fitbit metric we import (sleep, steps, AZM, zones, RHR, calories, etc.)
+	•	For each metric, state:
+	•	Source file patterns (CSV shards vs JSON)
+	•	Timestamp/date bucketing rule (timezone conversion and what “day” means)
+	•	Destination tables/columns (daily_log and any fitbit_* audit tables)
+	•	Conflict resolution (CSV vs JSON preference rules)
+	2.	DB → computations
+For each computed object (readiness score, deltas, baselines, signal breakdown, cardio guardrail, cortisol suppression, training sliders):
+	•	list the exact input columns used (with table name)
+	•	show the formula (or pseudocode)
+	•	show the time windows used (7d vs 28d vs 60d analysis window)
+	•	show gating rules (<7/<14/<30 day confidence/sufficiency)
+	•	point to exact file + function where computed
+	3.	UI mapping
+For each UI element on Plan/Report/Vitals that shows recovery/readiness:
+	•	list which API endpoint it calls
+	•	what fields it expects
+	•	and where those fields originate (which computations)
+
+2) Create a single “Field Dependency Table” (this is the key)
+
+Create a table like:
+	•	Fitbit Source Field → daily_log column → used by computations → used by UI
+
+Examples I expect to see:
+	•	Fitbit sleep minutes → daily_log.sleep_minutes → readiness sleep delta → readiness score + signal breakdown
+	•	Fitbit RHR → daily_log.resting_hr → readiness RHR delta → readiness score + suppression flag
+	•	Fitbit HRV (if present) → daily_log.hrv → readiness HRV delta → readiness score + suppression flag
+	•	Active zone minutes → daily_log.active_zone_minutes → cardio/effort logic → macro auto-adjust suggestion
+	•	Steps → daily_log.steps → activity context (optional)
+
+If any Fitbit-imported field is NOT used anywhere, call it out explicitly.
+
+3) Answer these explicit questions
+	1.	Sleep start/end:
+	•	Does Fitbit import populate daily_log.sleep_start and daily_log.sleep_end?
+	•	If not: are we deriving sleep_start from (wake_time − minutes_asleep), and should we store it?
+	•	If sleep_start/end aren’t used: confirm readiness uses sleep_minutes only.
+	2.	Timezone correctness:
+	•	What timezone is used for parsing?
+	•	Where is it configured?
+	•	How do we prevent off-by-one-day errors for sleep when a session crosses midnight?
+	•	Provide the exact logic for “sleep day” assignment (dateOfSleep vs wake-date rule) and show one example (D-1/D/D+1).
+	3.	Readiness inputs:
+Confirm readiness score is computed from: sleep_minutes, resting_hr, hrv, androgen proxy (and weights) and show the exact normalization math.
+	4.	Cortisol suppression flag:
+Confirm which signals it uses, thresholds, and whether it’s gated by confidence/sufficiency.
+
+4) Deliverables
+
+Please provide:
+	•	A markdown doc “FITBIT_DATAFLOW.md” with the map + dependency table
+	•	A short “sanity check script” (or endpoint) that prints, for a given date:
+	•	raw imported values (per-source)
+	•	final daily_log values
+	•	computed readiness breakdown deltas (7d vs 28d)
+	•	confidence/sufficiency results
