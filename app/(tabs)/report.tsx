@@ -873,24 +873,31 @@ export default function ReportScreen() {
                     ))}
                     {(() => {
                       const sb = readiness.sleepBlock;
-                      const al = sb?.alignment;
-                      const hasAlignment = al?.alignmentScore != null;
+                      const sa = sb?.sleepAlignment;
+                      const hasAlignment = sa?.alignmentScore != null;
                       const hasAdequacy = sb?.sleepAdequacyScore != null;
-                      const devResult = sb?.deviation;
-                      const devLabelMap: Record<string, string> = { efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" };
-                      const devLabel = devResult?.label && devResult.label !== "insufficient_data" ? devLabelMap[devResult.label] ?? null : null;
+                      const cls = sa?.classification;
+                      const clsLabelMap: Record<string, string> = { efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" };
+                      const clsLabel = cls && cls !== "insufficient_data" ? clsLabelMap[cls] ?? null : null;
+                      const shortfallStr = sa?.shortfallMin != null && sa.shortfallMin > 0 ? ` (shortfall +${sa.shortfallMin}m)` : "";
                       return (
                         <>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Alignment</Text>
-                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAlignment ? (al!.alignmentScore! >= 80 ? "#34D399" : al!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasAlignment ? `${al!.alignmentScore} / 100 (${devResult?.displayLine ?? "\u2014"})` : "\u2014 no self-reported times"}
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
+                              {hasAlignment ? `${sa!.alignmentScore} / 100` : "\u2014 no observed times"}
                             </Text>
                           </View>
+                          {hasAlignment && (
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Timing</Text>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{sa!.deviationLabel}</Text>
+                            </View>
+                          )}
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Adequacy</Text>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${devResult?.shortfallLine ? ` (${devResult.shortfallLine})` : ""}` : "\u2014 no Fitbit sleep"}
+                              {hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${shortfallStr}` : "\u2014 no Fitbit sleep"}
                             </Text>
                           </View>
                           {sb?.sleepEfficiencyEst != null && (
@@ -901,10 +908,10 @@ export default function ReportScreen() {
                               </Text>
                             </View>
                           )}
-                          {devLabel && (
+                          {clsLabel && (
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Deviation</Text>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{devLabel}</Text>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Classification</Text>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{clsLabel}</Text>
                             </View>
                           )}
                         </>

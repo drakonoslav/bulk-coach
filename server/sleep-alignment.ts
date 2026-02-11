@@ -1,4 +1,12 @@
 import { pool } from "./db";
+import {
+  noiseFloorMinutes,
+  formatSignedMinutes,
+  sleepAlignmentScore,
+  formatBedWakeDeviation,
+  classifySleepDeviation,
+  type SleepClassification,
+} from "../lib/sleep-timing";
 
 const DEFAULT_PLAN_BED = "21:45";
 const DEFAULT_PLAN_WAKE = "05:30";
@@ -9,15 +17,6 @@ function toMin(t: string): number {
   return h * 60 + m;
 }
 
-function spanMinutes(startMin: number, endMin: number): number {
-  let diff = endMin - startMin;
-  if (diff <= 0) diff += 1440;
-  return diff;
-}
-
-const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
-const clamp01 = (x: number) => clamp(x, 0, 1);
-
 function circularDeltaMinutes(actualMin: number, plannedMin: number): number {
   let d = actualMin - plannedMin;
   while (d > 720) d -= 1440;
@@ -25,262 +24,39 @@ function circularDeltaMinutes(actualMin: number, plannedMin: number): number {
   return d;
 }
 
-function roundAndNoiseFloor(d: number): number {
-  let v = Math.round(d);
-  if (Math.abs(v) < 3) v = 0;
-  return v;
+function spanMinutes(startMin: number, endMin: number): number {
+  let diff = endMin - startMin;
+  if (diff <= 0) diff += 1440;
+  return diff;
 }
 
-function linearScore(absDev: number, ok: number, cap: number): number {
-  const penalty = clamp01((absDev - ok) / (cap - ok));
-  return Math.round(100 * (1 - penalty));
-}
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-function weightedMeanAvailable(items: Array<{ score: number | null; w: number }>): number | null {
-  const present = items.filter(i => i.score != null);
-  if (present.length === 0) return null;
-  const wsum = present.reduce((a, i) => a + i.w, 0);
-  const total = present.reduce((a, i) => a + (i.score as number) * (i.w / wsum), 0);
-  return total;
-}
-
-export function formatDevMin(raw: number | null): string {
-  if (raw == null) return "\u2014";
-  let value = Math.round(raw);
-  if (Math.abs(value) < 3) value = 0;
-  if (value === 0) return "0m";
-  const sign = value > 0 ? "+" : "\u2212";
-  return `${sign}${Math.abs(value)}m`;
-}
-
-function formatBedWakeLine(bedDev: number | null, wakeDev: number | null): string {
-  if (bedDev == null && wakeDev == null) return "\u2014";
-  return `bed ${formatDevMin(bedDev)} / wake ${formatDevMin(wakeDev)}`;
-}
-
-function formatShortfallLine(shortfall: number | null): string | null {
-  if (shortfall == null || shortfall <= 0) return null;
-  const rounded = Math.round(shortfall);
-  if (rounded < 3) return null;
-  return `shortfall +${rounded}m`;
-}
-
-export type SleepDeviationType =
-  | "efficient_on_plan"
-  | "behavioral_drift"
-  | "physiological_shortfall"
-  | "oversleep_spillover"
-  | "insufficient_data";
-
-export interface SleepDeviationResult {
-  label: SleepDeviationType;
-  bedDevMin: number | null;
-  wakeDevMin: number | null;
-  shortfallMin: number | null;
-  reason: string[];
-  displayLine: string;
-  shortfallLine: string | null;
-}
-
-const BED_OK = 15;
-const WAKE_OK = 10;
-const SHORTFALL_MAJOR = 30;
-const OVERSLEEP_MAJOR = 20;
-
-export function classifySleepDeviationType(args: {
-  bedDevMin: number | null;
-  wakeDevMin: number | null;
-  shortfallMin: number | null;
-}): SleepDeviationType {
-  const { bedDevMin, wakeDevMin, shortfallMin } = args;
-  const hasTiming = bedDevMin != null && wakeDevMin != null;
-  const hasDuration = shortfallMin != null;
-
-  if (!hasTiming && !hasDuration) return "insufficient_data";
-
-  if (wakeDevMin != null && wakeDevMin >= OVERSLEEP_MAJOR) return "oversleep_spillover";
-  if (shortfallMin != null && shortfallMin >= SHORTFALL_MAJOR) return "physiological_shortfall";
-
-  const timingOnPlan =
-    hasTiming &&
-    Math.abs(bedDevMin as number) <= BED_OK &&
-    Math.abs(wakeDevMin as number) <= WAKE_OK;
-  const durationOnPlan = !hasDuration || shortfallMin === 0;
-
-  if (timingOnPlan && durationOnPlan) return "efficient_on_plan";
-
-  return "behavioral_drift";
-}
-
-export function classifySleepDeviation(input: {
-  planBed?: string | null;
-  planWake?: string | null;
-  srBed?: string | null;
-  srWake?: string | null;
-  fitbitSleepMin?: number | null;
-  latencyMin?: number | null;
-  wasoMin?: number | null;
-}): SleepDeviationResult {
-  const { planBed, planWake, srBed, srWake, fitbitSleepMin, latencyMin, wasoMin } = input;
-
-  const empty: SleepDeviationResult = {
-    label: "insufficient_data", bedDevMin: null, wakeDevMin: null,
-    shortfallMin: null, reason: ["missing_plan"], displayLine: "\u2014", shortfallLine: null,
-  };
-
-  if (!planBed || !planWake) return empty;
-
-  const pBed = toMin(planBed);
-  const pWake = toMin(planWake);
-  const sleepNeedMin = spanMinutes(pBed, pWake);
-
-  const bedDevMin = srBed ? roundAndNoiseFloor(circularDeltaMinutes(toMin(srBed), pBed)) : null;
-  const wakeDevMin = srWake ? roundAndNoiseFloor(circularDeltaMinutes(toMin(srWake), pWake)) : null;
-
-  let sleepAsleepMin: number | null = null;
-  if (typeof fitbitSleepMin === "number") {
-    sleepAsleepMin = fitbitSleepMin;
-  } else if (srBed && srWake) {
-    const inBed = spanMinutes(toMin(srBed), toMin(srWake));
-    sleepAsleepMin = Math.max(0, inBed - Math.max(0, latencyMin ?? 0) - Math.max(0, wasoMin ?? 0));
-  }
-
-  let shortfallMin: number | null = null;
-  if (sleepAsleepMin != null) {
-    const raw = Math.max(0, sleepNeedMin - sleepAsleepMin);
-    shortfallMin = roundAndNoiseFloor(raw);
-  }
-
-  const label = classifySleepDeviationType({ bedDevMin, wakeDevMin, shortfallMin });
-
-  const reason: string[] = [];
-  if (label === "oversleep_spillover") reason.push("wake_late");
-  else if (label === "physiological_shortfall") reason.push("sleep_shortfall");
-  else if (label === "behavioral_drift") reason.push("schedule_drift");
-  else if (label === "efficient_on_plan") reason.push("on_plan");
-  else reason.push("insufficient_data");
-
-  const displayLine = formatBedWakeLine(bedDevMin, wakeDevMin);
-  const shortfallLine = formatShortfallLine(shortfallMin);
-
-  return { label, bedDevMin, wakeDevMin, shortfallMin, reason, displayLine, shortfallLine };
-}
-
-const DEVIATION_LABELS: Record<SleepDeviationType, string> = {
-  efficient_on_plan: "Efficient & on-plan",
-  behavioral_drift: "Behavioral drift",
-  physiological_shortfall: "Physiological shortfall",
-  oversleep_spillover: "Oversleep spillover",
-  insufficient_data: "Insufficient data",
-};
-
-export function deviationHumanLabel(dt: SleepDeviationType | null): string | null {
-  return dt && dt !== "insufficient_data" ? DEVIATION_LABELS[dt] : null;
-}
-
-export interface SleepAlignmentResult {
+export interface SleepAlignment {
+  plannedBedTime: string | null;
+  plannedWakeTime: string | null;
+  observedBedLocal: string | null;
+  observedWakeLocal: string | null;
+  bedDeviationMin: number | null;
+  wakeDeviationMin: number | null;
   alignmentScore: number | null;
-  bedDevMin: number | null;
-  wakeDevMin: number | null;
+  deviationLabel: string;
   shortfallMin: number | null;
-  bedScore: number | null;
-  wakeScore: number | null;
-  durationScore: number | null;
-  oversleepDampener: number | null;
-}
-
-export function computeSleepAlignmentScore(args: {
-  planBedMin: number | null;
-  planWakeMin: number | null;
-  planSleepMin: number | null;
-  obsBedMin: number | null;
-  obsWakeMin: number | null;
-  obsSleepMin: number | null;
-}): SleepAlignmentResult {
-  const { planBedMin, planWakeMin, planSleepMin, obsBedMin, obsWakeMin, obsSleepMin } = args;
-
-  let bedDevMin: number | null = null;
-  let bedScore: number | null = null;
-  if (planBedMin != null && obsBedMin != null) {
-    bedDevMin = roundAndNoiseFloor(circularDeltaMinutes(obsBedMin, planBedMin));
-    bedScore = linearScore(Math.abs(bedDevMin), 15, 120);
-  }
-
-  let wakeDevMin: number | null = null;
-  let wakeScore: number | null = null;
-  if (planWakeMin != null && obsWakeMin != null) {
-    wakeDevMin = roundAndNoiseFloor(circularDeltaMinutes(obsWakeMin, planWakeMin));
-    wakeScore = linearScore(Math.abs(wakeDevMin), 10, 90);
-  }
-
-  let shortfallMin: number | null = null;
-  let durationScore: number | null = null;
-  if (planSleepMin != null && obsSleepMin != null) {
-    const rawShort = Math.max(0, planSleepMin - obsSleepMin);
-    shortfallMin = roundAndNoiseFloor(rawShort);
-    durationScore = linearScore(shortfallMin, 0, 120);
-  }
-
-  const base = weightedMeanAvailable([
-    { score: bedScore, w: 0.35 },
-    { score: wakeScore, w: 0.40 },
-    { score: durationScore, w: 0.25 },
-  ]);
-
-  if (base == null) {
-    return {
-      alignmentScore: null,
-      bedDevMin, wakeDevMin, shortfallMin,
-      bedScore, wakeScore, durationScore,
-      oversleepDampener: null,
-    };
-  }
-
-  let oversleepDampener: number | null = null;
-  let final = base;
-
-  if (wakeDevMin != null && wakeDevMin > 10) {
-    const spill = wakeDevMin - 10;
-    const spillPenalty = clamp01(spill / (120 - 10));
-    const spillScore = 100 * (1 - spillPenalty);
-    oversleepDampener = 0.6 + 0.4 * (spillScore / 100);
-    final = base * oversleepDampener;
-  }
-
-  const alignmentScore = Math.round(clamp(final, 0, 100));
-
-  return {
-    alignmentScore,
-    bedDevMin, wakeDevMin, shortfallMin,
-    bedScore, wakeScore, durationScore,
-    oversleepDampener,
-  };
+  classification: SleepClassification;
 }
 
 export interface SleepBlock {
-  plannedBedTime: string | null;
-  plannedWakeTime: string | null;
-  actualBedTime: string | null;
-  actualWakeTime: string | null;
-  sleepLatencyMin: number | null;
-  sleepWasoMin: number | null;
-  napMinutes: number | null;
-  fitbitSleepMinutes: number | null;
+  sleepAlignment: SleepAlignment;
 
   plannedSleepMin: number | null;
-  bedDevMin: number | null;
-  wakeDevMin: number | null;
   sleepDebtMin: number | null;
   sleepAdequacyScore: number | null;
   sleepEfficiencyEst: number | null;
-
-  alignment: SleepAlignmentResult;
-
+  fitbitSleepMinutes: number | null;
+  napMinutes: number | null;
   timeInBedMin: number | null;
   estimatedSleepMin: number | null;
   fitbitVsReportedDeltaMin: number | null;
-
-  deviation: SleepDeviationResult;
 }
 
 export async function computeSleepBlock(date: string): Promise<SleepBlock | null> {
@@ -312,19 +88,36 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
   let bedDevMin: number | null = null;
   let wakeDevMin: number | null = null;
 
-  if (plannedBed && plannedWake && actualBed && actualWake) {
-    bedDevMin = roundAndNoiseFloor(circularDeltaMinutes(toMin(actualBed), toMin(plannedBed)));
-    wakeDevMin = roundAndNoiseFloor(circularDeltaMinutes(toMin(actualWake), toMin(plannedWake)));
+  if (plannedBed && actualBed) {
+    bedDevMin = noiseFloorMinutes(circularDeltaMinutes(toMin(actualBed), toMin(plannedBed)));
+  }
+  if (plannedWake && actualWake) {
+    wakeDevMin = noiseFloorMinutes(circularDeltaMinutes(toMin(actualWake), toMin(plannedWake)));
   }
 
-  const alignment = computeSleepAlignmentScore({
-    planBedMin: plannedBed ? toMin(plannedBed) : null,
-    planWakeMin: plannedWake ? toMin(plannedWake) : null,
-    planSleepMin: plannedSleepMin,
-    obsBedMin: actualBed ? toMin(actualBed) : null,
-    obsWakeMin: actualWake ? toMin(actualWake) : null,
-    obsSleepMin: fitbitMin,
-  });
+  const score = sleepAlignmentScore(bedDevMin, wakeDevMin);
+  const devLabel = formatBedWakeDeviation(bedDevMin, wakeDevMin);
+
+  let shortfallMin: number | null = null;
+  if (plannedSleepMin != null && fitbitMin != null) {
+    const raw = Math.max(0, plannedSleepMin - fitbitMin);
+    shortfallMin = noiseFloorMinutes(raw);
+  }
+
+  const classification = classifySleepDeviation({ bedDevMin, wakeDevMin, shortfallMin });
+
+  const sleepAlignment: SleepAlignment = {
+    plannedBedTime: plannedBed,
+    plannedWakeTime: plannedWake,
+    observedBedLocal: actualBed,
+    observedWakeLocal: actualWake,
+    bedDeviationMin: bedDevMin,
+    wakeDeviationMin: wakeDevMin,
+    alignmentScore: score,
+    deviationLabel: devLabel,
+    shortfallMin,
+    classification,
+  };
 
   let sleepDebtMin: number | null = null;
   let sleepAdequacyScore: number | null = null;
@@ -358,40 +151,17 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
     fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
   }
 
-  const deviation = classifySleepDeviation({
-    planBed: plannedBed,
-    planWake: plannedWake,
-    srBed: actualBed,
-    srWake: actualWake,
-    fitbitSleepMin: fitbitMin,
-    latencyMin: latency,
-    wasoMin: waso,
-  });
-
   return {
-    plannedBedTime: plannedBed,
-    plannedWakeTime: plannedWake,
-    actualBedTime: actualBed,
-    actualWakeTime: actualWake,
-    sleepLatencyMin: latency,
-    sleepWasoMin: waso,
-    napMinutes: napMin,
-    fitbitSleepMinutes: fitbitMin,
-
+    sleepAlignment,
     plannedSleepMin,
-    bedDevMin,
-    wakeDevMin,
     sleepDebtMin,
     sleepAdequacyScore,
     sleepEfficiencyEst,
-
-    alignment,
-
+    fitbitSleepMinutes: fitbitMin,
+    napMinutes: napMin,
     timeInBedMin,
     estimatedSleepMin,
     fitbitVsReportedDeltaMin,
-
-    deviation,
   };
 }
 
@@ -446,25 +216,23 @@ export async function computeSleepTrending(date: string): Promise<SleepTrending>
     const actualWake = r.actual_wake_time || null;
     const fitbit = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
 
-    let alignmentVal: number | null = null;
+    let bedDev: number | null = null;
+    let wakeDev: number | null = null;
+    if (plannedBed && actualBed) {
+      bedDev = noiseFloorMinutes(circularDeltaMinutes(toMin(actualBed), toMin(plannedBed)));
+    }
+    if (plannedWake && actualWake) {
+      wakeDev = noiseFloorMinutes(circularDeltaMinutes(toMin(actualWake), toMin(plannedWake)));
+    }
+
+    const alignmentVal = sleepAlignmentScore(bedDev, wakeDev);
+
     let adequacy: number | null = null;
     let debt: number | null = null;
-
     let plannedMin: number | null = null;
     if (plannedBed && plannedWake) {
       plannedMin = spanMinutes(toMin(plannedBed), toMin(plannedWake));
     }
-
-    const aResult = computeSleepAlignmentScore({
-      planBedMin: plannedBed ? toMin(plannedBed) : null,
-      planWakeMin: plannedWake ? toMin(plannedWake) : null,
-      planSleepMin: plannedMin,
-      obsBedMin: actualBed ? toMin(actualBed) : null,
-      obsWakeMin: actualWake ? toMin(actualWake) : null,
-      obsSleepMin: fitbit,
-    });
-    alignmentVal = aResult.alignmentScore;
-
     if (plannedMin != null && fitbit != null) {
       debt = plannedMin - fitbit;
       const ratio = fitbit / plannedMin;

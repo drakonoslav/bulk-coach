@@ -21,7 +21,8 @@ import { saveEntry, loadEntry } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 import { getApiUrl } from "@/lib/query-client";
 import { fetch as expoFetch } from "expo/fetch";
-import { classifySleepDeviation, deviationHumanLabel, formatDevMin } from "@/lib/sleep-deviation";
+import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
+import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
 
 function formatDateLabel(dateStr: string): string {
   const today = todayStr();
@@ -811,7 +812,7 @@ export default function LogScreen() {
           {(() => {
             const planBed = sleepPlan?.bedtime || null;
             const planWake = sleepPlan?.wake || null;
-            const dev = classifySleepDeviation({
+            const dev = computeClientDeviation({
               planBed,
               planWake,
               srBed: actualBedTime || null,
@@ -820,15 +821,16 @@ export default function LogScreen() {
               latencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
               wasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
             });
-            const humanLabel = deviationHumanLabel(dev.label);
+            const humanLabel = deviationHumanLabel(dev.classification);
             if (!humanLabel) return null;
+            const shortfallStr = dev.shortfallMin != null && dev.shortfallMin > 0 ? ` \u00B7 shortfall +${dev.shortfallMin}m` : "";
             return (
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingHorizontal: 4, paddingVertical: 6, backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
                 <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Sleep Deviation</Text>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{humanLabel}</Text>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 1 }}>
-                    {dev.displayLine}{dev.shortfallLine ? ` \u00B7 ${dev.shortfallLine}` : ""}
+                    {dev.deviationLabel}{shortfallStr}
                   </Text>
                 </View>
               </View>
