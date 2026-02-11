@@ -44,6 +44,15 @@ interface SnapshotRow {
   totalNocturnalDurationSeconds: number;
 }
 
+interface ConfidenceWindow {
+  window: string;
+  days: number;
+  measured: number;
+  imputed: number;
+  multiNight: number;
+  grade: "High" | "Med" | "Low" | "None";
+}
+
 const ACCENT = "#8B5CF6";
 const ACCENT_MUTED = "rgba(139, 92, 246, 0.15)";
 const MEASURED_COLOR = "#34D399";
@@ -149,6 +158,7 @@ export default function VitalsScreen() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [proxyData, setProxyData] = useState<ProxyRow[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
+  const [confidence, setConfidence] = useState<ConfidenceWindow[]>([]);
   const [includeImputed, setIncludeImputed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [sessionDate, setSessionDate] = useState(todayStr());
@@ -159,10 +169,11 @@ export default function VitalsScreen() {
     try {
       const baseUrl = getApiUrl();
 
-      const [sessRes, proxyRes, snapRes] = await Promise.all([
+      const [sessRes, proxyRes, snapRes, confRes] = await Promise.all([
         expoFetch(new URL("/api/erection/sessions", baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL(`/api/erection/proxy?include_imputed=${includeImputed}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/erection/snapshots", baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
       ]);
 
       if (sessRes.ok) {
@@ -195,6 +206,11 @@ export default function VitalsScreen() {
           totalNocturnalErections: Number(r.total_nocturnal_erections),
           totalNocturnalDurationSeconds: Number(r.total_nocturnal_duration_seconds),
         })));
+      }
+
+      if (confRes.ok) {
+        const rows = await confRes.json();
+        setConfidence(rows);
       }
     } catch (err) {
       console.error("vitals load error:", err);
@@ -354,6 +370,33 @@ export default function VitalsScreen() {
             <Text style={styles.statLabel}>Imputed</Text>
           </View>
         </View>
+
+        {confidence.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={ACCENT} />
+              <Text style={styles.cardTitle}>Data Confidence</Text>
+            </View>
+            <View style={styles.confGrid}>
+              {confidence.map((c) => {
+                const gradeColor = c.grade === "High" ? MEASURED_COLOR : c.grade === "Med" ? IMPUTED_COLOR : c.grade === "Low" ? "#EF4444" : Colors.textTertiary;
+                return (
+                  <View key={c.window} style={styles.confCell}>
+                    <Text style={styles.confWindow}>{c.window}</Text>
+                    <View style={[styles.confGradeBadge, { backgroundColor: gradeColor + "20", borderColor: gradeColor + "40" }]}>
+                      <Text style={[styles.confGradeText, { color: gradeColor }]}>{c.grade}</Text>
+                    </View>
+                    <View style={styles.confCounts}>
+                      <Text style={[styles.confCountText, { color: MEASURED_COLOR }]}>{c.measured}M</Text>
+                      <Text style={[styles.confCountText, { color: IMPUTED_COLOR }]}>{c.imputed}I</Text>
+                      {c.multiNight > 0 && <Text style={[styles.confCountText, { color: Colors.textTertiary }]}>{c.multiNight}C</Text>}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {proxyData.length >= 2 && (
           <View style={styles.card}>
@@ -699,5 +742,43 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: "center",
     paddingVertical: 20,
+  },
+  confGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  confCell: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+  },
+  confWindow: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: Colors.text,
+    letterSpacing: 0.5,
+  },
+  confGradeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  confGradeText: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+    letterSpacing: 0.3,
+  },
+  confCounts: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  confCountText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
 });

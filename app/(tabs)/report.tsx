@@ -316,6 +316,7 @@ export default function ReportScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [proxyData, setProxyData] = useState<Array<{ date: string; proxyScore: number | null; proxy7dAvg: number | null }>>([]);
   const [proxyImputed, setProxyImputed] = useState(false);
+  const [confidence, setConfidence] = useState<Array<{ window: string; days: number; measured: number; imputed: number; multiNight: number; grade: string }>>([]);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -325,14 +326,20 @@ export default function ReportScreen() {
   const fetchProxy = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" });
-      if (res.ok) {
-        const rows = await res.json();
+      const [proxyRes, confRes] = await Promise.all([
+        expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
+      ]);
+      if (proxyRes.ok) {
+        const rows = await proxyRes.json();
         setProxyData(rows.map((r: any) => ({
           date: r.date,
           proxyScore: r.proxyScore != null ? Number(r.proxyScore) : null,
           proxy7dAvg: r.proxy7DAvg != null ? Number(r.proxy7DAvg) : null,
         })));
+      }
+      if (confRes.ok) {
+        setConfidence(await confRes.json());
       }
     } catch {}
   }, [proxyImputed]);
@@ -624,6 +631,30 @@ export default function ReportScreen() {
                     </Text>
                   </Pressable>
                 </View>
+
+                {confidence.length > 0 && (
+                  <View style={[styles.lgrCard, { marginTop: 12 }]}>
+                    <Text style={[styles.lgrLabel, { marginBottom: 10 }]}>Data Confidence</Text>
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      {confidence.map((c) => {
+                        const gradeColor = c.grade === "High" ? "#34D399" : c.grade === "Med" ? "#FBBF24" : c.grade === "Low" ? "#EF4444" : Colors.textTertiary;
+                        return (
+                          <View key={c.window} style={{ flex: 1, alignItems: "center", gap: 6, paddingVertical: 8, backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 6 }}>
+                            <Text style={{ fontSize: 13, fontWeight: "700" as const, color: Colors.text, letterSpacing: 0.5 }}>{c.window}</Text>
+                            <View style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, borderWidth: 1, backgroundColor: gradeColor + "20", borderColor: gradeColor + "40" }}>
+                              <Text style={{ fontSize: 12, fontWeight: "700" as const, letterSpacing: 0.3, color: gradeColor }}>{c.grade}</Text>
+                            </View>
+                            <View style={{ flexDirection: "row", gap: 6 }}>
+                              <Text style={{ fontSize: 11, fontWeight: "600" as const, color: "#34D399" }}>{c.measured}M</Text>
+                              <Text style={{ fontSize: 11, fontWeight: "600" as const, color: "#FBBF24" }}>{c.imputed}I</Text>
+                              {c.multiNight > 0 && <Text style={{ fontSize: 11, fontWeight: "600" as const, color: Colors.textTertiary }}>{c.multiNight}C</Text>}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
               </View>
             )}
 

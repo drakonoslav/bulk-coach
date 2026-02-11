@@ -485,6 +485,65 @@ export async function getSessionBadges(): Promise<Record<string, "measured" | "i
   return badges;
 }
 
+export interface ConfidenceWindow {
+  window: string;
+  days: number;
+  measured: number;
+  imputed: number;
+  multiNight: number;
+  grade: "High" | "Med" | "Low" | "None";
+}
+
+export async function getDataConfidence(): Promise<ConfidenceWindow[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const windows = [
+    { label: "7d", days: 7 },
+    { label: "14d", days: 14 },
+    { label: "30d", days: 30 },
+  ];
+
+  const results: ConfidenceWindow[] = [];
+
+  for (const w of windows) {
+    const fromDate = addDays(today, -(w.days - 1));
+    const { rows } = await pool.query(
+      `SELECT is_imputed, multi_night_combined FROM erection_sessions
+       WHERE date BETWEEN $1 AND $2`,
+      [fromDate, today],
+    );
+
+    const measured = rows.filter((r: { is_imputed: boolean }) => !r.is_imputed).length;
+    const imputed = rows.filter((r: { is_imputed: boolean }) => r.is_imputed).length;
+    const multiNight = rows.filter((r: { multi_night_combined: boolean }) => r.multi_night_combined).length;
+    const total = measured + imputed;
+
+    let grade: "High" | "Med" | "Low" | "None" = "None";
+    if (total === 0) {
+      grade = "None";
+    } else {
+      const measuredRatio = measured / total;
+      if (measuredRatio >= 0.7 && measured >= Math.min(w.days * 0.5, 4)) {
+        grade = "High";
+      } else if (measuredRatio >= 0.4 && measured >= 2) {
+        grade = "Med";
+      } else {
+        grade = "Low";
+      }
+    }
+
+    results.push({
+      window: w.label,
+      days: w.days,
+      measured,
+      imputed,
+      multiNight,
+      grade,
+    });
+  }
+
+  return results;
+}
+
 function rowToSnapshot(row: Record<string, unknown>): Snapshot {
   const sessionDate = row.session_date;
   const dateStr = sessionDate instanceof Date

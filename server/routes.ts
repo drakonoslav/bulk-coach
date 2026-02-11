@@ -11,6 +11,7 @@ import {
   getSessions,
   getProxyData,
   getSessionBadges,
+  getDataConfidence,
 } from "./erection-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -266,6 +267,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(badges);
     } catch (err: unknown) {
       console.error("badges error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/erection/confidence", async (_req: Request, res: Response) => {
+    try {
+      const confidence = await getDataConfidence();
+      res.json(confidence);
+    } catch (err: unknown) {
+      console.error("confidence error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
