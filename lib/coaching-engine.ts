@@ -14,6 +14,9 @@ export interface DailyEntry {
   sleepStart?: string;
   sleepEnd?: string;
   sleepQuality?: number;
+  tossedMinutes?: number;
+  sleepPlanBedtime?: string;
+  sleepPlanWake?: string;
   waterLiters?: number;
   steps?: number;
   cardioMin?: number;

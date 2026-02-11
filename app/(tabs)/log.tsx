@@ -193,6 +193,7 @@ export default function LogScreen() {
   const [sleepStart, setSleepStart] = useState("");
   const [sleepEnd, setSleepEnd] = useState("");
   const [sleepQuality, setSleepQuality] = useState<number | undefined>();
+  const [tossedMinutes, setTossedMinutes] = useState("");
   const [water, setWater] = useState("");
   const [steps, setSteps] = useState("");
   const [cardio, setCardio] = useState("");
@@ -227,6 +228,7 @@ export default function LogScreen() {
       setSleepStart(existing.sleepStart || "");
       setSleepEnd(existing.sleepEnd || "");
       setSleepQuality(existing.sleepQuality);
+      setTossedMinutes((existing as any).tossedMinutes?.toString() || "");
       setWater(existing.waterLiters?.toString() || "");
       setSteps(existing.steps?.toString() || "");
       setCardio(existing.cardioMin?.toString() || "");
@@ -414,6 +416,7 @@ export default function LogScreen() {
     setSleepStart("");
     setSleepEnd("");
     setSleepQuality(undefined);
+    setTossedMinutes("");
     setWater("");
     setSteps("");
     setCardio("");
@@ -454,6 +457,7 @@ export default function LogScreen() {
         sleepStart: sleepStart || undefined,
         sleepEnd: sleepEnd || undefined,
         sleepQuality,
+        tossedMinutes: tossedMinutes ? parseInt(tossedMinutes, 10) : undefined,
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
@@ -723,6 +727,21 @@ export default function LogScreen() {
               <Text style={styles.inputLabelText}>Sleep Quality</Text>
             </View>
             <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
+          </View>
+          <View style={styles.inputGroup}>
+            <View style={styles.inputLabel}>
+              <Ionicons name="refresh-outline" size={16} color={Colors.secondary} />
+              <Text style={styles.inputLabelText}>Toss & Turn (min)</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={tossedMinutes}
+              onChangeText={setTossedMinutes}
+              placeholder="0"
+              placeholderTextColor={Colors.textTertiary}
+              keyboardType="numeric"
+              keyboardAppearance="dark"
+            />
           </View>
         </View>
 

@@ -18,7 +18,7 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
-import { computeSleepAlignment } from "./sleep-alignment";
+import { computeSleepAlignment, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
   computeReadiness,
   persistReadiness,
@@ -65,9 +65,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           bf_evening_r1, bf_evening_r2, bf_evening_r3, bf_evening_pct,
           sleep_start, sleep_end, sleep_quality,
           water_liters, steps, cardio_min, lift_done, deload_week,
-          adherence, performance_note, notes, updated_at
+          adherence, performance_note, notes,
+          sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
+          updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW()
         )
         ON CONFLICT (day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -92,6 +94,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           adherence = EXCLUDED.adherence,
           performance_note = EXCLUDED.performance_note,
           notes = EXCLUDED.notes,
+          sleep_plan_bedtime = EXCLUDED.sleep_plan_bedtime,
+          sleep_plan_wake = EXCLUDED.sleep_plan_wake,
+          tossed_minutes = EXCLUDED.tossed_minutes,
           updated_at = NOW()`,
         [
           b.day,
@@ -117,6 +122,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.adherence ?? null,
           b.performanceNote ?? null,
           b.notes ?? null,
+          b.sleepPlanBedtime ?? null,
+          b.sleepPlanWake ?? null,
+          b.tossedMinutes ?? null,
         ],
       );
 
@@ -772,6 +780,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!from || !to) return res.status(400).json({ error: "from and to required" });
       const { rows } = await pool.query(
         `SELECT day, sleep_minutes, sleep_start, sleep_end,
+                sleep_start_local, sleep_end_local,
+                sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
                 sleep_efficiency, bedtime_deviation_min, wake_deviation_min, sleep_plan_alignment_score
          FROM daily_log
          WHERE day >= $1 AND day <= $2 AND sleep_minutes IS NOT NULL
@@ -783,6 +793,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleepMinutes: r.sleep_minutes,
         sleepStart: r.sleep_start,
         sleepEnd: r.sleep_end,
+        sleepStartLocal: r.sleep_start_local,
+        sleepEndLocal: r.sleep_end_local,
+        sleepPlanBedtime: r.sleep_plan_bedtime,
+        sleepPlanWake: r.sleep_plan_wake,
+        tossedMinutes: r.tossed_minutes,
         sleepEfficiency: r.sleep_efficiency != null ? parseFloat(r.sleep_efficiency) : null,
         bedtimeDeviationMin: r.bedtime_deviation_min,
         wakeDeviationMin: r.wake_deviation_min,
@@ -790,6 +805,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
       })));
     } catch (err: unknown) {
       console.error("sleep-alignment error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sleep-plan", async (_req: Request, res: Response) => {
+    try {
+      const settings = await getSleepPlanSettings();
+      res.json(settings);
+    } catch (err: unknown) {
+      console.error("sleep-plan get error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/sleep-plan", async (req: Request, res: Response) => {
+    try {
+      const { bedtime, wake } = req.body;
+      if (!bedtime || !wake) return res.status(400).json({ error: "bedtime and wake required" });
+      await setSleepPlanSettings(bedtime, wake);
+      res.json({ ok: true, bedtime, wake });
+    } catch (err: unknown) {
+      console.error("sleep-plan set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sleep-samples/:date", async (req: Request, res: Response) => {
+    try {
+      const { date } = req.params;
+
+      const { rows: csvRows } = await pool.query(
+        `SELECT id, import_id, date, raw_start, raw_end, minutes_asleep,
+                bucket_date, timezone_used, source_file, is_segment,
+                is_main_sleep, suspicious, suspicion_reason, created_at
+         FROM sleep_import_diagnostics
+         WHERE date = $1 OR bucket_date = $1
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [date],
+      );
+
+      const { rows: bucketRows } = await pool.query(
+        `SELECT sleep_end_raw, sleep_end_local, bucket_date, minutes, source
+         FROM fitbit_sleep_bucketing WHERE date = $1
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [date],
+      );
+
+      const { rows: dailyLogRow } = await pool.query(
+        `SELECT day, sleep_minutes, sleep_start, sleep_end,
+                sleep_start_local, sleep_end_local,
+                sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
+                sleep_efficiency, bedtime_deviation_min, wake_deviation_min,
+                sleep_plan_alignment_score
+         FROM daily_log WHERE day = $1`,
+        [date],
+      );
+
+      const csvSampleHeaders = [
+        "id", "import_id", "date", "raw_start", "raw_end", "minutes_asleep",
+        "bucket_date", "timezone_used", "source_file", "is_segment",
+        "is_main_sleep", "suspicious", "suspicion_reason",
+      ];
+
+      const csvSamples = csvRows.map(r => ({
+        headerRow: csvSampleHeaders.join(","),
+        dataRow: csvSampleHeaders.map(h => r[h] ?? "").join(","),
+        parsed: r,
+      }));
+
+      res.json({
+        date,
+        csvSamples,
+        bucketingRecords: bucketRows,
+        dailyLogState: dailyLogRow[0] ? snakeToCamel(dailyLogRow[0]) : null,
+        bucketRule: "wake_date_local_time",
+        fieldSelection: {
+          sleepMinutes: "fitbit_sleep_bucketing.minutes (CSV-preferred, COALESCE preserves manual entries)",
+          sleepStart: "CSV: start_time column; JSON: startTime field",
+          sleepEnd: "CSV: end_time column; JSON: endTime field",
+          timezone: "CSV: end_utc_offset parsed; JSON: timezone field from timeZone",
+          bucket: "wake-date in LOCAL time (not UTC)",
+        },
+        parsingNotes: [
+          "CSV monthly shard: sleep_*.csv — end_time + end_utc_offset -> local wake date",
+          "JSON daily file: sleep-*.json — endTime + timezone -> local wake date",
+          "CSV takes priority when both sources exist (COALESCE upsert)",
+          "Segments (is_segment=true) are skipped; only main sleep used",
+          "Normal range: 240-600 min. Suspicious: <180 or >900 min flagged",
+        ],
+      });
+    } catch (err: unknown) {
+      console.error("sleep-samples error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
