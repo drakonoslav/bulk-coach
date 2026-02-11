@@ -27,11 +27,12 @@ yarn-error.*
 
 # macOS
 .DS_Store
-*.pem
+Thumbs.db
 
-# env files
+# env files — never commit secrets
 .env
-.env*.local
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -40,9 +41,23 @@ yarn-error.*
 # server build output
 server_dist/
 
-# backups (may contain personal data)
+# databases
+*.db
+*.sqlite
+*.sqlite3
+
+# archives & data exports
+*.zip
+*.csv
+
+# uploaded files (takeout ZIPs, FirmTech CSVs, etc.)
+/uploads/
+/attached_assets/
+
+# backups (contain personal data)
+/backups/
 *.backup.json
 bulk-coach-backup-*.json
 
-# OS files
-Thumbs.db
+# certificates
+*.pem
