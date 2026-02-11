@@ -1,0 +1,82 @@
+🚨 Red flag #1: sleep bucketing is wrong (your dates are impossible)
+
+You have:
+	•	2026-02-10 sleep_minutes = 101 “bucketed to 2026-02-10”
+	•	Source: UserSleeps_2025-11-27.csv (!!!)
+	•	2026-02-11 sleep_minutes = 104 from sleep-2026-01-25.json (!!!)
+
+Two separate impossibilities:
+	1.	A file named 2025-11-27 contributing to 2026-02-10 strongly suggests your parser is using the file name as a “month shard label” but reading row timestamps wrong (or mixing UTC/local date conversion, or parsing “timestamp” as month/day swapped, etc.).
+	2.	sleep_minutes ~ 101 / 104 is not “sleep minutes.” That looks like a subset (REM? deep? awake? naps?) or a single segment, not total sleep. If it is total sleep, you’re severely undercounting.
+
+What to tell Replit to do next (copy/paste)
+
+Fix sleep correctness first. Add a sleep import invariant check + diagnostics output:
+	•	For each imported sleep row, log: raw start, raw end, minutes_asleep, date bucket chosen, timezone used, source file path, and whether value is segment vs daily total.
+	•	Assert: sleep_minutes daily total should usually be 240–600 for most nights. If <180 or >900, mark as suspicious and store a conflict record.
+	•	Confirm the bucketing rule is: bucket to wake-date in LOCAL time, not UTC day.
+	•	Confirm CSV parsing is not using filename date to compute row date, only the row’s timestamp/end time.
+
+If you want one “gold standard” rule: sleep day = local date of sleep end (wake time).
+
+⸻
+
+🚨 Red flag #2: recompute range logic is wrong for imports
+
+You wrote:
+
+recomputeReadinessRange(minDay)
+start = targetDate - 7 days
+end = targetDate + 1 day
+…persist…
+
+If minDay is “earliest affected date,” then for a Takeout import that spans years, recomputing only 8–9 days around the earliest day is not enough. You need to recompute either:
+	•	the entire affected span (minDay … maxDay) with window padding, or
+	•	recompute only recent analysis window (good), but then you must recompute that window, not minDay.
+
+What to tell Replit (copy/paste)
+
+Update recompute after import:
+	•	Track both minDay and maxDay affected during import.
+	•	Recompute readiness for:
+recomputeRange( max(analysis_start_date - 28d, minDay - 28d)  …  maxDay + 1d )
+(28d padding because you compare 7d vs 28d)
+	•	Or simplest: recompute only the analysis window each import:
+recomputeRange(analysis_start_date - 28d … today).
+
+Right now, the import could be correct, but readiness stays stale except around one boundary.
+
+⸻
+
+Important: your “score=27 floor” is expected given gating — but you should label it better
+
+Because you only have 2 days of data, the system cannot form 7d/28d deltas. That’s fine. But showing:
+	•	Sleep: +0% vs baseline
+	•	RHR: +0 bpm vs baseline
+	•	Proxy: +0% vs baseline
+
+…creates a false impression of “stable.” It’s actually “insufficient.”
+
+Quick UI truth fix (copy/paste)
+
+If gate < 7 days:
+	•	show deltas as “—” not “+0”
+	•	show a banner: “Not enough data to compute deltas (need 7d / 28d).”
+	•	readiness score should either be hidden or explicitly labeled “provisional floor.”
+
+⸻
+
+Your question about schedule adherence (bedtime/wake vs actual)
+
+You’re 100% right: manual bedtime/wake is valuable, even if Fitbit gives minutes.
+
+Treat them as two separate concepts:
+	•	Planned / self-reported: sleep_plan_bedtime, sleep_plan_wake, maybe “tossed/insomnia minutes”
+	•	Observed (Fitbit): sleep_end_local, sleep_start_local (derived), sleep_minutes
+
+Then compute adherence features:
+	•	wake_deviation_min = actual_wake - planned_wake
+	•	bed_deviation_min = actual_bed - planned_bed (if you store actual start)
+	•	sleep_efficiency_proxy = sleep_minutes / time_in_bed_minutes (if you have both)
+
+Readiness can keep using sleep_minutes for now, but your “plan adherence” layer will get much smarter with these.

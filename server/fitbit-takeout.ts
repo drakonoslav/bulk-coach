@@ -57,12 +57,20 @@ interface SleepBucketEntry {
   source: "csv" | "json";
 }
 
+interface SleepValidation {
+  totalMinutes: number;
+  sessionCount: number;
+  suspicious: boolean;
+  reason: string | null;
+}
+
 interface DiagnosticDay {
   rawFiles: Record<Metric, string[]>;
   rawRowCounts: Record<Metric, number>;
   computedValues: Partial<DayBucket>;
   source: Record<Metric, "csv" | "json" | "both" | "none">;
   sleepBucketing: SleepBucketEntry[];
+  sleepValidation: SleepValidation | null;
 }
 
 interface ImportSummary {
@@ -201,6 +209,7 @@ function emptyDiagnostic(): DiagnosticDay {
     computedValues: {},
     source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none" },
     sleepBucketing: [],
+    sleepValidation: null,
   };
 }
 
@@ -511,14 +520,19 @@ function parseUserSleepsCSV(
   filename: string,
 ): number {
   const { headers, rows } = parseCSVRows(buf);
-  const sleepMinCol = colIdx(headers, "minutes_asleep", "minutesasleep");
+  const sleepMinCol = colIdx(headers, "minutes_asleep", "minutesasleep", "duration", "timeinbed");
   const endCol = colIdx(headers, "sleep_end", "end_time");
   const endOffsetCol = colIdx(headers, "end_utc_offset");
+  const isMainCol = colIdx(headers, "is_main_sleep", "ismain", "ismainsleep", "main_sleep");
   if (sleepMinCol === -1) return 0;
   let count = 0;
   for (const row of rows) {
     const mins = parseInt(row[sleepMinCol], 10);
     if (isNaN(mins) || mins <= 0) continue;
+    if (isMainCol !== -1) {
+      const mainVal = (row[isMainCol] || "").toLowerCase().trim();
+      if (mainVal === "false" || mainVal === "0" || mainVal === "no") continue;
+    }
     let date: string | null = null;
     const sleepEndRaw = endCol !== -1 ? row[endCol] || "" : "";
     const offsetStr = endOffsetCol !== -1 ? row[endOffsetCol] || "+00:00" : "+00:00";
@@ -750,6 +764,7 @@ function parseSleepJSON(
       if (mins == null) continue;
       const minsVal = parseInt(mins, 10);
       if (isNaN(minsVal) || minsVal <= 0) continue;
+      if (item.isMainSleep !== undefined && item.isMainSleep === false) continue;
       const d = ensureDiag(diags, date);
       if (!d.rawFiles.sleep.includes(filename)) d.rawFiles.sleep.push(filename);
       d.sleepBucketing.push({
@@ -930,6 +945,22 @@ export async function importFitbitTakeout(
   for (const [date, b] of csvBuckets) {
     const d = ensureDiag(diags, date);
     d.computedValues = { ...b };
+  }
+
+  for (const [date, b] of csvBuckets) {
+    if (b.sleepMinutes != null) {
+      const d = ensureDiag(diags, date);
+      const suspicious = b.sleepMinutes < 120 || b.sleepMinutes > 900;
+      if (suspicious) {
+        d.sleepValidation = {
+          totalMinutes: b.sleepMinutes,
+          sessionCount: d.rawRowCounts.sleep,
+          suspicious: true,
+          reason: b.sleepMinutes < 120 ? 'under_120_min' : 'over_900_min',
+        };
+        console.log(`[takeout] Sleep validation warning for ${date}: ${b.sleepMinutes} min (${d.rawRowCounts.sleep} sessions) — ${d.sleepValidation.reason}`);
+      }
+    }
   }
 
   lastDiagnostics = diags;
