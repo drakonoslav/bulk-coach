@@ -16,6 +16,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-11: v5 backup system - full backup export/import with versioned JSON; merge/replace modes; dry-run preview; schema-safe upserts; recompute-after-restore; Backup & Restore UI in Vitals tab with export (share sheet) and import (document picker with dry-run confirmation)
 - 2026-02-11: v6 readiness system - recovery-gated training intensity with readiness score (0-100), three tiers (GREEN/YELLOW/RED), HRV/RHR/sleep/proxy weighted deltas (7d vs 28d baselines), confidence grading, training template system (Push/Pull/Legs with per-tier exercise labels), readiness card on Report+Plan tabs, readiness badge on Log screen, readiness trend chart, auto-recompute triggers on daily log/erection upload/Fitbit import
 - 2026-02-11: v7 dual-slider autoregulation - rewrote readiness engine with subscores centered at 50, new signal weights (HRV 30%, RHR 20%, Sleep 20%, Proxy 20%), confidence dampener (High 1.0, Med 0.9, Low 0.75, None 0.6), cortisol suppression flag, dual sliders (type_lean and exercise_bias), new tiers GREEN>=75/YELLOW 60-74/BLUE<60 (replacing RED), Type A+B training splits, frontend updated with slider visualizations and cortisol banner
+- 2026-02-11: v8 Fitbit Takeout v2 - comprehensive rewrite of Takeout ZIP importer: dynamic Fitbit root detection (scans ZIP for /Fitbit/ path), CSV monthly shard parsers (steps_*.csv, calories_*.csv, active_minutes_*.csv, time_in_heart_rate_zone_*.csv, calories_in_heart_rate_zone_*.csv), single CSV parsers (daily_resting_heart_rate.csv, sleep_score.csv, UserSleeps_*.csv), JSON daily file parsers (steps-*.json, calories-*.json, time_in_heart_rate_zones-*.json, resting_heart_rate-*.json, sleep-*.json), COALESCE upsert preserving manual entries, daysInserted/daysUpdated tracking, fitbit_root_prefix in audit table, SHA256 deduplicate, range-based recompute
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
@@ -23,6 +24,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - **Storage**: Postgres for all data persistence, AsyncStorage for baseline only
 - **Engine**: `lib/coaching-engine.ts` - coaching logic; `server/erection-engine.ts` - snapshot parsing, delta computation, gap-fill imputation, androgen proxy calculation; `server/readiness-engine.ts` - readiness score computation, training template management
 - **Backup**: `server/backup.ts` - versioned export/import with merge/replace modes, dry-run, schema migration safety, full recompute after restore
+- **Fitbit Takeout**: `server/fitbit-takeout.ts` - Google Takeout ZIP parser with dynamic /Fitbit/ root detection, CSV monthly shard + JSON daily file parsers, COALESCE upsert, SHA256 dedupe, fitbit_root_prefix audit
 - **Data**: `lib/entry-storage.ts` - API-backed CRUD for daily entries
 - **Design**: Dark theme with teal primary (#00D4AA), purple accent (#8B5CF6) for vitals, Rubik font family
 
