@@ -706,7 +706,7 @@ export default function ReportScreen() {
                               {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
                             </Text>
                             <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
-                              {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional — need 7+ days" : "Estimates recovery permissiveness"}
+                              {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional floor — need 7+ days" : (readiness.daysInWindow ?? 0) < 28 ? "Partial baseline — score may shift" : "Estimates recovery permissiveness"}
                             </Text>
                           </View>
                         </View>
@@ -838,11 +838,28 @@ export default function ReportScreen() {
 
                 {(() => {
                   const insufficientData = readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7;
+                  const needsMoreFor28d = (readiness.daysInWindow ?? 0) < 28;
                   return (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
                       Signal Breakdown
                     </Text>
+                    {insufficientData && (
+                      <View style={{ backgroundColor: "#60A5FA12", borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Ionicons name="information-circle" size={16} color="#60A5FA" />
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: "#60A5FA", flex: 1 }}>
+                          Not enough data to compute deltas (need 7d rolling + 28d baseline)
+                        </Text>
+                      </View>
+                    )}
+                    {!insufficientData && needsMoreFor28d && (
+                      <View style={{ backgroundColor: "#FBBF2412", borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Ionicons name="information-circle" size={16} color="#FBBF24" />
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: "#FBBF24", flex: 1 }}>
+                          Partial baselines ({readiness.daysInWindow ?? 0}d / 28d) - deltas may shift as more data arrives
+                        </Text>
+                      </View>
+                    )}
                     {[
                       { label: "Sleep", value: insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
                       { label: "HRV", value: insufficientData ? "\u2014" : (readiness.deltas?.hrv_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
@@ -851,7 +868,7 @@ export default function ReportScreen() {
                     ].map((sig) => (
                       <View key={sig.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                         <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{sig.label}</Text>
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{sig.value} vs baseline</Text>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{insufficientData ? "\u2014" : sig.value} vs baseline</Text>
                       </View>
                     ))}
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, marginTop: 2 }}>
