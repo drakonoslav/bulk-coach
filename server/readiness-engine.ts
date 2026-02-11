@@ -16,11 +16,26 @@ function rollingMean(values: (number | null)[]): number | null {
   return valid.reduce((s, v) => s + v, 0) / valid.length;
 }
 
+function computeDeltas(x7: number | null, x28: number | null): number | null {
+  if (x7 == null || x28 == null || x28 === 0) return null;
+  return (x7 - x28) / x28;
+}
+
+function scoreFromDelta(delta: number | null, fullSwing: number, invert: boolean = false): number {
+  if (delta == null) return 50;
+  const scaled = clamp(delta / fullSwing, -1, 1);
+  const base = 50 + 50 * scaled;
+  return invert ? (100 - base) : base;
+}
+
 export interface ReadinessResult {
   date: string;
   readinessScore: number;
-  readinessTier: "GREEN" | "YELLOW" | "RED";
+  readinessTier: "GREEN" | "YELLOW" | "BLUE";
   confidenceGrade: "High" | "Med" | "Low" | "None";
+  typeLean: number;
+  exerciseBias: number;
+  cortisolFlag: boolean;
   hrvDelta: number | null;
   rhrDelta: number | null;
   sleepDelta: number | null;
@@ -103,60 +118,21 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   const proxy7d = rollingMean(last7(proxyAll));
   const proxy28d = rollingMean(last28(proxyAll));
 
-  let hrvDelta: number | null = null;
-  let rhrDelta: number | null = null;
-  let sleepDelta: number | null = null;
-  let proxyDelta: number | null = null;
+  const hrvDelta = computeDeltas(hrv7d, hrv28d);
+  const rhrDelta = computeDeltas(rhr7d, rhr28d);
+  const sleepDelta = computeDeltas(sleep7d, sleep28d);
+  const proxyDelta = computeDeltas(proxy7d, proxy28d);
 
-  if (hrv7d != null && hrv28d != null && hrv28d !== 0) hrvDelta = (hrv7d - hrv28d) / hrv28d;
-  if (rhr7d != null && rhr28d != null && rhr28d !== 0) rhrDelta = (rhr7d - rhr28d) / rhr28d;
-  if (sleep7d != null && sleep28d != null && sleep28d !== 0) sleepDelta = (sleep7d - sleep28d) / sleep28d;
-  if (proxy7d != null && proxy28d != null && proxy28d !== 0) proxyDelta = (proxy7d - proxy28d) / proxy28d;
+  const HRV_score = scoreFromDelta(hrvDelta, 0.10, false);
+  const RHR_score = scoreFromDelta(rhrDelta, 0.05, true);
+  const Sleep_score = scoreFromDelta(sleepDelta, 0.10, false);
+  const Proxy_score = scoreFromDelta(proxyDelta, 0.10, false);
 
-  let score = 50;
-  const drivers: string[] = [];
-
-  if (hrvDelta != null) {
-    const contribution = 35 * clamp(hrvDelta / 0.10, -1, 1);
-    score += contribution;
-    const pct = Math.round(hrvDelta * 100);
-    if (Math.abs(pct) >= 2) {
-      drivers.push(`HRV ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
-    }
-  }
-
-  if (rhrDelta != null) {
-    const contribution = -25 * clamp(rhrDelta / 0.05, -1, 1);
-    score += contribution;
-    const pct = Math.round(rhrDelta * 100);
-    if (Math.abs(pct) >= 2) {
-      drivers.push(`RHR ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
-    }
-  }
-
-  if (sleepDelta != null) {
-    const contribution = 20 * clamp(sleepDelta / 0.10, -1, 1);
-    score += contribution;
-    const pct = Math.round(sleepDelta * 100);
-    if (Math.abs(pct) >= 2) {
-      drivers.push(`Sleep ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
-    }
-  }
-
-  if (proxyDelta != null) {
-    const contribution = 20 * clamp(proxyDelta / 0.10, -1, 1);
-    score += contribution;
-    const pct = Math.round(proxyDelta * 100);
-    if (Math.abs(pct) >= 2) {
-      drivers.push(`Proxy ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
-    }
-  }
-
-  score = Math.round(clamp(score, 0, 100));
-
-  if (drivers.length === 0) {
-    drivers.push("All signals near baseline");
-  }
+  const readiness_raw =
+    0.30 * HRV_score +
+    0.20 * RHR_score +
+    0.20 * Sleep_score +
+    0.20 * Proxy_score;
 
   const measuredNightsLast7 = last7(proxyAll).filter((v): v is number => v != null).length;
   const { rows: confRows } = await pool.query(
@@ -177,20 +153,83 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
     confidenceGrade = "None";
   }
 
-  let tier: "GREEN" | "YELLOW" | "RED";
-  if (score >= 65) {
+  const confMap: Record<string, number> = { High: 1.0, Med: 0.9, Low: 0.75, None: 0.6 };
+  const conf = confMap[confidenceGrade] ?? 0.75;
+
+  let readiness = clamp(readiness_raw * conf, 0, 100);
+
+  const drivers: string[] = [];
+
+  if (hrvDelta != null) {
+    const pct = Math.round(hrvDelta * 100);
+    if (Math.abs(pct) >= 2) {
+      drivers.push(`HRV ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
+    }
+  }
+  if (rhrDelta != null) {
+    const pct = Math.round(rhrDelta * 100);
+    if (Math.abs(pct) >= 2) {
+      drivers.push(`RHR ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
+    }
+  }
+  if (sleepDelta != null) {
+    const pct = Math.round(sleepDelta * 100);
+    if (Math.abs(pct) >= 2) {
+      drivers.push(`Sleep ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
+    }
+  }
+  if (proxyDelta != null) {
+    const pct = Math.round(proxyDelta * 100);
+    if (Math.abs(pct) >= 2) {
+      drivers.push(`Proxy ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% vs baseline`);
+    }
+  }
+
+  const hrv_suppressed = (hrvDelta ?? 0) <= -0.08;
+  const rhr_elevated = (rhrDelta ?? 0) >= 0.03;
+  const sleep_low = (sleepDelta ?? 0) <= -0.10;
+  const proxy_low = (proxyDelta ?? 0) <= -0.10;
+  const flagCount = [hrv_suppressed, rhr_elevated, sleep_low, proxy_low].filter(Boolean).length;
+  const cortisolFlag = confidenceGrade !== "None" && flagCount >= 3;
+
+  if (cortisolFlag) {
+    readiness = Math.min(readiness, 74);
+    drivers.unshift("Recovery suppressed (cortisol flag)");
+  }
+
+  readiness = Math.round(readiness);
+
+  if (drivers.length === 0) {
+    drivers.push("All signals near baseline");
+  }
+
+  let tier: "GREEN" | "YELLOW" | "BLUE";
+  if (readiness >= 75) {
     tier = "GREEN";
-  } else if (score >= 35) {
+  } else if (readiness >= 60) {
     tier = "YELLOW";
   } else {
-    tier = "RED";
+    tier = "BLUE";
   }
+
+  let typeLean = clamp((readiness - 60) / 20, -1, 1);
+  let exerciseBias = clamp((readiness - 65) / 20, -1, 1);
+
+  if (cortisolFlag) {
+    exerciseBias = Math.min(exerciseBias, 0);
+  }
+
+  typeLean = Math.round(typeLean * 100) / 100;
+  exerciseBias = Math.round(exerciseBias * 100) / 100;
 
   return {
     date,
-    readinessScore: score,
+    readinessScore: readiness,
     readinessTier: tier,
     confidenceGrade,
+    typeLean,
+    exerciseBias,
+    cortisolFlag,
     hrvDelta: hrvDelta != null ? Math.round(hrvDelta * 10000) / 10000 : null,
     rhrDelta: rhrDelta != null ? Math.round(rhrDelta * 10000) / 10000 : null,
     sleepDelta: sleepDelta != null ? Math.round(sleepDelta * 10000) / 10000 : null,
@@ -212,8 +251,9 @@ export async function persistReadiness(r: ReadinessResult): Promise<void> {
     `INSERT INTO readiness_daily (date, readiness_score, readiness_tier, confidence_grade,
        hrv_delta, rhr_delta, sleep_delta, proxy_delta,
        hrv_7d, hrv_28d, rhr_7d, rhr_28d, sleep_7d, sleep_28d, proxy_7d, proxy_28d,
+       type_lean, exercise_bias, cortisol_flag,
        drivers, computed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,NOW())
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,NOW())
      ON CONFLICT (date) DO UPDATE SET
        readiness_score = EXCLUDED.readiness_score,
        readiness_tier = EXCLUDED.readiness_tier,
@@ -230,12 +270,16 @@ export async function persistReadiness(r: ReadinessResult): Promise<void> {
        sleep_28d = EXCLUDED.sleep_28d,
        proxy_7d = EXCLUDED.proxy_7d,
        proxy_28d = EXCLUDED.proxy_28d,
+       type_lean = EXCLUDED.type_lean,
+       exercise_bias = EXCLUDED.exercise_bias,
+       cortisol_flag = EXCLUDED.cortisol_flag,
        drivers = EXCLUDED.drivers,
        computed_at = NOW()`,
     [
       r.date, r.readinessScore, r.readinessTier, r.confidenceGrade,
       r.hrvDelta, r.rhrDelta, r.sleepDelta, r.proxyDelta,
       r.hrv7d, r.hrv28d, r.rhr7d, r.rhr28d, r.sleep7d, r.sleep28d, r.proxy7d, r.proxy28d,
+      r.typeLean, r.exerciseBias, r.cortisolFlag,
       JSON.stringify(r.drivers),
     ],
   );
@@ -262,8 +306,11 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
   return {
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
-    readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "RED",
+    readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
     confidenceGrade: r.confidence_grade as "High" | "Med" | "Low" | "None",
+    typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
+    exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
+    cortisolFlag: !!r.cortisol_flag,
     hrvDelta: r.hrv_delta != null ? Number(r.hrv_delta) : null,
     rhrDelta: r.rhr_delta != null ? Number(r.rhr_delta) : null,
     sleepDelta: r.sleep_delta != null ? Number(r.sleep_delta) : null,
@@ -288,8 +335,11 @@ export async function getReadinessRange(from: string, to: string): Promise<Readi
   return rows.map((r: Record<string, unknown>) => ({
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
-    readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "RED",
+    readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
     confidenceGrade: r.confidence_grade as "High" | "Med" | "Low" | "None",
+    typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
+    exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
+    cortisolFlag: !!(r.cortisol_flag),
     hrvDelta: r.hrv_delta != null ? Number(r.hrv_delta) : null,
     rhrDelta: r.rhr_delta != null ? Number(r.rhr_delta) : null,
     sleepDelta: r.sleep_delta != null ? Number(r.sleep_delta) : null,
@@ -316,32 +366,42 @@ export interface TrainingTemplate {
   }>;
 }
 
-export async function getTrainingTemplate(): Promise<TrainingTemplate> {
-  const { rows } = await pool.query(`SELECT template_type, sessions FROM training_template WHERE id = 1`);
-  if (rows.length === 0) {
-    return {
-      templateType: "push_pull_legs",
-      sessions: [
-        { name: "Push", highLabel: "Heavy Bench / OHP", medLabel: "Normal Hypertrophy", lowLabel: "Machine Press / Flyes / Pump" },
-        { name: "Pull", highLabel: "Heavy Rows / Deadlift", medLabel: "Normal Hypertrophy", lowLabel: "Cables / Light Rows / Technique" },
-        { name: "Legs", highLabel: "Heavy Squat / RDL", medLabel: "Normal Hypertrophy", lowLabel: "Leg Press / Machines / Pump" },
-      ],
-    };
+export const TYPE_A_SESSIONS: TrainingTemplate["sessions"] = [
+  { name: "Push", highLabel: "Heavy Bench / OHP", medLabel: "Normal Hypertrophy", lowLabel: "Machine Press / Flyes / Pump" },
+  { name: "Pull", highLabel: "Heavy Rows / Deadlift", medLabel: "Normal Hypertrophy", lowLabel: "Cables / Light Rows / Technique" },
+  { name: "Legs", highLabel: "Heavy Squat / RDL", medLabel: "Normal Hypertrophy", lowLabel: "Leg Press / Machines / Pump" },
+];
+
+export const TYPE_B_SESSIONS: TrainingTemplate["sessions"] = [
+  { name: "Arms", highLabel: "Heavy Curls / Dips", medLabel: "Normal Bi/Tri/Forearm", lowLabel: "Cables / Pump / Technique" },
+  { name: "Delts", highLabel: "Heavy OHP / Laterals", medLabel: "Normal Delt Work", lowLabel: "Light Laterals / Cables" },
+  { name: "Legs", highLabel: "Heavy Squat / RDL", medLabel: "Normal Quads/Hams/Calves", lowLabel: "Leg Press / Machines / Pump" },
+  { name: "Torso", highLabel: "Weighted Core / Planks", medLabel: "Normal Core/Abs", lowLabel: "Bodyweight Core / Technique" },
+  { name: "Posterior", highLabel: "Heavy Rows / Pulls", medLabel: "Normal Lats/Traps", lowLabel: "Cables / Light Pulls / Technique" },
+];
+
+export async function getTrainingTemplate(): Promise<{ typeA: TrainingTemplate; typeB: TrainingTemplate }> {
+  const { rows } = await pool.query(`SELECT template_type, sessions FROM training_template ORDER BY id`);
+  let typeA: TrainingTemplate = { templateType: "type_a", sessions: TYPE_A_SESSIONS };
+  let typeB: TrainingTemplate = { templateType: "type_b", sessions: TYPE_B_SESSIONS };
+
+  for (const r of rows) {
+    if (r.template_type === "type_a") typeA = { templateType: "type_a", sessions: r.sessions };
+    if (r.template_type === "type_b") typeB = { templateType: "type_b", sessions: r.sessions };
   }
-  return {
-    templateType: rows[0].template_type,
-    sessions: rows[0].sessions,
-  };
+
+  return { typeA, typeB };
 }
 
 export async function updateTrainingTemplate(templateType: string, sessions: TrainingTemplate["sessions"]): Promise<void> {
+  const id = templateType === "type_b" ? 2 : 1;
   await pool.query(
     `INSERT INTO training_template (id, template_type, sessions, updated_at)
-     VALUES (1, $1, $2::jsonb, NOW())
+     VALUES ($1, $2, $3::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE SET
        template_type = EXCLUDED.template_type,
        sessions = EXCLUDED.sessions,
        updated_at = NOW()`,
-    [templateType, JSON.stringify(sessions)],
+    [id, templateType, JSON.stringify(sessions)],
   );
 }
