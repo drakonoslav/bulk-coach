@@ -1,6 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
@@ -29,6 +32,9 @@ import {
 } from "./readiness-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+
+const CHUNK_DIR = path.join("/tmp", "takeout_chunks");
+if (!fs.existsSync(CHUNK_DIR)) fs.mkdirSync(CHUNK_DIR, { recursive: true });
 
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
   const vals = [r1, r2, r3].filter((v): v is number => v != null && !isNaN(v));
@@ -243,6 +249,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (err: unknown) {
       console.error("fitbit takeout import error:", err);
+      const message = err instanceof Error ? err.message : "Import failed";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/import/takeout_chunk_init", async (req: Request, res: Response) => {
+    try {
+      const { filename, totalChunks, fileSize } = req.body;
+      if (!filename || !totalChunks) {
+        return res.status(400).json({ error: "Missing filename or totalChunks" });
+      }
+      const uploadId = crypto.randomUUID();
+      const uploadDir = path.join(CHUNK_DIR, uploadId);
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadDir, "_meta.json"), JSON.stringify({
+        filename, totalChunks, fileSize, receivedChunks: 0, createdAt: Date.now(),
+      }));
+      res.json({ uploadId, totalChunks });
+    } catch (err: unknown) {
+      console.error("chunk init error:", err);
+      res.status(500).json({ error: "Failed to initialize upload" });
+    }
+  });
+
+  app.post("/api/import/takeout_chunk_upload", upload.single("chunk"), async (req: Request, res: Response) => {
+    try {
+      const uploadId = req.body?.uploadId;
+      const chunkIndex = parseInt(req.body?.chunkIndex, 10);
+      if (!uploadId || isNaN(chunkIndex) || !req.file) {
+        return res.status(400).json({ error: "Missing uploadId, chunkIndex, or chunk data" });
+      }
+      const uploadDir = path.join(CHUNK_DIR, uploadId);
+      if (!fs.existsSync(uploadDir)) {
+        return res.status(404).json({ error: "Upload session not found" });
+      }
+      fs.writeFileSync(path.join(uploadDir, `chunk_${chunkIndex}`), req.file.buffer);
+      const meta = JSON.parse(fs.readFileSync(path.join(uploadDir, "_meta.json"), "utf8"));
+      meta.receivedChunks = (meta.receivedChunks || 0) + 1;
+      fs.writeFileSync(path.join(uploadDir, "_meta.json"), JSON.stringify(meta));
+      res.json({ received: chunkIndex, total: meta.totalChunks, done: meta.receivedChunks >= meta.totalChunks });
+    } catch (err: unknown) {
+      console.error("chunk upload error:", err);
+      res.status(500).json({ error: "Failed to upload chunk" });
+    }
+  });
+
+  app.post("/api/import/takeout_chunk_finalize", async (req: Request, res: Response) => {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+    try {
+      const { uploadId, overwrite_fields, timezone } = req.body;
+      if (!uploadId) {
+        return res.status(400).json({ error: "Missing uploadId" });
+      }
+      const uploadDir = path.join(CHUNK_DIR, uploadId);
+      if (!fs.existsSync(uploadDir)) {
+        return res.status(404).json({ error: "Upload session not found" });
+      }
+      const meta = JSON.parse(fs.readFileSync(path.join(uploadDir, "_meta.json"), "utf8"));
+      const chunks: Buffer[] = [];
+      for (let i = 0; i < meta.totalChunks; i++) {
+        const chunkPath = path.join(uploadDir, `chunk_${i}`);
+        if (!fs.existsSync(chunkPath)) {
+          return res.status(400).json({ error: `Missing chunk ${i}` });
+        }
+        chunks.push(fs.readFileSync(chunkPath));
+      }
+      const fullBuffer = Buffer.concat(chunks);
+      const overwriteFieldsBool = overwrite_fields === "true" || overwrite_fields === true;
+      const tz = timezone || "America/New_York";
+      const result = await importFitbitTakeout(fullBuffer, meta.filename, overwriteFieldsBool, tz);
+      fs.rmSync(uploadDir, { recursive: true, force: true });
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("chunk finalize error:", err);
       const message = err instanceof Error ? err.message : "Import failed";
       res.status(500).json({ error: message });
     }
