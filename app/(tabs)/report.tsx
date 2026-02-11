@@ -376,21 +376,19 @@ function MealAdjustmentGuide({ adjustments, kcalChange }: { adjustments: Adjustm
 
     return (
       <View key={meal.time} style={[mealGuideStyles.mealCard, meal.changed && { borderColor: Colors.primary + "40" }]}>
+        {meal.changed && (
+          <View style={mealGuideStyles.adjustedFlag}>
+            <Text style={[mealGuideStyles.changedBadgeText, { color: Colors.primary }]}>ADJUSTED</Text>
+          </View>
+        )}
         <View style={mealGuideStyles.mealHeader}>
           <View style={mealGuideStyles.mealHeaderLeft}>
             <Text style={mealGuideStyles.mealTime}>{meal.time}</Text>
             <Text style={mealGuideStyles.mealLabel}>{meal.label}</Text>
           </View>
-          <View style={mealGuideStyles.mealBadges}>
-            {meal.changed && (
-              <View style={[mealGuideStyles.changedBadge, { backgroundColor: Colors.primaryMuted }]}>
-                <Text style={[mealGuideStyles.changedBadgeText, { color: Colors.primary }]}>ADJUSTED</Text>
-              </View>
-            )}
-            <View style={[mealGuideStyles.zoneBadge, { backgroundColor: zoneColor + "15" }]}>
-              <Ionicons name={zoneIcon as any} size={10} color={zoneColor} />
-              <Text style={[mealGuideStyles.zoneBadgeText, { color: zoneColor }]}>{zoneLabel}</Text>
-            </View>
+          <View style={[mealGuideStyles.zoneBadge, { backgroundColor: zoneColor + "15" }]}>
+            <Ionicons name={zoneIcon as any} size={10} color={zoneColor} />
+            <Text style={[mealGuideStyles.zoneBadgeText, { color: zoneColor }]}>{zoneLabel}</Text>
           </View>
         </View>
         <View style={mealGuideStyles.ingredientList}>
@@ -1688,15 +1686,12 @@ const mealGuideStyles = StyleSheet.create({
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
   },
-  mealBadges: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 6,
-  },
-  changedBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  adjustedFlag: {
+    backgroundColor: Colors.primaryMuted,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderTopLeftRadius: 11,
+    borderTopRightRadius: 11,
   },
   changedBadgeText: {
     fontSize: 11,
