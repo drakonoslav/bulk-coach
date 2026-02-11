@@ -200,6 +200,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const overwriteFields = req.body?.overwrite_fields === "true";
       const result = await importFitbitCSV(req.file.buffer, req.file.originalname, overwriteFields);
+
+      if (result.dateRange?.start) {
+        recomputeReadinessRange(result.dateRange.start).catch((err: unknown) =>
+          console.error("readiness recompute after fitbit:", err)
+        );
+      }
+
       res.json(result);
     } catch (err: unknown) {
       console.error("fitbit import error:", err);
@@ -236,6 +243,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const parsed = parseSnapshotFile(req.file.buffer, req.file.originalname);
       const result = await importSnapshotAndDerive(parsed, sessionDate, req.file.originalname);
+
+      recomputeReadinessRange(sessionDate).catch((err: unknown) =>
+        console.error("readiness recompute after snapshot:", err)
+      );
+
       res.json(result);
     } catch (err: unknown) {
       console.error("erection upload error:", err);

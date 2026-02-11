@@ -207,6 +207,7 @@ export default function LogScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [sessionForDate, setSessionForDate] = useState<{ erections: number; durSec: number; isImputed: boolean } | null>(null);
+  const [readinessBadge, setReadinessBadge] = useState<{ score: number; tier: string; confidence: string } | null>(null);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -262,6 +263,21 @@ export default function LogScreen() {
     } catch {}
   }, []);
 
+  const loadReadinessForDate = useCallback(async (day: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL(`/api/readiness?date=${day}`, baseUrl).toString(), { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setReadinessBadge({ score: data.readinessScore, tier: data.readinessTier, confidence: data.confidenceGrade });
+      } else {
+        setReadinessBadge(null);
+      }
+    } catch {
+      setReadinessBadge(null);
+    }
+  }, []);
+
   const loadSessionForDate = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
@@ -289,6 +305,7 @@ export default function LogScreen() {
       loadDateEntry(selectedDate);
       loadErectionBadges();
       loadSessionForDate(selectedDate);
+      loadReadinessForDate(selectedDate);
       setUploadResult(null);
     }, [selectedDate])
   );
@@ -495,6 +512,22 @@ export default function LogScreen() {
                   <Ionicons name="pulse" size={12} color={erectionBadges[selectedDate] === "measured" ? "#34D399" : "#FBBF24"} />
                   <Text style={[styles.dateNavBadgeText, { color: erectionBadges[selectedDate] === "measured" ? "#34D399" : "#FBBF24" }]}>
                     {erectionBadges[selectedDate] === "measured" ? "Vitals" : "Vitals (est.)"}
+                  </Text>
+                </View>
+              )}
+              {readinessBadge && (
+                <View style={[styles.dateNavBadge, {
+                  backgroundColor: readinessBadge.tier === "GREEN" ? "rgba(52, 211, 153, 0.12)" : readinessBadge.tier === "RED" ? "rgba(239, 68, 68, 0.12)" : "rgba(251, 191, 36, 0.12)",
+                }]}>
+                  <Ionicons
+                    name={readinessBadge.tier === "GREEN" ? "flash" : readinessBadge.tier === "RED" ? "bed" : "pause-circle"}
+                    size={12}
+                    color={readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "RED" ? "#EF4444" : "#FBBF24"}
+                  />
+                  <Text style={[styles.dateNavBadgeText, {
+                    color: readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "RED" ? "#EF4444" : "#FBBF24",
+                  }]}>
+                    {readinessBadge.tier === "GREEN" ? "Ready" : readinessBadge.tier === "RED" ? "Low" : "Normal"} {readinessBadge.score}
                   </Text>
                 </View>
               )}

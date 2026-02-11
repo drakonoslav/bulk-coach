@@ -317,6 +317,17 @@ export default function ReportScreen() {
   const [proxyData, setProxyData] = useState<Array<{ date: string; proxyScore: number | null; proxy7dAvg: number | null }>>([]);
   const [proxyImputed, setProxyImputed] = useState(false);
   const [confidence, setConfidence] = useState<Array<{ window: string; days: number; measured: number; imputed: number; multiNight: number; grade: string }>>([]);
+  const [readiness, setReadiness] = useState<{
+    readinessScore: number;
+    readinessTier: string;
+    confidenceGrade: string;
+    hrvDelta: number | null;
+    rhrDelta: number | null;
+    sleepDelta: number | null;
+    proxyDelta: number | null;
+    drivers: string[];
+  } | null>(null);
+  const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -326,9 +337,16 @@ export default function ReportScreen() {
   const fetchProxy = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
-      const [proxyRes, confRes] = await Promise.all([
+      const today = new Date().toISOString().slice(0, 10);
+      const histFrom = (() => {
+        const d = new Date(); d.setDate(d.getDate() - 13);
+        return d.toISOString().slice(0, 10);
+      })();
+      const [proxyRes, confRes, readinessRes, readinessHistRes] = await Promise.all([
         expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL(`/api/readiness/range?from=${histFrom}&to=${today}`, baseUrl).toString(), { credentials: "include" }),
       ]);
       if (proxyRes.ok) {
         const rows = await proxyRes.json();
@@ -340,6 +358,12 @@ export default function ReportScreen() {
       }
       if (confRes.ok) {
         setConfidence(await confRes.json());
+      }
+      if (readinessRes.ok) {
+        setReadiness(await readinessRes.json());
+      }
+      if (readinessHistRes.ok) {
+        setReadinessHistory(await readinessHistRes.json());
       }
     } catch {}
   }, [proxyImputed]);
@@ -566,6 +590,97 @@ export default function ReportScreen() {
               <Text style={styles.sectionTitle}>Diagnosis</Text>
               <DiagnosisCard diagnosis={diagnosis} />
             </View>
+
+            {readiness && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Training Readiness</Text>
+                <View style={[styles.lgrCard, { borderColor: readiness.readinessTier === "GREEN" ? "#34D39930" : readiness.readinessTier === "RED" ? "#EF444430" : "#FBBF2430" }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <View style={{
+                        width: 40, height: 40, borderRadius: 20,
+                        backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39920" : readiness.readinessTier === "RED" ? "#EF444420" : "#FBBF2420",
+                        alignItems: "center", justifyContent: "center",
+                      }}>
+                        <Ionicons
+                          name={readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "RED" ? "bed" : "pause-circle"}
+                          size={20}
+                          color={readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24"}
+                        />
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                          Readiness Score
+                        </Text>
+                        <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24" }}>
+                          {readiness.readinessScore}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ alignItems: "flex-end", gap: 4 }}>
+                      <View style={{
+                        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
+                        backgroundColor: readiness.readinessTier === "GREEN" ? "#34D39920" : readiness.readinessTier === "RED" ? "#EF444420" : "#FBBF2420",
+                      }}>
+                        <Text style={{
+                          fontSize: 12, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
+                          color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                        }}>
+                          {readiness.readinessTier}
+                        </Text>
+                      </View>
+                      {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
+                          LOW CONFIDENCE
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, marginBottom: 12, overflow: "hidden" as const }}>
+                    <View style={{
+                      height: 6, borderRadius: 3,
+                      width: `${readiness.readinessScore}%`,
+                      backgroundColor: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                    }} />
+                  </View>
+
+                  <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
+                      Signal Drivers
+                    </Text>
+                    {readiness.drivers.map((d, i) => (
+                      <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3 }}>
+                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textSecondary }} />
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{d}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                      Recommended Intensity
+                    </Text>
+                    <Text style={{
+                      fontSize: 13, fontFamily: "Rubik_700Bold",
+                      color: readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "RED" ? "#EF4444" : "#FBBF24",
+                    }}>
+                      {readiness.readinessTier === "GREEN" ? "HIGH (heavy compounds)" : readiness.readinessTier === "RED" ? "LOW (isolation/pump)" : "MEDIUM (normal hypertrophy)"}
+                    </Text>
+                  </View>
+                </View>
+
+                {readinessHistory.length >= 2 && (
+                  <View style={[styles.lgrCard, { marginTop: 12 }]}>
+                    <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Readiness Trend (14d)</Text>
+                    <WeightChart
+                      data={readinessHistory.map(h => ({ day: h.date, avg: h.readinessScore }))}
+                      lineColor="#34D399"
+                    />
+                  </View>
+                )}
+              </View>
+            )}
 
             {kcalAdj != null ? (
               <View style={styles.section}>
