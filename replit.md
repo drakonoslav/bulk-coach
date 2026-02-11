@@ -17,6 +17,7 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - 2026-02-11: v6 readiness system - recovery-gated training intensity with readiness score (0-100), three tiers (GREEN/YELLOW/RED), HRV/RHR/sleep/proxy weighted deltas (7d vs 28d baselines), confidence grading, training template system (Push/Pull/Legs with per-tier exercise labels), readiness card on Report+Plan tabs, readiness badge on Log screen, readiness trend chart, auto-recompute triggers on daily log/erection upload/Fitbit import
 - 2026-02-11: v7 dual-slider autoregulation - rewrote readiness engine with subscores centered at 50, new signal weights (HRV 30%, RHR 20%, Sleep 20%, Proxy 20%), confidence dampener (High 1.0, Med 0.9, Low 0.75, None 0.6), cortisol suppression flag, dual sliders (type_lean and exercise_bias), new tiers GREEN>=75/YELLOW 60-74/BLUE<60 (replacing RED), Type A+B training splits, frontend updated with slider visualizations and cortisol banner
 - 2026-02-11: v8 Fitbit Takeout v2 - comprehensive rewrite of Takeout ZIP importer: dynamic Fitbit root detection (scans ZIP for /Fitbit/ path), CSV monthly shard parsers (steps_*.csv, calories_*.csv, active_minutes_*.csv, time_in_heart_rate_zone_*.csv, calories_in_heart_rate_zone_*.csv), single CSV parsers (daily_resting_heart_rate.csv, sleep_score.csv, UserSleeps_*.csv), JSON daily file parsers (steps-*.json, calories-*.json, time_in_heart_rate_zones-*.json, resting_heart_rate-*.json, sleep-*.json), COALESCE upsert preserving manual entries, daysInserted/daysUpdated tracking, fitbit_root_prefix in audit table, SHA256 deduplicate, range-based recompute
+- 2026-02-11: v9 analysis window - analysis_start_date in app_settings (default today-60d), readiness/baselines computed only from recent data, data sufficiency endpoint with 7d/14d/30d gates and per-signal counts, Rebaseline button (resets to last 60d + triggers recompute), Analysis Window card on Plan tab with gate indicators and signal breakdown, sufficiency strip on Report tab
 
 ## Architecture
 - **Frontend**: Expo Router with file-based routing, 5-tab layout (Dashboard, Log, Plan, Report, Vitals)
@@ -59,7 +60,9 @@ A mobile fitness tracking app built with Expo React Native that implements a fee
 - **Cortisol Flag**: Triggers when confidence ≠ None and 3+ signals degraded; caps readiness at 74, forces exercise_bias ≤ 0
 - **Training Templates**: Type A (Push/Pull/Legs) and Type B (Arms/Delts/Legs/Torso/Posterior) with per-tier exercise labels
 - **Recompute Triggers**: Daily log upsert, erection snapshot upload, Fitbit CSV import
-- **DB Tables**: readiness_daily (date, score, tier, confidence, signal values, drivers), training_template (type, sessions JSON)
+- **DB Tables**: readiness_daily (date, score, tier, confidence, signal values, drivers), training_template (type, sessions JSON), app_settings (key/value for analysis_start_date)
+- **Analysis Window**: analysis_start_date defaults to today-60d; readiness only uses data from this date forward; data sufficiency gates at 7d/14d/30d; Rebaseline button resets to last 60d and triggers recompute
+- **Data Sufficiency**: Per-signal day counts (HRV, RHR, sleep, steps, proxy), gate labels for missing data thresholds
 
 ## Baseline Plan (locked)
 - 2695 kcal | P173.9g C330.9g F54.4g

@@ -6,6 +6,7 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
+  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
@@ -329,6 +330,9 @@ export default function ReportScreen() {
     sleepDelta: number | null;
     proxyDelta: number | null;
     drivers: string[];
+    gate?: string;
+    daysInWindow?: number;
+    analysisStartDate?: string;
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
   const [dataSuff, setDataSuff] = useState<{
@@ -609,19 +613,19 @@ export default function ReportScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.cardBg, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: Colors.border }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons
-                      name={dataSuff.gate30 ? "checkmark-circle" : "time"}
+                      name={(dataSuff.gate30 ?? false) ? "checkmark-circle" : "time"}
                       size={16}
-                      color={dataSuff.gate30 ? "#34D399" : dataSuff.gate14 ? "#FBBF24" : "#60A5FA"}
+                      color={(dataSuff.gate30 ?? false) ? "#34D399" : (dataSuff.gate14 ?? false) ? "#FBBF24" : "#60A5FA"}
                     />
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.text }}>
-                      Analysis: {dataSuff.daysWithData}d since {dataSuff.analysisStartDate}
+                      Analysis: {dataSuff.daysWithData ?? 0}d since {dataSuff.analysisStartDate ?? "--"}
                     </Text>
                   </View>
                   <View style={{ flexDirection: "row", gap: 8 }}>
                     {[
-                      { label: "7d", ok: dataSuff.gate7 },
-                      { label: "14d", ok: dataSuff.gate14 },
-                      { label: "30d", ok: dataSuff.gate30 },
+                      { label: "7d", ok: dataSuff.gate7 ?? false },
+                      { label: "14d", ok: dataSuff.gate14 ?? false },
+                      { label: "30d", ok: dataSuff.gate30 ?? false },
                     ].map((g) => (
                       <View key={g.label} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
                         <Ionicons name={g.ok ? "checkmark-circle" : "ellipse-outline"} size={12} color={g.ok ? "#34D399" : Colors.textTertiary} />
@@ -641,9 +645,32 @@ export default function ReportScreen() {
             {readiness && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Training Readiness</Text>
-                {(() => {
-                  const tierColor = readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "BLUE" ? "#60A5FA" : "#FBBF24";
-                  const tierIcon = readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "BLUE" ? "snow" : "pause-circle";
+                {readiness.gate === "NONE" ? (
+                  <View style={[styles.lgrCard, { borderColor: "#60A5FA30" }]}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#60A5FA20", alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="time" size={20} color="#60A5FA" />
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                          Readiness Score
+                        </Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: "#60A5FA" }}>
+                          Baseline Building...
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+                      Need at least 7 days of data in the analysis window to compute readiness. Currently {readiness.daysInWindow ?? 0} days.
+                    </Text>
+                  </View>
+                ) : (() => {
+                  const tier = readiness.readinessTier ?? "BLUE";
+                  const tierColor = tier === "GREEN" ? "#34D399" : tier === "BLUE" ? "#60A5FA" : "#FBBF24";
+                  const tierIcon = tier === "GREEN" ? "flash" : tier === "BLUE" ? "snow" : "pause-circle";
+                  const score = readiness.readinessScore ?? 0;
+                  const typeLeanVal = readiness.typeLean ?? 0;
+                  const exerciseBiasVal = readiness.exerciseBias ?? 0;
                   return (
                     <View style={[styles.lgrCard, { borderColor: tierColor + "30" }]}>
                       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -660,7 +687,7 @@ export default function ReportScreen() {
                               Readiness Score
                             </Text>
                             <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: tierColor }}>
-                              {readiness.readinessScore}
+                              {score}
                             </Text>
                           </View>
                         </View>
@@ -673,7 +700,7 @@ export default function ReportScreen() {
                               fontSize: 12, fontFamily: "Rubik_700Bold", letterSpacing: 0.5,
                               color: tierColor,
                             }}>
-                              {readiness.readinessTier}
+                              {tier}
                             </Text>
                           </View>
                           {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
@@ -687,7 +714,7 @@ export default function ReportScreen() {
                       <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, marginBottom: 12, overflow: "hidden" as const }}>
                         <View style={{
                           height: 6, borderRadius: 3,
-                          width: `${readiness.readinessScore}%`,
+                          width: `${score}%`,
                           backgroundColor: tierColor,
                         }} />
                       </View>
@@ -706,13 +733,13 @@ export default function ReportScreen() {
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                              {readiness.typeLean > 0 ? "+" : ""}{readiness.typeLean.toFixed(2)}
+                              {typeLeanVal > 0 ? "+" : ""}{typeLeanVal.toFixed(2)}
                             </Text>
                           </View>
                           <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
                             <View style={{
                               position: "absolute",
-                              left: `${((readiness.typeLean + 1) / 2) * 100}%`,
+                              left: `${((typeLeanVal + 1) / 2) * 100}%`,
                               top: 0, width: 3, height: 6, borderRadius: 1.5,
                               backgroundColor: tierColor, marginLeft: -1.5,
                             }} />
@@ -731,13 +758,13 @@ export default function ReportScreen() {
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                              {readiness.exerciseBias > 0 ? "+" : ""}{readiness.exerciseBias.toFixed(2)}
+                              {exerciseBiasVal > 0 ? "+" : ""}{exerciseBiasVal.toFixed(2)}
                             </Text>
                           </View>
                           <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
                             <View style={{
                               position: "absolute",
-                              left: `${((readiness.exerciseBias + 1) / 2) * 100}%`,
+                              left: `${((exerciseBiasVal + 1) / 2) * 100}%`,
                               top: 0, width: 3, height: 6, borderRadius: 1.5,
                               backgroundColor: tierColor, marginLeft: -1.5,
                             }} />
@@ -757,7 +784,7 @@ export default function ReportScreen() {
                         <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
                           Signal Drivers
                         </Text>
-                        {readiness.drivers.map((d, i) => (
+                        {(readiness.drivers ?? []).map((d, i) => (
                           <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3 }}>
                             <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textSecondary }} />
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{d}</Text>
@@ -773,7 +800,7 @@ export default function ReportScreen() {
                           fontSize: 13, fontFamily: "Rubik_700Bold",
                           color: tierColor,
                         }}>
-                          {readiness.readinessTier === "GREEN" ? "HIGH (heavy compounds)" : readiness.readinessTier === "BLUE" ? "LOW (deload/pump)" : "MEDIUM (normal hypertrophy)"}
+                          {tier === "GREEN" ? "HIGH (heavy compounds)" : tier === "BLUE" ? "LOW (deload/pump)" : "MEDIUM (normal hypertrophy)"}
                         </Text>
                       </View>
                     </View>
@@ -784,7 +811,7 @@ export default function ReportScreen() {
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
                     <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Readiness Trend (14d)</Text>
                     <WeightChart
-                      data={readinessHistory.map(h => ({ day: h.date, avg: h.readinessScore }))}
+                      data={readinessHistory.map(h => ({ day: h.date, avg: h.readinessScore ?? 0 }))}
                       lineColor="#34D399"
                     />
                   </View>

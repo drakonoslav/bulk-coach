@@ -1,0 +1,94 @@
+Nice — Replit implemented the analysis_start_date + gating + rebaseline exactly the way we wanted, and the behavior you described (“only 2 days in the last 60 days”) is the correct outcome.
+
+The one thing to handle now is that Report screen crash. Based on what you pasted, it smells like a transient HMR / initial render undefined issue (common in Expo web), but we should still harden it so it never crashes in production.
+
+What’s “done” vs “needs hardening”
+
+✅ Done (core behavior)
+	•	analysis_start_date exists and defaults to last 60 days
+	•	readiness/baselines computed only within that window
+	•	gates (<7/<14/<30) correctly reflect recent data sufficiency
+	•	rebaseline works (setting start date back to 2019 creates lots of days; default returns to sparse)
+
+That solves your “2019 data polluting today” problem.
+
+⚠️ Needs a small hardening pass
+
+The Report screen crash (even if transient) means one of these is happening:
+	•	a component expects a value but gets undefined during first render
+	•	a chart component errors when fed empty/NaN values
+	•	a date parse or formatting function throws on null
+	•	an icon/style reference is undefined during HMR
+
+You don’t want “maybe it’s HMR” as an explanation—just make it impossible.
+
+⸻
+
+Exactly what to tell Replit to do next (copy/paste)
+
+1) Make Report screen 100% null-safe (no runtime throws)
+
+Add defensive defaults in ReportScreen render:
+	•	Treat missing dataSuff as:
+	•	daysWithAnyData = 0
+	•	daysInWindow = 0
+	•	windowStart = analysis_start_date
+	•	windowEnd = today
+	•	Never pass undefined into charts or formatting functions.
+
+2) Add a “safe render wrapper” for the new sufficiency strip
+
+Even though you used dataSuff && (...), add field-level guarding too:
+
+const days = dataSuff?.daysInWindow ?? 0;
+const measured7 = dataSuff?.confidence7d?.measured ?? 0;
+
+3) Ensure all readiness computations handle “insufficient data”
+
+If days < 7:
+	•	readiness score should be null OR “unstable”
+	•	deltas should display “—”
+	•	rule card should show “Baseline building” instead of picking heavy/moderate/light
+
+4) Confirm Report tab doesn’t assume readinessHistory has values
+
+Anywhere you do math like:
+	•	readinessHistory[0]...
+	•	Math.max(...array)
+	•	new Date(value).toISOString()
+
+Guard it so empty arrays and null dates don’t throw.
+
+5) Add one server-side guarantee
+
+In the readiness endpoint response, always include:
+
+{
+  "analysisStartDate": "YYYY-MM-DD",
+  "daysInWindow": 0,
+  "daysWithAnyData": 0,
+  "gate": "NONE|LOW|MED|HIGH"
+}
+
+So the UI never guesses.
+
+⸻
+
+What you should do right now (practical)
+
+Since you don’t have modern Fitbit sleep data yet:
+	1.	Keep analysis_start_date = last 60 days
+	2.	Ignore readiness decisions until you have:
+	•	7 days: you’ll see “unstable but forming”
+	•	14 days: usable baseline starts
+	•	30 days: it becomes meaningful
+
+So yes: we revisit “true correctness checks” once modern data exists.
+
+⸻
+
+If you want to sanity-check quickly today:
+	•	set analysis_start_date to a recent range where you do have 5–10 days of data (even if sparse)
+	•	confirm Report never crashes, and gates show correctly
+
+But overall: the architecture is now exactly right—you’ve prevented historical noise from driving decisions.

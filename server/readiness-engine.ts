@@ -49,6 +49,9 @@ export interface ReadinessResult {
   proxy7d: number | null;
   proxy28d: number | null;
   drivers: string[];
+  analysisStartDate: string;
+  daysInWindow: number;
+  gate: "NONE" | "LOW" | "MED" | "HIGH";
 }
 
 export async function getAnalysisStartDate(): Promise<string> {
@@ -308,6 +311,8 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   typeLean = Math.round(typeLean * 100) / 100;
   exerciseBias = Math.round(exerciseBias * 100) / 100;
 
+  const sufficiency = await getDataSufficiency();
+
   return {
     date,
     readinessScore: readiness,
@@ -329,6 +334,9 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
     proxy7d: proxy7d != null ? Math.round(proxy7d * 100) / 100 : null,
     proxy28d: proxy28d != null ? Math.round(proxy28d * 100) / 100 : null,
     drivers,
+    analysisStartDate: sufficiency.analysisStartDate,
+    daysInWindow: sufficiency.daysWithData,
+    gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
   };
 }
 
@@ -389,6 +397,7 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
   );
   if (rows.length === 0) return null;
   const r = rows[0];
+  const sufficiency = await getDataSufficiency();
   return {
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
@@ -410,6 +419,9 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
     proxy7d: r.proxy_7d != null ? Number(r.proxy_7d) : null,
     proxy28d: r.proxy_28d != null ? Number(r.proxy_28d) : null,
     drivers: Array.isArray(r.drivers) ? r.drivers : [],
+    analysisStartDate: sufficiency.analysisStartDate,
+    daysInWindow: sufficiency.daysWithData,
+    gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
   };
 }
 
@@ -418,6 +430,8 @@ export async function getReadinessRange(from: string, to: string): Promise<Readi
     `SELECT * FROM readiness_daily WHERE date BETWEEN $1::date AND $2::date ORDER BY date ASC`,
     [from, to],
   );
+  const sufficiency = await getDataSufficiency();
+  const gateValue: "NONE" | "LOW" | "MED" | "HIGH" = sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
   return rows.map((r: Record<string, unknown>) => ({
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
@@ -439,6 +453,9 @@ export async function getReadinessRange(from: string, to: string): Promise<Readi
     proxy7d: r.proxy_7d != null ? Number(r.proxy_7d) : null,
     proxy28d: r.proxy_28d != null ? Number(r.proxy_28d) : null,
     drivers: Array.isArray(r.drivers) ? r.drivers : [],
+    analysisStartDate: sufficiency.analysisStartDate,
+    daysInWindow: sufficiency.daysWithData,
+    gate: gateValue,
   }));
 }
 

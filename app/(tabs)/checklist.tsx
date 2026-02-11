@@ -101,6 +101,8 @@ export default function ChecklistScreen() {
     exerciseBias: number;
     cortisolFlag: boolean;
     drivers: string[];
+    gate?: string;
+    daysInWindow?: number;
   } | null>(null);
   const [dataSuff, setDataSuff] = useState<{
     analysisStartDate: string;
@@ -420,8 +422,34 @@ export default function ChecklistScreen() {
         )}
 
         {readiness && templates.length > 0 && (() => {
-          const tierColor = readiness.readinessTier === "GREEN" ? "#34D399" : readiness.readinessTier === "BLUE" ? "#60A5FA" : "#FBBF24";
-          const tierIcon = readiness.readinessTier === "GREEN" ? "flash" : readiness.readinessTier === "BLUE" ? "snow" : "pause-circle";
+          if (readiness.gate === "NONE") {
+            return (
+              <View style={styles.readinessCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#60A5FA20", alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="time" size={20} color="#60A5FA" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                      Training Readiness
+                    </Text>
+                    <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: "#60A5FA" }}>
+                      Baseline Building...
+                    </Text>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+                  Need at least 7 days of data in the analysis window to compute readiness. Currently {readiness.daysInWindow ?? 0} days.
+                </Text>
+              </View>
+            );
+          }
+          const tier = readiness.readinessTier ?? "BLUE";
+          const tierColor = tier === "GREEN" ? "#34D399" : tier === "BLUE" ? "#60A5FA" : "#FBBF24";
+          const tierIcon = tier === "GREEN" ? "flash" : tier === "BLUE" ? "snow" : "pause-circle";
+          const score = readiness.readinessScore ?? 0;
+          const typeLeanVal = readiness.typeLean ?? 0;
+          const exerciseBiasVal = readiness.exerciseBias ?? 0;
           const activeTemplate = templates[0];
           return (
             <View style={styles.readinessCard}>
@@ -433,11 +461,11 @@ export default function ChecklistScreen() {
                   <Text style={styles.readinessTitle}>Training Readiness</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={[styles.readinessScore, { color: tierColor }]}>
-                      {readiness.readinessScore}
+                      {score}
                     </Text>
                     <View style={[styles.readinessTierBadge, { backgroundColor: tierColor + "18" }]}>
                       <Text style={[styles.readinessTierText, { color: tierColor }]}>
-                        {readiness.readinessTier}
+                        {tier}
                       </Text>
                     </View>
                     {(readiness.confidenceGrade === "Low" || readiness.confidenceGrade === "None") && (
@@ -449,7 +477,7 @@ export default function ChecklistScreen() {
 
               <View style={styles.readinessBar}>
                 <View style={[styles.readinessBarFill, {
-                  width: `${readiness.readinessScore}%`,
+                  width: `${score}%`,
                   backgroundColor: tierColor,
                 }]} />
               </View>
@@ -468,13 +496,13 @@ export default function ChecklistScreen() {
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                      {readiness.typeLean > 0 ? "+" : ""}{readiness.typeLean.toFixed(2)}
+                      {typeLeanVal > 0 ? "+" : ""}{typeLeanVal.toFixed(2)}
                     </Text>
                   </View>
                   <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
                     <View style={{
                       position: "absolute",
-                      left: `${((readiness.typeLean + 1) / 2) * 100}%`,
+                      left: `${((typeLeanVal + 1) / 2) * 100}%`,
                       top: 0, width: 3, height: 6, borderRadius: 1.5,
                       backgroundColor: tierColor,
                       marginLeft: -1.5,
@@ -494,13 +522,13 @@ export default function ChecklistScreen() {
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                      {readiness.exerciseBias > 0 ? "+" : ""}{readiness.exerciseBias.toFixed(2)}
+                      {exerciseBiasVal > 0 ? "+" : ""}{exerciseBiasVal.toFixed(2)}
                     </Text>
                   </View>
                   <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
                     <View style={{
                       position: "absolute",
-                      left: `${((readiness.exerciseBias + 1) / 2) * 100}%`,
+                      left: `${((exerciseBiasVal + 1) / 2) * 100}%`,
                       top: 0, width: 3, height: 6, borderRadius: 1.5,
                       backgroundColor: tierColor,
                       marginLeft: -1.5,
@@ -520,14 +548,14 @@ export default function ChecklistScreen() {
               <View style={styles.readinessSessions}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <Text style={styles.readinessSessionsLabel}>
-                    {readiness.readinessTier === "GREEN" ? "Go Heavy" : readiness.readinessTier === "BLUE" ? "Deload / Pump" : "Normal Training"}
+                    {tier === "GREEN" ? "Go Heavy" : tier === "BLUE" ? "Deload / Pump" : "Normal Training"}
                   </Text>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>
                     {activeTemplate.templateType}
                   </Text>
                 </View>
                 {activeTemplate.sessions.map((s, i) => {
-                  const label = readiness.readinessTier === "GREEN" ? s.highLabel : readiness.readinessTier === "BLUE" ? s.lowLabel : s.medLabel;
+                  const label = tier === "GREEN" ? s.highLabel : tier === "BLUE" ? s.lowLabel : s.medLabel;
                   return (
                     <View key={i} style={styles.readinessSessionRow}>
                       <View style={[styles.readinessSessionDot, { backgroundColor: tierColor }]} />
@@ -538,9 +566,9 @@ export default function ChecklistScreen() {
                 })}
               </View>
 
-              {readiness.drivers.length > 0 && (
+              {(readiness.drivers ?? []).length > 0 && (
                 <View style={styles.readinessDrivers}>
-                  {readiness.drivers.slice(0, 3).map((d, i) => (
+                  {(readiness.drivers ?? []).slice(0, 3).map((d, i) => (
                     <Text key={i} style={styles.readinessDriverText}>{d}</Text>
                   ))}
                 </View>
