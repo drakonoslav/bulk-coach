@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
+import multer from "multer";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
+import { importFitbitCSV } from "./fitbit-import";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
   const vals = [r1, r2, r3].filter((v): v is number => v != null && !isNaN(v));
@@ -161,6 +165,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(mapped);
     } catch (err: unknown) {
       console.error("dashboard error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/import/fitbit", upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const overwriteFields = req.body?.overwrite_fields === "true";
+      const result = await importFitbitCSV(req.file.buffer, req.file.originalname, overwriteFields);
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("fitbit import error:", err);
+      res.status(500).json({ error: "Import failed" });
+    }
+  });
+
+  app.get("/api/import/history", async (_req: Request, res: Response) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT * FROM fitbit_imports ORDER BY uploaded_at DESC LIMIT 10`,
+      );
+      res.json(rows.map(snakeToCamel));
+    } catch (err: unknown) {
+      console.error("import history error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

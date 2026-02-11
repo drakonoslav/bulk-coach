@@ -1,0 +1,186 @@
+Got it — this is perfect to send to Replit. Below is a clean, dev-ready spec they can implement without guessing. I tightened wording, removed ambiguity, and added a couple “gotchas” (encoding, header mismatch, idempotency) that will save you pain.
+
+⸻
+
+Replit Implementation Spec: Fitbit CSV Import (Daily Aggregates) → Postgres Upsert + Recompute
+
+Objective
+
+Add a CSV import pipeline so the user can upload a daily aggregates CSV (Fitbit-style or template format) and the system will:
+	1.	Parse file
+	2.	Map into daily_logs
+	3.	Upsert by date (overwrite same day / merge fields safely)
+	4.	Recompute rolling metrics + dashboard caches for affected dates
+	5.	Persist everything in Postgres long term
+
+⸻
+
+Minimal Supported CSV Schema (v1)
+
+CSV header:
+
+date,steps,active_zone_minutes,cardio_minutes,sleep_minutes,energy_burned_kcal,resting_hr,hrv
+
+Example:
+
+2025-02-01,8421,48,40,462,2735,58,72
+2025-02-02,9132,52,45,455,2812,57,69
+2025-02-03,7800,38,30,430,2650,59,75
+
+Rules
+	•	date is required (format: YYYY-MM-DD)
+	•	All other columns are optional
+	•	Missing/blank values should not wipe previously stored values (default merge behavior)
+
+⸻
+
+Backend API: Import Endpoint
+
+Route
+
+POST /api/import/fitbit
+
+Input
+
+multipart/form-data with:
+	•	file (CSV)
+	•	optional fields:
+	•	source = "fitbit" (default)
+	•	mode = "upsert" | "append" (default "upsert")
+	•	overwrite_fields = boolean (default false recommended)
+	•	timezone = IANA TZ (default user setting; used for date alignment if timestamps exist later)
+
+Response
+
+{
+  "status": "ok",
+  "dateRange": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
+  "rowsImported": 0,
+  "rowsUpserted": 0,
+  "rowsSkipped": 0,
+  "recomputeRan": true
+}
+
+
+⸻
+
+Audit Trail: Save Import Metadata (and optionally raw file)
+
+Create table fitbit_imports:
+	•	id uuid primary key
+	•	uploaded_at timestamptz not null default now()
+	•	original_filename text
+	•	sha256 text unique (idempotency; prevent duplicates)
+	•	date_range_start date
+	•	date_range_end date
+	•	rows_imported int
+	•	rows_upserted int
+	•	rows_skipped int
+	•	notes text
+
+Raw file storage
+	•	Preferred: store file bytes in object storage (if available)
+	•	If not: store in Postgres as bytea
+	•	Minimum: store sha256 + metadata
+
+⸻
+
+Parsing + Mapping Rules (v1)
+
+Column mapping to daily_logs
+	•	date → daily_logs.date (local date)
+	•	steps → daily_logs.steps
+	•	cardio_minutes → daily_logs.cardio_minutes
+	•	active_zone_minutes → store separately if you have a column (recommended), otherwise ignore or optionally derive cardio.
+	•	sleep_minutes → daily_logs.sleep_minutes
+	•	energy_burned_kcal → daily_logs.energy_burned_kcal
+	•	resting_hr → daily_logs.resting_hr
+	•	hrv → daily_logs.hrv
+
+Important
+	•	Weight + Body Fat are NOT imported here (manual logging continues)
+
+Type rules
+	•	Empty strings → null
+	•	Numeric fields parse as integers (or float if needed later)
+	•	If a row’s date is invalid → skip row + increment rowsSkipped
+
+Header tolerance
+	•	Allow any subset of columns (only date required)
+	•	Ignore unknown columns
+
+⸻
+
+Date Alignment (avoid “duplicate days” from midday uploads)
+
+For this v1 template:
+	•	date is already daily-local, so no timestamp conversion needed.
+
+Future-proof note (for real Fitbit exports):
+	•	If timestamps appear later, convert timestamps to user timezone, then aggregate by local date.
+
+⸻
+
+Upsert Strategy (default merge-safe)
+
+Unique constraint
+	•	Ensure daily_logs(date) is unique (or unique per user if multi-user later)
+
+SQL (merge-safe default)
+
+INSERT INTO daily_logs (
+  date,
+  steps,
+  cardio_minutes,
+  sleep_minutes,
+  resting_hr,
+  hrv,
+  energy_burned_kcal,
+  updated_at
+)
+VALUES (...)
+ON CONFLICT (date) DO UPDATE SET
+  steps = COALESCE(EXCLUDED.steps, daily_logs.steps),
+  cardio_minutes = COALESCE(EXCLUDED.cardio_minutes, daily_logs.cardio_minutes),
+  sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, daily_logs.sleep_minutes),
+  resting_hr = COALESCE(EXCLUDED.resting_hr, daily_logs.resting_hr),
+  hrv = COALESCE(EXCLUDED.hrv, daily_logs.hrv),
+  energy_burned_kcal = COALESCE(EXCLUDED.energy_burned_kcal, daily_logs.energy_burned_kcal),
+  updated_at = NOW();
+
+overwrite_fields behavior
+	•	If overwrite_fields=true, then set fields to EXCLUDED.field even if null/blank (only if you intentionally want imports to wipe values).
+
+⸻
+
+Recompute After Import
+
+After processing all rows:
+	1.	Determine min_date, max_date across imported rows
+	2.	Call existing recompute pipeline:
+	•	recompute(from_date=min_date, to_date=max_date)
+	3.	Return summary JSON
+
+⸻
+
+Frontend UX Requirements (Expo)
+
+Add a screen/button:
+	•	“Import Fitbit CSV”
+	•	Uses document picker to upload file to backend
+	•	Shows:
+	•	last import timestamp
+	•	last import summary (rows imported/upserted/skipped)
+	•	After success:
+	•	refresh dashboard + report screens
+
+⸻
+
+Extra “do not screw this up” notes
+	•	Handle CSV with UTF-8 and optional BOM
+	•	Normalize header casing (e.g. Resting HR vs resting_hr) by mapping known aliases
+	•	Idempotency: if file hash already imported, return status "duplicate" and do nothing
+
+⸻
+
+If you want, I can also format this into a Replit task checklist (files to edit, packages, route stubs, test cases).

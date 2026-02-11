@@ -1,0 +1,117 @@
+Goal: Let user upload a Fitbit export file (CSV preferred) from the mobile app or web, and have the backend:
+	1.	parse it,
+	2.	map it into daily_logs,
+	3.	upsert by date (overwrite same day if new data arrives),
+	4.	recompute rolling metrics + dashboard caches,
+	5.	persist everything in Postgres.
+
+1) Add an import endpoint
+
+Create a route like:
+	•	POST /api/import/fitbit
+	•	accepts multipart form-data with a file: file
+	•	optional fields:
+	•	source = “fitbit”
+	•	mode = “upsert” | “append” (default “upsert”)
+	•	overwrite_fields = boolean (default true)
+	•	timezone (default user setting; critical for date alignment)
+
+2) Store the raw file (audit trail)
+
+Create a table:
+
+fitbit_imports
+	•	id uuid pk
+	•	uploaded_at timestamptz
+	•	original_filename text
+	•	sha256 text unique (prevents duplicate imports)
+	•	date_range_start date
+	•	date_range_end date
+	•	rows_imported int
+	•	rows_upserted int
+	•	rows_skipped int
+	•	notes text
+
+Save the raw file content in:
+	•	Postgres bytea or object storage (if available).
+If not storing raw, at least store sha256 + metadata.
+
+3) Parsing + mapping rules (minimal v1)
+
+Fitbit exports can differ, so support these core daily fields first:
+
+Map to your existing daily_logs columns:
+	•	date (local date)
+	•	steps
+	•	cardio_minutes (derive from “Active Zone Minutes” or “Cardio minutes” if present)
+	•	sleep_start, sleep_end, sleep_minutes (if present)
+	•	resting_hr, hrv (if present)
+	•	energy_burned_kcal (if present)
+
+Important: Weight + BF do NOT come from Fitbit in many exports; keep those as user-entered.
+
+4) Date alignment (the biggest trap)
+
+Fitbit timestamps are often local-time but exports may be UTC-ish.
+
+Rule:
+	•	Convert to user timezone
+	•	Aggregate by local date
+	•	Do not create “duplicate days” when uploading midday
+
+5) Upsert strategy (overwrite same day)
+
+For each date:
+	•	upsert into daily_logs on (date) unique key.
+
+Pseudo SQL:
+
+INSERT INTO daily_logs (
+  date,
+  steps,
+  cardio_minutes,
+  sleep_minutes,
+  resting_hr,
+  hrv,
+  energy_burned_kcal,
+  updated_at
+)
+VALUES (...)
+ON CONFLICT (date) DO UPDATE SET
+  steps = COALESCE(EXCLUDED.steps, daily_logs.steps),
+  cardio_minutes = COALESCE(EXCLUDED.cardio_minutes, daily_logs.cardio_minutes),
+  sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, daily_logs.sleep_minutes),
+  resting_hr = COALESCE(EXCLUDED.resting_hr, daily_logs.resting_hr),
+  hrv = COALESCE(EXCLUDED.hrv, daily_logs.hrv),
+  energy_burned_kcal = COALESCE(EXCLUDED.energy_burned_kcal, daily_logs.energy_burned_kcal),
+  updated_at = NOW();
+
+That COALESCE behavior means:
+	•	if the import file lacks a metric, it won’t wipe the user’s previous value.
+
+If user sets overwrite_fields=true, then update with EXCLUDED.field even if null (only if you intentionally want that).
+
+6) Recompute after import
+
+After all upserts:
+	•	call your existing recompute function for the full affected range:
+	•	recompute(from_date = min_date, to_date = max_date)
+	•	then return a summary JSON:
+
+{
+  "status": "ok",
+  "dateRange": {"start": "...", "end": "..."},
+  "rowsImported": 123,
+  "rowsUpserted": 45,
+  "rowsSkipped": 3,
+  "recomputeRan": true
+}
+
+7) Frontend UX
+
+Add a screen/button:
+	•	“Import Fitbit CSV”
+	•	shows last import date + status
+	•	after import, refresh dashboard
+
+⸻
