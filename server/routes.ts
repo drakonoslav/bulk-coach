@@ -13,6 +13,7 @@ import {
   getSessionBadges,
   getDataConfidence,
 } from "./erection-engine";
+import { exportBackup, importBackup } from "./backup";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -283,6 +284,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: unknown) {
       console.error("confidence error:", err);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/backup/export", async (_req: Request, res: Response) => {
+    try {
+      const payload = await exportBackup();
+      const filename = `bulk-coach-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.json(payload);
+    } catch (err: unknown) {
+      console.error("backup export error:", err);
+      res.status(500).json({ error: "Export failed" });
+    }
+  });
+
+  app.post("/api/backup/import", upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const mode = (req.body?.mode === "replace" ? "replace" : "merge") as "merge" | "replace";
+      const dryRun = req.body?.dry_run === "true";
+
+      let data;
+      try {
+        data = JSON.parse(req.file.buffer.toString("utf-8"));
+      } catch {
+        return res.status(400).json({ error: "Invalid JSON file" });
+      }
+
+      if (!data.metadata) {
+        return res.status(400).json({ error: "Invalid backup: missing metadata" });
+      }
+
+      const result = await importBackup(data, mode, dryRun);
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("backup import error:", err);
+      const message = err instanceof Error ? err.message : "Import failed";
+      res.status(500).json({ error: message });
     }
   });
 
