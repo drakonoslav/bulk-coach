@@ -17,6 +17,13 @@ export interface DailyEntry {
   tossedMinutes?: number;
   sleepPlanBedtime?: string;
   sleepPlanWake?: string;
+  plannedBedTime?: string;
+  plannedWakeTime?: string;
+  actualBedTime?: string;
+  actualWakeTime?: string;
+  sleepLatencyMin?: number;
+  sleepWasoMin?: number;
+  napMinutes?: number;
   waterLiters?: number;
   steps?: number;
   cardioMin?: number;

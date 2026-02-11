@@ -18,7 +18,7 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
-import { computeSleepAlignment, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
+import { computeSleepBlock, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
   computeReadiness,
   persistReadiness,
@@ -67,9 +67,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           water_liters, steps, cardio_min, lift_done, deload_week,
           adherence, performance_note, notes,
           sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
+          planned_bed_time, planned_wake_time,
+          actual_bed_time, actual_wake_time,
+          sleep_latency_min, sleep_waso_min, nap_minutes,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,NOW()
         )
         ON CONFLICT (day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -97,6 +100,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_plan_bedtime = EXCLUDED.sleep_plan_bedtime,
           sleep_plan_wake = EXCLUDED.sleep_plan_wake,
           tossed_minutes = EXCLUDED.tossed_minutes,
+          planned_bed_time = EXCLUDED.planned_bed_time,
+          planned_wake_time = EXCLUDED.planned_wake_time,
+          actual_bed_time = EXCLUDED.actual_bed_time,
+          actual_wake_time = EXCLUDED.actual_wake_time,
+          sleep_latency_min = EXCLUDED.sleep_latency_min,
+          sleep_waso_min = EXCLUDED.sleep_waso_min,
+          nap_minutes = EXCLUDED.nap_minutes,
           updated_at = NOW()`,
         [
           b.day,
@@ -125,13 +135,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.sleepPlanBedtime ?? null,
           b.sleepPlanWake ?? null,
           b.tossedMinutes ?? null,
+          b.plannedBedTime ?? null,
+          b.plannedWakeTime ?? null,
+          b.actualBedTime ?? null,
+          b.actualWakeTime ?? null,
+          b.sleepLatencyMin ?? null,
+          b.sleepWasoMin ?? null,
+          b.napMinutes ?? null,
         ],
       );
 
       await recomputeRange(b.day);
 
-      computeSleepAlignment(b.day).catch((err: unknown) =>
-        console.error("sleep alignment compute error:", err)
+      computeSleepBlock(b.day).catch((err: unknown) =>
+        console.error("sleep block compute error:", err)
       );
 
       recomputeReadinessRange(b.day).catch((err: unknown) =>
@@ -505,8 +522,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         result = await computeReadiness(date);
         await persistReadiness(result);
       }
-      const alignment = await computeSleepAlignment(date);
-      res.json({ ...result, sleepAlignment: alignment });
+      const sleepBlock = await computeSleepBlock(date);
+      res.json({ ...result, sleepBlock });
     } catch (err: unknown) {
       console.error("readiness error:", err);
       res.status(500).json({ error: "Internal server error" });
