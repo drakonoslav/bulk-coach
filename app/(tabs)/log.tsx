@@ -21,6 +21,7 @@ import { saveEntry, loadEntry } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 import { getApiUrl } from "@/lib/query-client";
 import { fetch as expoFetch } from "expo/fetch";
+import { classifySleepDeviation, deviationHumanLabel, formatDevMin } from "@/lib/sleep-deviation";
 
 function formatDateLabel(dateStr: string): string {
   const today = todayStr();
@@ -214,6 +215,7 @@ export default function LogScreen() {
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [sessionForDate, setSessionForDate] = useState<{ erections: number; durSec: number; isImputed: boolean } | null>(null);
   const [readinessBadge, setReadinessBadge] = useState<{ score: number; tier: string; confidence: string } | null>(null);
+  const [sleepPlan, setSleepPlan] = useState<{ bedtime: string; wake: string } | null>(null);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -312,12 +314,21 @@ export default function LogScreen() {
     }
   }, []);
 
+  const loadSleepPlan = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL("/api/sleep-plan", baseUrl).toString(), { credentials: "include" });
+      if (res.ok) setSleepPlan(await res.json());
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDateEntry(selectedDate);
       loadErectionBadges();
       loadSessionForDate(selectedDate);
       loadReadinessForDate(selectedDate);
+      if (!sleepPlan) loadSleepPlan();
       setUploadResult(null);
     }, [selectedDate])
   );
@@ -797,6 +808,32 @@ export default function LogScreen() {
               <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
             </View>
           </View>
+          {(() => {
+            const planBed = sleepPlan?.bedtime || null;
+            const planWake = sleepPlan?.wake || null;
+            const dev = classifySleepDeviation({
+              planBed,
+              planWake,
+              srBed: actualBedTime || null,
+              srWake: actualWakeTime || null,
+              fitbitSleepMin: undefined,
+              latencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
+              wasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
+            });
+            const humanLabel = deviationHumanLabel(dev.label);
+            if (!humanLabel) return null;
+            return (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingHorizontal: 4, paddingVertical: 6, backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Sleep Deviation</Text>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{humanLabel}</Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 1 }}>
+                    {dev.displayLine}{dev.shortfallLine ? ` \u00B7 ${dev.shortfallLine}` : ""}
+                  </Text>
+                </View>
+              </View>
+            );
+          })()}
           <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4, fontFamily: "Rubik_400Regular" }}>
             Legacy bed/wake below (kept for backward compat)
           </Text>

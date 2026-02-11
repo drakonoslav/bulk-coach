@@ -875,19 +875,20 @@ export default function ReportScreen() {
                       const sb = readiness.sleepBlock;
                       const hasSchedule = sb?.scheduleAdherenceScore != null;
                       const hasAdequacy = sb?.sleepAdequacyScore != null;
-                      const fmtDev = (v: number | null | undefined) => v != null ? ((v > 0 ? "+" : "") + v + "m") : "?";
+                      const devResult = sb?.deviation;
+                      const devLabel = devResult?.label ? ({ efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" } as Record<string, string>)[devResult.label] : null;
                       return (
                         <>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Schedule</Text>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasSchedule ? (sb!.scheduleAdherenceScore! >= 80 ? "#34D399" : sb!.scheduleAdherenceScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasSchedule ? `${sb!.scheduleAdherenceScore} / 100 (bed ${fmtDev(sb!.bedDevMin)}  wake ${fmtDev(sb!.wakeDevMin)})` : "\u2014 no self-reported times"}
+                              {hasSchedule ? `${sb!.scheduleAdherenceScore} / 100 (${devResult?.displayLine ?? "\u2014"})` : "\u2014 no self-reported times"}
                             </Text>
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Adequacy</Text>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasAdequacy ? `${sb!.sleepAdequacyScore} / 100 (debt ${sb!.sleepDebtMin! > 0 ? "-" : "+"}${Math.abs(sb!.sleepDebtMin!)}m)` : "\u2014 no Fitbit sleep"}
+                              {hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${devResult?.shortfallLine ? ` (${devResult.shortfallLine})` : ""}` : "\u2014 no Fitbit sleep"}
                             </Text>
                           </View>
                           {sb?.sleepEfficiencyEst != null && (
@@ -896,6 +897,12 @@ export default function ReportScreen() {
                               <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sb.sleepEfficiencyEst >= 0.85 ? "#34D399" : sb.sleepEfficiencyEst >= 0.70 ? "#FBBF24" : "#EF4444" }}>
                                 {Math.round(sb.sleepEfficiencyEst * 100)}%{sb.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb.fitbitVsReportedDeltaMin > 0 ? "+" : ""}${sb.fitbitVsReportedDeltaMin}m vs reported)` : ""}
                               </Text>
+                            </View>
+                          )}
+                          {devLabel && (
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Deviation</Text>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{devLabel}</Text>
                             </View>
                           )}
                         </>
