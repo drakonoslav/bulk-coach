@@ -1,6 +1,7 @@
 import { pool } from "./db";
 import { recomputeRange } from "./recompute";
-import { recomputeReadinessRange } from "./readiness-engine";
+import { recomputeReadinessRange, computeReadiness, persistReadiness, getAnalysisStartDate } from "./readiness-engine";
+import { computeSleepAlignment } from "./sleep-alignment";
 import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
@@ -57,6 +58,19 @@ interface SleepBucketEntry {
   source: "csv" | "json";
 }
 
+interface SleepRowDiagnostic {
+  raw_start: string;
+  raw_end: string;
+  minutes_asleep: number;
+  bucket_date: string;
+  timezone_used: string;
+  source_file: string;
+  is_segment: boolean;
+  is_main_sleep: boolean | null;
+  suspicious: boolean;
+  suspicion_reason: string | null;
+}
+
 interface SleepValidation {
   totalMinutes: number;
   sessionCount: number;
@@ -70,6 +84,7 @@ interface DiagnosticDay {
   computedValues: Partial<DayBucket>;
   source: Record<Metric, "csv" | "json" | "both" | "none">;
   sleepBucketing: SleepBucketEntry[];
+  sleepRowDiagnostics: SleepRowDiagnostic[];
   sleepValidation: SleepValidation | null;
 }
 
@@ -209,6 +224,7 @@ function emptyDiagnostic(): DiagnosticDay {
     computedValues: {},
     source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none" },
     sleepBucketing: [],
+    sleepRowDiagnostics: [],
     sleepValidation: null,
   };
 }
@@ -238,6 +254,9 @@ function parseFitbitDateTime(dt: string): string | null {
   return extractDateFromISO(dt);
 }
 
+// Fitbit JSON sleep endTime is in LOCAL time (not UTC).
+// Extracting the date part gives us the wake-date in local time.
+// This is the correct bucketing rule: bucket to wake-date in LOCAL time.
 function parseFitbitEndTimeToWakeDate(endTime: string, tz: string): string | null {
   const isoMatch = endTime.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   if (isoMatch) {
@@ -515,6 +534,8 @@ function parseDailyRestingHrCSV(
   return count;
 }
 
+// CSV sleep parsing: uses row's sleep_end timestamp + end_utc_offset to compute local wake-date.
+// Does NOT use filename date. Bucket = DATE(sleep_end_utc + utc_offset) = wake-date in local time.
 function parseUserSleepsCSV(
   buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
   filename: string,
@@ -560,6 +581,21 @@ function parseUserSleepsCSV(
       minutes: mins,
       source: "csv",
     });
+    const startCol2 = colIdx(headers, "sleep_start", "start_time");
+    const rawStart = startCol2 !== -1 ? (row[startCol2] || "") : "";
+    d.sleepRowDiagnostics.push({
+      raw_start: rawStart,
+      raw_end: sleepEndRaw,
+      minutes_asleep: mins,
+      bucket_date: date,
+      timezone_used: offsetStr || "+00:00",
+      source_file: filename,
+      is_segment: false,
+      is_main_sleep: isMainCol !== -1 ? !["false","0","no"].includes((row[isMainCol]||"").toLowerCase().trim()) : null,
+      suspicious: mins < 180 || mins > 900,
+      suspicion_reason: mins < 180 ? "under_180_min" : mins > 900 ? "over_900_min" : null,
+    });
+    console.log(`[sleep-diag] CSV row: start=${rawStart} end=${sleepEndRaw} mins=${mins} bucket=${date} tz_offset=${offsetStr} file=${filename} isMain=${isMainCol !== -1 ? row[isMainCol] : "N/A"}`);
     count++;
   }
   return count;
@@ -774,6 +810,20 @@ function parseSleepJSON(
         minutes: minsVal,
         source: "json",
       });
+      const rawStart = item.startTime || "";
+      d.sleepRowDiagnostics.push({
+        raw_start: rawStart,
+        raw_end: endTimeRaw,
+        minutes_asleep: minsVal,
+        bucket_date: date,
+        timezone_used: tz,
+        source_file: filename,
+        is_segment: false,
+        is_main_sleep: item.isMainSleep !== undefined ? item.isMainSleep : null,
+        suspicious: minsVal < 180 || minsVal > 900,
+        suspicion_reason: minsVal < 180 ? "under_180_min" : minsVal > 900 ? "over_900_min" : null,
+      });
+      console.log(`[sleep-diag] JSON row: start=${rawStart} end=${endTimeRaw} mins=${minsVal} bucket=${date} tz=${tz} file=${filename} isMain=${item.isMainSleep}`);
       if (csvDays.has(date)) {
         conflicts.push({ date, metric: "sleep", csvValue: buckets.get(date)?.sleepMinutes ?? 0, jsonValue: minsVal, resolution: "csv_preferred" });
         continue;
@@ -950,15 +1000,29 @@ export async function importFitbitTakeout(
   for (const [date, b] of csvBuckets) {
     if (b.sleepMinutes != null) {
       const d = ensureDiag(diags, date);
-      const suspicious = b.sleepMinutes < 120 || b.sleepMinutes > 900;
+      if (d.sleepRowDiagnostics.length > 1) {
+        for (const rd of d.sleepRowDiagnostics) rd.is_segment = true;
+      }
+      const suspicious = b.sleepMinutes < 180 || b.sleepMinutes > 900;
+      d.sleepValidation = {
+        totalMinutes: b.sleepMinutes,
+        sessionCount: d.rawRowCounts.sleep,
+        suspicious,
+        reason: suspicious 
+          ? (b.sleepMinutes < 180 ? 'under_180_min_total' : 'over_900_min_total')
+          : (b.sleepMinutes < 240 || b.sleepMinutes > 600 ? 'outside_normal_240_600' : null),
+      };
       if (suspicious) {
-        d.sleepValidation = {
-          totalMinutes: b.sleepMinutes,
-          sessionCount: d.rawRowCounts.sleep,
-          suspicious: true,
-          reason: b.sleepMinutes < 120 ? 'under_120_min' : 'over_900_min',
-        };
-        console.log(`[takeout] Sleep validation warning for ${date}: ${b.sleepMinutes} min (${d.rawRowCounts.sleep} sessions) — ${d.sleepValidation.reason}`);
+        conflicts.push({
+          date,
+          metric: "sleep",
+          csvValue: b.sleepMinutes,
+          jsonValue: 0,
+          resolution: "suspicious_sleep_flagged",
+        });
+        console.log(`[sleep-diag] SUSPICIOUS daily total for ${date}: ${b.sleepMinutes} min (${d.sleepRowDiagnostics.length} rows) — ${d.sleepValidation.reason}`);
+      } else if (b.sleepMinutes < 240 || b.sleepMinutes > 600) {
+        console.log(`[sleep-diag] Unusual daily total for ${date}: ${b.sleepMinutes} min (outside 240-600 normal range)`);
       }
     }
   }
@@ -1075,6 +1139,10 @@ export async function importFitbitTakeout(
     else daysInserted++;
   }
 
+  for (const [date] of csvBuckets.entries()) {
+    await computeSleepAlignment(date);
+  }
+
   let recomputeRan = false;
   if (minDate && maxDate) {
     await recomputeRangeSpan(minDate, maxDate);
@@ -1163,6 +1231,15 @@ async function persistDiagnosticsToDB(
         [importId, date, sb.sleep_end_raw, sb.sleep_end_local, sb.bucket_date, sb.minutes, sb.source],
       );
     }
+
+    for (const rd of d.sleepRowDiagnostics) {
+      await pool.query(
+        `INSERT INTO sleep_import_diagnostics 
+         (import_id, date, raw_start, raw_end, minutes_asleep, bucket_date, timezone_used, source_file, is_segment, is_main_sleep, suspicious, suspicion_reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [importId, date, rd.raw_start, rd.raw_end, rd.minutes_asleep, rd.bucket_date, rd.timezone_used, rd.source_file, rd.is_segment, rd.is_main_sleep, rd.suspicious, rd.suspicion_reason],
+      );
+    }
   }
 
   for (const [, fc] of fileContribs) {
@@ -1198,7 +1275,34 @@ async function recomputeRangeSpan(minDay: string, maxDay: string): Promise<void>
   }
   await recomputeRange(maxDay);
 
-  recomputeReadinessRange(minDay).catch((err: unknown) =>
+  recomputeReadinessAfterImport(minDay, maxDay).catch((err: unknown) =>
     console.error("readiness recompute after takeout:", err)
   );
+}
+
+async function recomputeReadinessAfterImport(minDay: string, maxDay: string): Promise<void> {
+  const analysisStart = await getAnalysisStartDate();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const padDate = (d: string, offset: number): string => {
+    const dt = new Date(d + "T12:00:00Z");
+    dt.setUTCDate(dt.getUTCDate() + offset);
+    return dt.toISOString().slice(0, 10);
+  };
+
+  const recomputeFrom = [padDate(analysisStart, -28), padDate(minDay, -28)]
+    .sort()[0];
+  const recomputeTo = [padDate(maxDay, 1), today]
+    .sort()
+    .pop()!;
+
+  console.log(`[takeout] Readiness recompute: ${recomputeFrom} → ${recomputeTo}`);
+
+  let cur = recomputeFrom;
+  while (cur <= recomputeTo) {
+    const result = await computeReadiness(cur);
+    await persistReadiness(result);
+    cur = padDate(cur, 1);
+  }
+  console.log(`[takeout] Readiness recompute complete`);
 }

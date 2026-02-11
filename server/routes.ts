@@ -18,6 +18,7 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
+import { computeSleepAlignment } from "./sleep-alignment";
 import {
   computeReadiness,
   persistReadiness,
@@ -120,6 +121,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       await recomputeRange(b.day);
+
+      computeSleepAlignment(b.day).catch((err: unknown) =>
+        console.error("sleep alignment compute error:", err)
+      );
 
       recomputeReadinessRange(b.day).catch((err: unknown) =>
         console.error("readiness recompute error:", err)
@@ -728,6 +733,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (err: unknown) {
       console.error("sanity-check error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sleep-diagnostics/:date", async (req: Request, res: Response) => {
+    try {
+      const { date } = req.params;
+      const { rows } = await pool.query(
+        `SELECT * FROM sleep_import_diagnostics WHERE date = $1 OR bucket_date = $1 ORDER BY created_at DESC`,
+        [date],
+      );
+      const { rows: validation } = await pool.query(
+        `SELECT day, sleep_minutes FROM daily_log WHERE day = $1`,
+        [date],
+      );
+      res.json({
+        date,
+        diagnosticRows: rows,
+        dailyLogSleepMinutes: validation[0]?.sleep_minutes ?? null,
+        bucketRule: "wake_date_local_time",
+        notes: [
+          "CSV: bucket = parseUTCTimestampToLocalDate(sleep_end, end_utc_offset) — uses row timestamp, NOT filename date",
+          "JSON: bucket = parseFitbitEndTimeToWakeDate(endTime, timezone) — uses endTime field, NOT filename date",
+          "Normal range: 240-600 min. Suspicious: <180 or >900 min.",
+        ],
+      });
+    } catch (err: unknown) {
+      console.error("sleep-diagnostics error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sleep-alignment", async (req: Request, res: Response) => {
+    try {
+      const from = req.query.from as string;
+      const to = req.query.to as string;
+      if (!from || !to) return res.status(400).json({ error: "from and to required" });
+      const { rows } = await pool.query(
+        `SELECT day, sleep_minutes, sleep_start, sleep_end,
+                sleep_efficiency, bedtime_deviation_min, wake_deviation_min, sleep_plan_alignment_score
+         FROM daily_log
+         WHERE day >= $1 AND day <= $2 AND sleep_minutes IS NOT NULL
+         ORDER BY day ASC`,
+        [from, to]
+      );
+      res.json(rows.map(r => ({
+        day: r.day,
+        sleepMinutes: r.sleep_minutes,
+        sleepStart: r.sleep_start,
+        sleepEnd: r.sleep_end,
+        sleepEfficiency: r.sleep_efficiency != null ? parseFloat(r.sleep_efficiency) : null,
+        bedtimeDeviationMin: r.bedtime_deviation_min,
+        wakeDeviationMin: r.wake_deviation_min,
+        alignmentScore: r.sleep_plan_alignment_score != null ? parseFloat(r.sleep_plan_alignment_score) : null,
+      })));
+    } catch (err: unknown) {
+      console.error("sleep-alignment error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

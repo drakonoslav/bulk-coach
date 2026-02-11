@@ -703,10 +703,10 @@ export default function ReportScreen() {
                               Readiness Score
                             </Text>
                             <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: tierColor }}>
-                              {score}
+                              {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
                             </Text>
                             <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
-                              Estimates recovery permissiveness
+                              {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional — need 7+ days" : "Estimates recovery permissiveness"}
                             </Text>
                           </View>
                         </View>
@@ -836,16 +836,18 @@ export default function ReportScreen() {
                   </View>
                 )}
 
-                {readiness.gate !== "NONE" && (
+                {(() => {
+                  const insufficientData = readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7;
+                  return (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
                     <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
                       Signal Breakdown
                     </Text>
                     {[
-                      { label: "Sleep", value: readiness.deltas?.sleep_str ?? "\u2014", color: (readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
-                      { label: "HRV", value: readiness.deltas?.hrv_str ?? "\u2014", color: (readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
-                      { label: "RHR", value: readiness.deltas?.rhr_str ?? "\u2014", color: (readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444" },
-                      { label: "Proxy", value: readiness.deltas?.proxy_str ?? "\u2014", color: (readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444" },
+                      { label: "Sleep", value: insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
+                      { label: "HRV", value: insufficientData ? "\u2014" : (readiness.deltas?.hrv_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
+                      { label: "RHR", value: insufficientData ? "\u2014" : (readiness.deltas?.rhr_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444") },
+                      { label: "Proxy", value: insufficientData ? "\u2014" : (readiness.deltas?.proxy_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444") },
                     ].map((sig) => (
                       <View key={sig.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                         <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{sig.label}</Text>
@@ -859,7 +861,8 @@ export default function ReportScreen() {
                       </Text>
                     </View>
                   </View>
-                )}
+                  );
+                })()}
 
                 {readiness.gate !== "NONE" && (() => {
                   const score = readiness.readinessScore ?? 0;

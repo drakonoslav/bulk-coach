@@ -147,6 +147,25 @@ export async function initDb(): Promise<void> {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS sleep_import_diagnostics (
+      id SERIAL PRIMARY KEY,
+      import_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      raw_start TEXT,
+      raw_end TEXT,
+      minutes_asleep INTEGER NOT NULL,
+      bucket_date TEXT NOT NULL,
+      timezone_used TEXT NOT NULL,
+      source_file TEXT NOT NULL,
+      is_segment BOOLEAN DEFAULT false,
+      is_main_sleep BOOLEAN,
+      suspicious BOOLEAN DEFAULT false,
+      suspicion_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS fitbit_import_file_contributions (
       id SERIAL PRIMARY KEY,
       import_id TEXT,
