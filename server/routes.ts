@@ -14,6 +14,15 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
+import {
+  computeReadiness,
+  persistReadiness,
+  recomputeReadinessRange,
+  getReadiness,
+  getReadinessRange,
+  getTrainingTemplate,
+  updateTrainingTemplate,
+} from "./readiness-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -99,6 +108,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       await recomputeRange(b.day);
+
+      recomputeReadinessRange(b.day).catch((err: unknown) =>
+        console.error("readiness recompute error:", err)
+      );
 
       res.json({ ok: true });
     } catch (err: unknown) {
@@ -283,6 +296,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(confidence);
     } catch (err: unknown) {
       console.error("confidence error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/readiness", async (req: Request, res: Response) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      let result = await getReadiness(date);
+      if (!result) {
+        result = await computeReadiness(date);
+        await persistReadiness(result);
+      }
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("readiness error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/readiness/range", async (req: Request, res: Response) => {
+    try {
+      const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
+      const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      const results = await getReadinessRange(from, to);
+      res.json(results);
+    } catch (err: unknown) {
+      console.error("readiness range error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/training/template", async (_req: Request, res: Response) => {
+    try {
+      const template = await getTrainingTemplate();
+      res.json(template);
+    } catch (err: unknown) {
+      console.error("template get error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.put("/api/training/template", async (req: Request, res: Response) => {
+    try {
+      const { templateType, sessions } = req.body;
+      if (!templateType || !Array.isArray(sessions)) {
+        return res.status(400).json({ error: "templateType and sessions required" });
+      }
+      await updateTrainingTemplate(templateType, sessions);
+      res.json({ ok: true });
+    } catch (err: unknown) {
+      console.error("template update error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

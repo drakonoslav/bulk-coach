@@ -127,6 +127,49 @@ export async function initDb(): Promise<void> {
       PRIMARY KEY (date, computed_with_imputed)
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS readiness_daily (
+      date DATE PRIMARY KEY,
+      readiness_score REAL NOT NULL,
+      readiness_tier TEXT NOT NULL,
+      confidence_grade TEXT NOT NULL,
+      hrv_delta REAL,
+      rhr_delta REAL,
+      sleep_delta REAL,
+      proxy_delta REAL,
+      hrv_7d REAL,
+      hrv_28d REAL,
+      rhr_7d REAL,
+      rhr_28d REAL,
+      sleep_7d REAL,
+      sleep_28d REAL,
+      proxy_7d REAL,
+      proxy_28d REAL,
+      drivers JSONB,
+      computed_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS training_template (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      template_type TEXT NOT NULL DEFAULT 'push_pull_legs',
+      sessions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT single_row CHECK (id = 1)
+    );
+  `);
+
+  await pool.query(`
+    INSERT INTO training_template (id, template_type, sessions)
+    VALUES (1, 'push_pull_legs', $1::jsonb)
+    ON CONFLICT (id) DO NOTHING
+  `, [JSON.stringify([
+    { name: "Push", highLabel: "Heavy Bench / OHP", medLabel: "Normal Hypertrophy", lowLabel: "Machine Press / Flyes / Pump" },
+    { name: "Pull", highLabel: "Heavy Rows / Deadlift", medLabel: "Normal Hypertrophy", lowLabel: "Cables / Light Rows / Technique" },
+    { name: "Legs", highLabel: "Heavy Squat / RDL", medLabel: "Normal Hypertrophy", lowLabel: "Leg Press / Machines / Pump" },
+  ])]);
 }
 
 export { pool };

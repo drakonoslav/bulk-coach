@@ -1,0 +1,346 @@
+Here’s a single “drop-in” spec you can paste to Replit that includes: (1) the dual-slider logic, (2) exact normalization math, (3) pseudocode, and (4) UI layout.
+
+⸻
+
+Implement: Dual-Slider Training Autoregulation (Type A↔B + Compound↔Isolation)
+
+Goal
+
+Each day the app answers two questions using recovery signals:
+	1.	Type Lean Slider: Are we leaning Type A (Push/Pull/Legs) or Type B (region-specific)?
+	2.	Exercise Bias Slider: Are we ready for Compounds or is Isolation/Technique more appropriate?
+
+Important rule: We do not change training frequency or create chaotic schedule changes.
+If user planned “Pull,” it stays Pull — we just choose the intensity variant (compound-heavy vs isolation-heavy).
+
+⸻
+
+Split Definitions (must be used verbatim)
+
+Type A (Simple)
+	1.	Push
+	2.	Pull
+	3.	Legs
+
+Type B (Region Specific)
+	1.	Arms (bi/tri/forearms)
+	2.	Delts
+	3.	Legs (quads/hams/calves)
+	4.	Torso (core/abs)
+	5.	Posterior (lats/traps/etc)
+
+⸻
+
+Inputs (Daily Signals + Rolling Baselines)
+
+Use these signals (from Fitbit + app + FirmTech proxy):
+	•	HRV (ms)
+	•	Resting HR (bpm)
+	•	Sleep minutes
+	•	Androgen proxy (erection proxy) measured-only by default
+	•	Data confidence grade (7-day window): High/Med/Low/None
+	•	(Optional later) Training load, cardio minutes
+
+Rolling windows
+	•	short-term: 7-day rolling mean (or median)
+	•	baseline: 28-day rolling median (preferred) or mean
+
+⸻
+
+Normalization Math (Exact)
+
+For each metric compute a relative delta vs baseline:
+
+Let:
+	•	x7 = rollingMean(metric, 7)
+	•	x28 = rollingMedian(metric, 28) (or mean if easier)
+
+Compute ratio deltas:
+	•	hrv_delta = (hrv7 - hrv28) / hrv28
+	•	rhr_delta = (rhr7 - rhr28) / rhr28  (note: higher is worse)
+	•	sleep_delta = (sleep7 - sleep28) / sleep28
+	•	proxy_delta = (proxy7 - proxy28) / proxy28
+
+Now map each delta into a 0–100 subscore using clamp ranges:
+
+Use helper:
+	•	clamp(v, lo, hi)
+
+Subscores
+
+HRV_score (higher better):
+
+HRV_score = 50 + 50 * clamp(hrv_delta / 0.10, -1, +1)
+
+RHR_score (lower better): (invert)
+
+RHR_score = 50 - 50 * clamp(rhr_delta / 0.05, -1, +1)
+
+Sleep_score (higher better):
+
+Sleep_score = 50 + 50 * clamp(sleep_delta / 0.10, -1, +1)
+
+Proxy_score (higher better):
+
+Proxy_score = 50 + 50 * clamp(proxy_delta / 0.10, -1, +1)
+
+Interpretation:
+	•	HRV +/-10% is “full swing”
+	•	RHR +/-5% is “full swing”
+	•	Sleep +/-10% is “full swing”
+	•	Proxy +/-10% is “full swing”
+
+⸻
+
+Readiness Score (0–100) + Confidence Dampener
+
+Weights:
+	•	HRV 30%
+	•	RHR 20%
+	•	Sleep 20%
+	•	Proxy 20%
+	•	(Confidence is a dampener, not a positive signal)
+
+Base readiness:
+
+readiness_raw =
+  0.30 * HRV_score +
+  0.20 * RHR_score +
+  0.20 * Sleep_score +
+  0.20 * Proxy_score
+
+Confidence modifier
+
+Use the 7-day confidence grade based on measured nights:
+	•	High: conf = 1.00
+	•	Med:  conf = 0.90
+	•	Low:  conf = 0.75
+	•	None: conf = 0.60
+
+Final:
+
+readiness = clamp(readiness_raw * conf, 0, 100)
+
+Also compute readiness_confidence_label = grade.
+
+Measured-only default: Proxy used in readiness should use measured-only unless user explicitly toggles include-imputed for charts.
+
+⸻
+
+Two Sliders (Derived from Readiness)
+
+Slider #1: Type Lean (Type B ↔ Type A)
+
+Represent as type_lean in [-1..+1]:
+	•	-1 = full Type B bias
+	•	+1 = full Type A bias
+
+Mapping:
+
+type_lean = clamp((readiness - 60) / 20, -1, +1)
+
+Interpretation:
+	•	readiness 80 → +1 (Type A)
+	•	readiness 60 → 0 (neutral)
+	•	readiness 40 → -1 (Type B)
+
+Slider #2: Exercise Bias (Isolation ↔ Compound)
+
+Represent as exercise_bias in [-1..+1]:
+	•	-1 = isolation/technique bias
+	•	+1 = compound bias
+
+Use same mapping (v1):
+
+exercise_bias = clamp((readiness - 65) / 20, -1, +1)
+
+(Compounds require slightly higher threshold than type leaning.)
+
+⸻
+
+Threshold Buckets (for simple decisions)
+
+Also compute an easy tier:
+	•	GREEN (Heavy Neural Day): readiness ≥ 75
+	•	YELLOW (Moderate Day): 60–74
+	•	BLUE (Low Stress Day): < 60
+
+⸻
+
+Cortisol Suppression Flag (v1)
+
+This is NOT “testosterone.” It’s a suppression signal.
+
+Compute boolean conditions using 7d vs 28d deltas:
+	•	hrv_suppressed = hrv_delta <= -0.08   (≤ -8%)
+	•	rhr_elevated = rhr_delta >= +0.03     (≥ +3%)
+	•	sleep_low = sleep_delta <= -0.10      (≤ -10%)
+	•	proxy_low = proxy_delta <= -0.10      (≤ -10%)
+
+Flag triggers if:
+
+count_true(hrv_suppressed, rhr_elevated, sleep_low, proxy_low) >= 3
+AND confidence_grade != "None"
+
+If flag ON:
+	•	cap readiness tier to at most YELLOW
+	•	force exercise_bias <= 0 (no compound bias)
+	•	recommend Type B lean
+
+⸻
+
+Training Decision Logic (Core Behavior)
+
+We do not randomly change frequency. We adjust intensity variant.
+
+Planned session input (user’s schedule)
+
+User picks either:
+	•	Type A rotation (Push/Pull/Legs) OR
+	•	Type B rotation (Arms/Delts/Legs/Torso/Posterior)
+
+But the app can bias the recommendation using the type_lean slider.
+
+Recommendation output
+
+Given planned day planned_focus:
+	•	If readiness tier GREEN:
+	•	recommend compound-heavy variant for that focus
+	•	If YELLOW:
+	•	recommend moderate variant (mix compounds/machines, higher reps)
+	•	If BLUE or cortisol flag:
+	•	recommend isolation/technique variant for that focus
+	•	optionally suggest switching to a Type B region that is low systemic load (arms/delts/core) only if user allows “swap focus on low readiness”
+
+Important: Any automatic “swap focus” must be optional, because some users want strict schedule adherence.
+
+⸻
+
+Pseudocode (Backend Recommended)
+
+function clamp(v:number, lo:number, hi:number){ return Math.max(lo, Math.min(hi, v)); }
+
+function computeDeltas(x7:number|null, x28:number|null){
+  if (!x7 || !x28 || x28 === 0) return null;
+  return (x7 - x28) / x28;
+}
+
+function scoreFromDelta(delta:number, fullSwing:number, invert=false){
+  // maps delta to 0..100 centered at 50
+  const scaled = clamp(delta / fullSwing, -1, +1);
+  const base = 50 + 50 * scaled;
+  return invert ? (100 - base) : base;
+}
+
+function computeReadiness(day: Metrics, roll7: Metrics, base28: Metrics, confidenceGrade: string){
+  const hrv_delta = computeDeltas(roll7.hrv, base28.hrv);
+  const rhr_delta = computeDeltas(roll7.rhr, base28.rhr);
+  const sleep_delta = computeDeltas(roll7.sleepMin, base28.sleepMin);
+  const proxy_delta = computeDeltas(roll7.proxy_measured, base28.proxy_measured);
+
+  // if missing key data, degrade gracefully
+  const HRV_score = hrv_delta==null ? 50 : scoreFromDelta(hrv_delta, 0.10, false);
+  const RHR_score = rhr_delta==null ? 50 : scoreFromDelta(rhr_delta, 0.05, true);
+  const Sleep_score = sleep_delta==null ? 50 : scoreFromDelta(sleep_delta, 0.10, false);
+  const Proxy_score = proxy_delta==null ? 50 : scoreFromDelta(proxy_delta, 0.10, false);
+
+  const readiness_raw =
+    0.30 * HRV_score +
+    0.20 * RHR_score +
+    0.20 * Sleep_score +
+    0.20 * Proxy_score;
+
+  const confMap:any = { High:1.0, Med:0.9, Low:0.75, None:0.6 };
+  const conf = confMap[confidenceGrade] ?? 0.75;
+
+  let readiness = clamp(readiness_raw * conf, 0, 100);
+
+  // Cortisol suppression
+  const hrv_supp = (hrv_delta ?? 0) <= -0.08;
+  const rhr_up   = (rhr_delta ?? 0) >= +0.03;
+  const sleep_low= (sleep_delta ?? 0) <= -0.10;
+  const proxy_low= (proxy_delta ?? 0) <= -0.10;
+  const flags = [hrv_supp, rhr_up, sleep_low, proxy_low].filter(Boolean).length;
+
+  const cortisolFlag = (confidenceGrade !== "None") && (flags >= 3);
+
+  if (cortisolFlag) {
+    readiness = Math.min(readiness, 74);     // cap below GREEN
+  }
+
+  const tier = readiness >= 75 ? "GREEN" : readiness >= 60 ? "YELLOW" : "BLUE";
+
+  const type_lean = clamp((readiness - 60) / 20, -1, +1);
+  let exercise_bias = clamp((readiness - 65) / 20, -1, +1);
+
+  if (cortisolFlag) exercise_bias = Math.min(exercise_bias, 0);
+
+  return { readiness, tier, type_lean, exercise_bias, cortisolFlag };
+}
+
+
+⸻
+
+UI Layout (Dual Slider System)
+
+Daily Card (top of Training + Report)
+	•	Big: Readiness 78/100 with GREEN/YELLOW/BLUE badge
+	•	Small: Confidence: High + Cortisol Flag: OFF/ON
+
+Slider Row 1: Type Lean
+
+Label: “Type Lean”
+Left: Type B (Region Specific)
+Right: Type A (Push/Pull/Legs)
+Slider value = type_lean mapped to 0..1
+
+Slider Row 2: Exercise Bias
+
+Label: “Exercise Bias”
+Left: Isolation / Technique
+Right: Compound / Heavy
+Slider value = exercise_bias mapped to 0..1
+
+Recommendation box (one sentence)
+
+Examples:
+	•	“Today: Type A Lean + Compound Focus → Heavy Pull (compound-first)”
+	•	“Today: Type B Lean + Isolation Focus → Arms/Delts pump + core”
+	•	If cortisol flag: “Recovery suppressed → No heavy compounds today.”
+
+Optional “Why” expander
+
+Show 2–3 drivers:
+	•	HRV down vs baseline
+	•	RHR up
+	•	Sleep down
+	•	Proxy stable (measured)
+
+Keep it short.
+
+⸻
+
+Storage / Recompute
+
+Create cache table:
+
+readiness_daily
+	•	date PK
+	•	readiness
+	•	tier
+	•	type_lean
+	•	exercise_bias
+	•	cortisol_flag
+	•	confidence_grade
+	•	deltas JSON (optional)
+	•	updated_at
+
+Recompute on:
+	•	daily log upsert
+	•	fitbit import upsert
+	•	erection session recompute
+	•	(optional) training load changes
+
+⸻
+
+This is the full implementable spec. It should drop cleanly into the existing backend recompute/caching pattern and the Expo screens you’ve already built.
