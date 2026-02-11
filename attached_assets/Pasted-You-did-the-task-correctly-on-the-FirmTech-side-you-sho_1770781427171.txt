@@ -1,0 +1,163 @@
+You did the task correctly on the FirmTech side: you should upload the files in the order you have them, even if the dates jump around (Feb 3 then Feb 2, etc.). Your engine is ordering snapshots by total_nights, not by the selected calendar date, so that “out-of-order dates” in testing won’t break delta math. (In real use, you’ll usually upload “today’s snapshot” so both sequences align.)
+
+Now for Fitbit Takeout ZIP import: here’s exactly what to ask Replit to build so it handles your upload accurately and robustly.
+
+⸻
+
+Copy/paste to Replit: Fitbit Takeout ZIP import (dynamic path, correct daily aggregation, safe upsert)
+
+Goal: Support importing a Fitbit Google Takeout ZIP (not just a single CSV). Do not hardcode file paths. Detect Fitbit directory dynamically inside the ZIP, parse the relevant files (monthly CSV shards), aggregate to local-date daily totals, and upsert into daily_logs without wiping manual entries.
+
+1) Add endpoints (ZIP + history)
+	•	POST /api/import/fitbit/takeout (multipart form-data file=.zip)
+	•	GET /api/import/fitbit/takeout/history
+
+Return summary JSON:
+
+{
+  "status":"ok",
+  "dateRange":{"start":"YYYY-MM-DD","end":"YYYY-MM-DD"},
+  "filesParsed": 42,
+  "daysUpserted": 120,
+  "daysInserted": 80,
+  "daysUpdated": 40,
+  "rowsSkipped": 0
+}
+
+2) Dynamic ZIP discovery (no hardcoded paths)
+
+Inside the ZIP, locate the Fitbit root by scanning entry names and picking the prefix that matches either:
+	•	*/Fitbit/*
+	•	*/Takeout/Fitbit/*
+
+Implementation rule:
+	•	Build a list of all ZIP entries
+	•	Find the first entry containing "/Fitbit/" and set fitbitRootPrefix = entry.split("/Fitbit/")[0] + "/Fitbit/".
+	•	Use that prefix for all subsequent lookups.
+	•	If not found, return a friendly error: "Could not find Fitbit folder inside ZIP. Expected Takeout/Fitbit/... structure."
+
+3) Parse these Takeout datasets (the high-signal ones)
+
+From a typical Takeout, the useful files are many monthly CSVs. Parse all matching files and merge.
+
+Steps
+	•	Match: Physical Activity_GoogleData/steps_YYYY-MM-01.csv (or any steps_*.csv)
+	•	Sum per local date → steps
+
+Active minutes / cardio minutes
+	•	If you have daily_heart_rate_zones_*.csv, compute:
+	•	active_zone_minutes = sum minutes in cardio+peak zones (or Fitbit’s provided AZM column if present)
+	•	cardio_minutes = cardio-only minutes if present
+(If you only have zone minutes, store them as AZM and leave cardio null.)
+
+Resting HR
+	•	Match: Physical Activity_GoogleData/daily_resting_heart_rate_*.csv
+	•	Use per-date value → resting_hr
+
+Energy burned
+	•	Match: Physical Activity_GoogleData/calories_in_heart_rate_zone_*.csv
+	•	Sum per date → energy_burned_kcal (or if it’s zone calories only, still use total across zones)
+
+Sleep
+	•	Match: Sleep/sleep-*.csv (or similar)
+	•	Aggregate per sleep session end date in user timezone (or app setting):
+	•	sleep_minutes = total minutes asleep for that date
+	•	Optional: store start/end timestamps if available
+
+HRV
+	•	HRV may be missing in some Takeouts. Treat as optional:
+	•	If present as JSON/CSV, parse and store daily HRV.
+	•	If not present, do not fail import.
+
+4) Timezone + date alignment (critical)
+
+Add timezone param (default user setting).
+
+Rules:
+	•	Convert timestamps to timezone before bucketing.
+	•	Steps/calories/HR are usually already daily—still normalize the date field.
+	•	Sleep sessions: choose a consistent rule:
+	•	Bucket sleep by “wake date” (session end date in local time). This aligns with training readiness for “today”.
+
+5) Upsert into daily_logs without overwriting manual data
+
+Use a unique key on daily_logs(date).
+
+Default behavior: COALESCE so missing Fitbit fields don’t wipe existing values:
+
+INSERT INTO daily_logs (
+  date, steps, active_zone_minutes, cardio_minutes,
+  sleep_minutes, energy_burned_kcal, resting_hr, hrv, updated_at
+)
+VALUES (...)
+ON CONFLICT (date) DO UPDATE SET
+  steps              = COALESCE(EXCLUDED.steps, daily_logs.steps),
+  active_zone_minutes= COALESCE(EXCLUDED.active_zone_minutes, daily_logs.active_zone_minutes),
+  cardio_minutes     = COALESCE(EXCLUDED.cardio_minutes, daily_logs.cardio_minutes),
+  sleep_minutes      = COALESCE(EXCLUDED.sleep_minutes, daily_logs.sleep_minutes),
+  energy_burned_kcal  = COALESCE(EXCLUDED.energy_burned_kcal, daily_logs.energy_burned_kcal),
+  resting_hr         = COALESCE(EXCLUDED.resting_hr, daily_logs.resting_hr),
+  hrv                = COALESCE(EXCLUDED.hrv, daily_logs.hrv),
+  updated_at         = NOW();
+
+Add an optional flag overwrite_fields=true if we ever want EXCLUDED nulls to overwrite (default false).
+
+6) Store raw import metadata + dedupe
+
+Create table fitbit_takeout_imports:
+	•	id uuid pk
+	•	uploaded_at timestamptz
+	•	original_filename text
+	•	sha256 text unique
+	•	fitbit_root_prefix text
+	•	date_range_start date
+	•	date_range_end date
+	•	files_parsed int
+	•	days_inserted int
+	•	days_updated int
+	•	notes text
+
+If sha256 already exists → return "duplicate_import" (no reprocessing).
+
+7) Recompute readiness caches after import
+
+After upserts, call:
+	•	recompute(from_date=minDate, to_date=maxDate)
+This should refresh:
+	•	rolling sleep baseline
+	•	HRV/RHR baselines
+	•	readiness score
+	•	cortisol suppression flag (later)
+
+8) Minimal test plan (must pass before trusting data)
+
+Using Conrad’s ZIP:
+	•	Confirm Fitbit root is found dynamically (no hardcoded path)
+	•	Confirm counts: number of parsed files > 1 (because Takeout is monthly shards)
+	•	Confirm daily_logs rows appear across full date range
+	•	Confirm manual entries are preserved (COALESCE works)
+	•	Confirm sleep buckets correctly (wake-date rule)
+	•	Return a summary with dateRange + counts
+
+⸻
+
+Should you provide Replit the ZIP file directly?
+
+Yes — provide the ZIP, because that’s what exposes the real structure (monthly shards, directories, naming). It won’t confuse Replit if you give it the single spec above and say: “Implement exactly this; don’t guess paths; scan entries.”
+
+⸻
+
+Quick answers to your Git/Desktop questions
+	•	Can you run it on desktop? Yes. An Expo app can run on your computer (Android emulator/iOS simulator if you have it set up, or a web build if enabled). Backend still needs to run too (and your DB connection).
+	•	Does a Git repo include your data? Not unless you commit data files or bundle a local DB into the repo. If you’re using Postgres (recommended), your data lives in the database, not in Git.
+	•	Rule: keep .env and any exported data out of Git; use .gitignore.
+
+⸻
+
+If you want, I can also write a “single message to Replit” that includes:
+	1.	the endpoint names
+	2.	the dynamic ZIP scanning logic
+	3.	the exact file match patterns
+	4.	the upsert SQL
+	5.	the recompute call + response JSON
+…so you can paste one thing and let it implement end-to-end.

@@ -89,6 +89,7 @@ export async function initDb(): Promise<void> {
       original_filename TEXT,
       sha256 TEXT UNIQUE,
       timezone TEXT,
+      fitbit_root_prefix TEXT,
       date_range_start TEXT,
       date_range_end TEXT,
       days_affected INTEGER DEFAULT 0,
@@ -97,6 +98,7 @@ export async function initDb(): Promise<void> {
       notes TEXT
     );
   `);
+  await pool.query(`ALTER TABLE fitbit_takeout_imports ADD COLUMN IF NOT EXISTS fitbit_root_prefix TEXT`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS erection_summary_snapshots (

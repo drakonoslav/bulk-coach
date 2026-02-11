@@ -5,15 +5,18 @@ import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
 
-interface TakeoutImportResult {
+export interface TakeoutImportResult {
   status: string;
   dateRange: { start: string; end: string } | null;
+  fitbitRootPrefix: string | null;
+  filesParsed: number;
   daysAffected: number;
-  rowsUpserted: number;
+  daysInserted: number;
+  daysUpdated: number;
   rowsSkipped: number;
   recomputeRan: boolean;
-  filesProcessed: number;
   parseDetails: Record<string, number>;
+  filePatterns: string[];
 }
 
 interface DayBucket {
@@ -24,22 +27,29 @@ interface DayBucket {
   zone3Min: number | null;
   belowZone1Min: number | null;
   activeZoneMinutes: number | null;
+  cardioMin: number | null;
   restingHr: number | null;
   sleepMinutes: number | null;
+  hrv: number | null;
 }
 
 function emptyBucket(): DayBucket {
   return {
-    steps: null,
-    energyBurnedKcal: null,
-    zone1Min: null,
-    zone2Min: null,
-    zone3Min: null,
-    belowZone1Min: null,
-    activeZoneMinutes: null,
-    restingHr: null,
-    sleepMinutes: null,
+    steps: null, energyBurnedKcal: null,
+    zone1Min: null, zone2Min: null, zone3Min: null, belowZone1Min: null,
+    activeZoneMinutes: null, cardioMin: null,
+    restingHr: null, sleepMinutes: null, hrv: null,
   };
+}
+
+function ensureBucket(buckets: Map<string, DayBucket>, date: string): DayBucket {
+  if (!buckets.has(date)) buckets.set(date, emptyBucket());
+  return buckets.get(date)!;
+}
+
+function extractDateFromISO(ts: string): string | null {
+  const m = ts.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
 function parseFitbitDateTime(dt: string): string | null {
@@ -47,49 +57,41 @@ function parseFitbitDateTime(dt: string): string | null {
   if (match) {
     let year = parseInt(match[3], 10);
     year = year < 50 ? 2000 + year : 1900 + year;
-    const month = match[1].padStart(2, "0");
-    const day = match[2].padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
   }
-  const isoMatch = dt.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  }
-  return null;
+  return extractDateFromISO(dt);
 }
 
-function findFitbitGlobalExportDir(entries: Map<string, Buffer>): string | null {
-  const knownPrefixes = ["steps-", "calories-", "heart_rate-", "time_in_heart_rate_zones-", "resting_heart_rate-", "sleep-"];
-
-  const candidates = new Map<string, number>();
-
-  for (const path of entries.keys()) {
-    const parts = path.split("/");
-    const filename = parts[parts.length - 1];
-    if (knownPrefixes.some((p) => filename.startsWith(p)) && filename.endsWith(".json")) {
-      const dir = parts.slice(0, -1).join("/");
-      candidates.set(dir, (candidates.get(dir) || 0) + 1);
-    }
-  }
-
-  if (candidates.size === 0) return null;
-
-  let bestDir = "";
-  let bestCount = 0;
-  for (const [dir, count] of candidates.entries()) {
-    if (count > bestCount) {
-      bestDir = dir;
-      bestCount = count;
-    }
-  }
-  return bestDir;
+function parseCSVRows(buf: Buffer): { headers: string[]; rows: string[][] } {
+  let text = buf.toString("utf-8");
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const rows = lines.slice(1).map((l) => l.split(",").map((c) => c.trim()));
+  return { headers, rows };
 }
 
-function findSleepScoreCSV(entries: Map<string, Buffer>): string | null {
-  for (const path of entries.keys()) {
-    const lower = path.toLowerCase();
-    if (lower.includes("sleep") && lower.includes("score") && lower.endsWith(".csv")) {
-      return path;
+function colIdx(headers: string[], ...names: string[]): number {
+  for (const n of names) {
+    const idx = headers.indexOf(n);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function findFitbitRoot(entryPaths: string[]): string | null {
+  for (const p of entryPaths) {
+    const idx = p.indexOf("/Fitbit/");
+    if (idx !== -1) {
+      return p.slice(0, idx) + "/Fitbit/";
+    }
+  }
+  for (const p of entryPaths) {
+    const lower = p.toLowerCase();
+    const idx = lower.indexOf("/fitbit/");
+    if (idx !== -1) {
+      return p.slice(0, idx + 8);
     }
   }
   return null;
@@ -119,7 +121,184 @@ async function extractZipEntries(fileBuffer: Buffer): Promise<Map<string, Buffer
   return entries;
 }
 
-function parseStepsFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseStepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date", "datetime");
+  const stepsCol = colIdx(headers, "steps", "value");
+  if (tsCol === -1 || stepsCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const val = parseInt(row[stepsCol], 10);
+    if (isNaN(val)) continue;
+    const b = ensureBucket(buckets, date);
+    b.steps = (b.steps || 0) + val;
+    count++;
+  }
+  return count;
+}
+
+function parseCaloriesCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date", "datetime");
+  const calCol = colIdx(headers, "calories", "kcal", "value");
+  if (tsCol === -1 || calCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const val = parseFloat(row[calCol]);
+    if (isNaN(val)) continue;
+    const b = ensureBucket(buckets, date);
+    b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
+    count++;
+  }
+  return count;
+}
+
+function parseCaloriesInZoneCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  const kcalCol = colIdx(headers, "kcal", "calories");
+  if (tsCol === -1 || kcalCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const val = parseFloat(row[kcalCol]);
+    if (isNaN(val)) continue;
+    const b = ensureBucket(buckets, date);
+    b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
+    count++;
+  }
+  return count;
+}
+
+function parseActiveMinutesCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  const lightCol = colIdx(headers, "light");
+  const modCol = colIdx(headers, "moderate");
+  const veryCol = colIdx(headers, "very");
+  if (tsCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const light = lightCol !== -1 ? parseInt(row[lightCol], 10) || 0 : 0;
+    const mod = modCol !== -1 ? parseInt(row[modCol], 10) || 0 : 0;
+    const very = veryCol !== -1 ? parseInt(row[veryCol], 10) || 0 : 0;
+    const b = ensureBucket(buckets, date);
+    b.activeZoneMinutes = (b.activeZoneMinutes || 0) + mod + (2 * very);
+    b.cardioMin = (b.cardioMin || 0) + mod + very;
+    b.zone1Min = (b.zone1Min || 0) + light;
+    b.zone2Min = (b.zone2Min || 0) + mod;
+    b.zone3Min = (b.zone3Min || 0) + very;
+    count++;
+  }
+  return count;
+}
+
+function parseTimeInZoneCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  const zoneCol = colIdx(headers, "heart rate zone type", "zone", "zone_type");
+  if (tsCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const zoneType = (zoneCol !== -1 ? row[zoneCol] || "" : "").toUpperCase();
+    const b = ensureBucket(buckets, date);
+    if (zoneType.includes("LIGHT") || zoneType === "LIGHT") {
+      b.zone1Min = (b.zone1Min || 0) + 1;
+    } else if (zoneType.includes("MODERATE") || zoneType === "MODERATE" || zoneType.includes("CARDIO")) {
+      b.zone2Min = (b.zone2Min || 0) + 1;
+      b.activeZoneMinutes = (b.activeZoneMinutes || 0) + 1;
+      b.cardioMin = (b.cardioMin || 0) + 1;
+    } else if (zoneType.includes("VIGOROUS") || zoneType.includes("PEAK") || zoneType === "PEAK") {
+      b.zone3Min = (b.zone3Min || 0) + 1;
+      b.activeZoneMinutes = (b.activeZoneMinutes || 0) + 2;
+      b.cardioMin = (b.cardioMin || 0) + 1;
+    }
+    count++;
+  }
+  return count;
+}
+
+function parseDailyRestingHrCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  const bpmCol = colIdx(headers, "beats per minute", "bpm", "resting_heart_rate", "value");
+  if (tsCol === -1 || bpmCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const date = extractDateFromISO(row[tsCol] || "");
+    if (!date) continue;
+    const val = Math.round(parseFloat(row[bpmCol]));
+    if (isNaN(val) || val <= 0) continue;
+    ensureBucket(buckets, date).restingHr = val;
+    count++;
+  }
+  return count;
+}
+
+function parseUserSleepsCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const sleepMinCol = colIdx(headers, "minutes_asleep", "minutesasleep");
+  const endCol = colIdx(headers, "sleep_end", "end_time");
+  if (sleepMinCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const mins = parseInt(row[sleepMinCol], 10);
+    if (isNaN(mins) || mins <= 0) continue;
+    let date: string | null = null;
+    if (endCol !== -1 && row[endCol]) {
+      date = extractDateFromISO(row[endCol]);
+    }
+    if (!date) {
+      const startCol = colIdx(headers, "sleep_start", "start_time");
+      if (startCol !== -1 && row[startCol]) {
+        date = extractDateFromISO(row[startCol]);
+      }
+    }
+    if (!date) continue;
+    const b = ensureBucket(buckets, date);
+    b.sleepMinutes = (b.sleepMinutes || 0) + mins;
+    count++;
+  }
+  return count;
+}
+
+function parseSleepScoreCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date");
+  const rhrCol = colIdx(headers, "resting_heart_rate", "restingheartrate");
+  if (tsCol === -1) return 0;
+  let count = 0;
+  for (const row of rows) {
+    const ts = row[tsCol];
+    if (!ts) continue;
+    let date: string | null = extractDateFromISO(ts);
+    if (!date) {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
+    }
+    if (!date) continue;
+    if (rhrCol !== -1 && row[rhrCol]) {
+      const hr = parseInt(row[rhrCol], 10);
+      if (!isNaN(hr) && hr > 0) {
+        const b = ensureBucket(buckets, date);
+        if (b.restingHr == null) b.restingHr = hr;
+      }
+    }
+    count++;
+  }
+  return count;
+}
+
+function parseStepsJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -129,18 +308,14 @@ function parseStepsFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
       if (!date) continue;
       const val = parseInt(item.value, 10);
       if (isNaN(val)) continue;
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      const b = buckets.get(date)!;
-      b.steps = (b.steps || 0) + val;
+      ensureBucket(buckets, date).steps = (ensureBucket(buckets, date).steps || 0) + val;
       count++;
     }
     return count;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
-function parseCaloriesFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseCaloriesJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -150,18 +325,15 @@ function parseCaloriesFile(buf: Buffer, buckets: Map<string, DayBucket>): number
       if (!date) continue;
       const val = parseFloat(item.value);
       if (isNaN(val)) continue;
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      const b = buckets.get(date)!;
+      const b = ensureBucket(buckets, date);
       b.energyBurnedKcal = Math.round((b.energyBurnedKcal || 0) + val);
       count++;
     }
     return count;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
-function parseHeartRateZonesFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseHeartRateZonesJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -171,15 +343,11 @@ function parseHeartRateZonesFile(buf: Buffer, buckets: Map<string, DayBucket>): 
       if (!date) continue;
       const zones = item.value?.valuesInZones;
       if (!zones) continue;
-
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      const b = buckets.get(date)!;
-
+      const b = ensureBucket(buckets, date);
       const z1 = parseFloat(zones.IN_DEFAULT_ZONE_1) || 0;
       const z2 = parseFloat(zones.IN_DEFAULT_ZONE_2) || 0;
       const z3 = parseFloat(zones.IN_DEFAULT_ZONE_3) || 0;
       const below = parseFloat(zones.BELOW_DEFAULT_ZONE_1) || 0;
-
       b.zone1Min = (b.zone1Min || 0) + z1;
       b.zone2Min = (b.zone2Min || 0) + z2;
       b.zone3Min = (b.zone3Min || 0) + z3;
@@ -188,12 +356,10 @@ function parseHeartRateZonesFile(buf: Buffer, buckets: Map<string, DayBucket>): 
       count++;
     }
     return count;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
-function parseRestingHrFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseRestingHrJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
@@ -201,99 +367,37 @@ function parseRestingHrFile(buf: Buffer, buckets: Map<string, DayBucket>): numbe
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
-      const val = item.value?.value;
+      const val = item.value?.value ?? item.value;
       if (val == null || val <= 0) continue;
       const hr = Math.round(parseFloat(val));
       if (isNaN(hr) || hr <= 0) continue;
-
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      buckets.get(date)!.restingHr = hr;
+      ensureBucket(buckets, date).restingHr = hr;
       count++;
     }
     return count;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
-function parseSleepJsonFile(buf: Buffer, buckets: Map<string, DayBucket>): number {
+function parseSleepJSON(buf: Buffer, buckets: Map<string, DayBucket>): number {
   try {
     const data = JSON.parse(buf.toString("utf-8"));
     if (!Array.isArray(data)) return 0;
     let count = 0;
     for (const item of data) {
-      const dateOfSleep = item.dateOfSleep;
-      if (!dateOfSleep) continue;
-      const date = dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? dateOfSleep.slice(0, 10) : null;
-      if (!date) continue;
-      const minutesAsleep = item.minutesAsleep;
-      if (minutesAsleep == null) continue;
-      const mins = parseInt(minutesAsleep, 10);
-      if (isNaN(mins)) continue;
-
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      const b = buckets.get(date)!;
-      b.sleepMinutes = (b.sleepMinutes || 0) + mins;
-      count++;
-    }
-    return count;
-  } catch {
-    return 0;
-  }
-}
-
-function parseSleepScoreCSV(buf: Buffer, buckets: Map<string, DayBucket>): number {
-  try {
-    let text = buf.toString("utf-8");
-    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) return 0;
-
-    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-    const tsIdx = headers.findIndex((h) => h === "timestamp" || h === "date");
-    const sleepIdx = headers.findIndex((h) => h.includes("total_sleep") || h.includes("duration"));
-    const rhrIdx = headers.findIndex((h) => h.includes("resting_heart_rate") || h.includes("restingheartrate"));
-
-    if (tsIdx === -1) return 0;
-
-    let count = 0;
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",").map((c) => c.trim());
-      const tsRaw = cols[tsIdx];
-      if (!tsRaw) continue;
-
       let date: string | null = null;
-      if (/^\d{4}-\d{2}-\d{2}/.test(tsRaw)) {
-        date = tsRaw.slice(0, 10);
-      } else {
-        const d = new Date(tsRaw);
-        if (!isNaN(d.getTime())) {
-          date = d.toISOString().slice(0, 10);
-        }
-      }
+      if (item.endTime) date = parseFitbitDateTime(item.endTime);
+      if (!date && item.dateOfSleep) date = item.dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? item.dateOfSleep.slice(0, 10) : null;
       if (!date) continue;
-
-      if (!buckets.has(date)) buckets.set(date, emptyBucket());
-      const b = buckets.get(date)!;
-
-      if (sleepIdx !== -1 && cols[sleepIdx]) {
-        const mins = parseInt(cols[sleepIdx], 10);
-        if (!isNaN(mins) && mins > 0 && b.sleepMinutes == null) {
-          b.sleepMinutes = mins;
-        }
-      }
-      if (rhrIdx !== -1 && cols[rhrIdx]) {
-        const hr = parseInt(cols[rhrIdx], 10);
-        if (!isNaN(hr) && hr > 0 && b.restingHr == null) {
-          b.restingHr = hr;
-        }
-      }
+      const mins = item.minutesAsleep ?? item.duration;
+      if (mins == null) continue;
+      const minsVal = parseInt(mins, 10);
+      if (isNaN(minsVal) || minsVal <= 0) continue;
+      const b = ensureBucket(buckets, date);
+      b.sleepMinutes = (b.sleepMinutes || 0) + minsVal;
       count++;
     }
     return count;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 export async function importFitbitTakeout(
@@ -311,88 +415,116 @@ export async function importFitbitTakeout(
   if (existing.length > 0) {
     return {
       status: "duplicate",
-      dateRange: null,
-      daysAffected: 0,
-      rowsUpserted: 0,
-      rowsSkipped: 0,
-      recomputeRan: false,
-      filesProcessed: 0,
-      parseDetails: {},
+      dateRange: null, fitbitRootPrefix: null,
+      filesParsed: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
     };
   }
 
+  console.log("[takeout] Extracting ZIP entries...");
   const entries = await extractZipEntries(fileBuffer);
+  console.log(`[takeout] Found ${entries.size} files in ZIP`);
 
-  const globalDir = findFitbitGlobalExportDir(entries);
-  if (!globalDir && entries.size === 0) {
+  const fitbitRoot = findFitbitRoot(Array.from(entries.keys()));
+  if (!fitbitRoot) {
     return {
       status: "error",
-      dateRange: null,
-      daysAffected: 0,
-      rowsUpserted: 0,
-      rowsSkipped: 0,
-      recomputeRan: false,
-      filesProcessed: 0,
-      parseDetails: {},
+      dateRange: null, fitbitRootPrefix: null,
+      filesParsed: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      rowsSkipped: 0, recomputeRan: false, parseDetails: {},
+      filePatterns: [],
     };
   }
 
+  console.log(`[takeout] Fitbit root: ${fitbitRoot}`);
+
   const buckets = new Map<string, DayBucket>();
-  let filesProcessed = 0;
+  let filesParsed = 0;
+  const filePatterns: string[] = [];
   const parseDetails: Record<string, number> = {
-    steps: 0,
-    calories: 0,
-    heartRateZones: 0,
-    restingHr: 0,
-    sleep: 0,
-    sleepScore: 0,
+    stepsCSV: 0, stepsJSON: 0,
+    caloriesCSV: 0, caloriesJSON: 0,
+    caloriesInZoneCSV: 0,
+    activeMinutesCSV: 0,
+    timeInZoneCSV: 0, heartRateZonesJSON: 0,
+    dailyRestingHrCSV: 0, restingHrJSON: 0,
+    sleepScoreCSV: 0, userSleepsCSV: 0, sleepJSON: 0,
   };
 
   for (const [path, buf] of entries.entries()) {
+    if (!path.startsWith(fitbitRoot)) continue;
+
+    const relativePath = path.slice(fitbitRoot.length);
     const filename = path.split("/").pop() || "";
-    const dir = path.split("/").slice(0, -1).join("/");
+    const fnLower = filename.toLowerCase();
 
-    if (globalDir != null && dir !== globalDir) {
-      if (!path.toLowerCase().includes("sleep") || !path.endsWith(".csv")) {
-        continue;
-      }
-    }
+    if (fnLower.endsWith(".txt")) continue;
 
-    if (filename.startsWith("steps-") && filename.endsWith(".json")) {
-      parseDetails.steps += parseStepsFile(buf, buckets);
-      filesProcessed++;
-    } else if (filename.startsWith("calories-") && filename.endsWith(".json")) {
-      parseDetails.calories += parseCaloriesFile(buf, buckets);
-      filesProcessed++;
-    } else if (filename.startsWith("time_in_heart_rate_zones-") && filename.endsWith(".json")) {
-      parseDetails.heartRateZones += parseHeartRateZonesFile(buf, buckets);
-      filesProcessed++;
-    } else if (filename.startsWith("resting_heart_rate-") && filename.endsWith(".json")) {
-      parseDetails.restingHr += parseRestingHrFile(buf, buckets);
-      filesProcessed++;
-    } else if (filename.startsWith("sleep-") && filename.endsWith(".json")) {
-      parseDetails.sleep += parseSleepJsonFile(buf, buckets);
-      filesProcessed++;
+    if (fnLower.startsWith("steps_") && fnLower.endsWith(".csv")) {
+      parseDetails.stepsCSV += parseStepsCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("steps_*.csv")) filePatterns.push("steps_*.csv");
+    } else if (fnLower.startsWith("steps-") && fnLower.endsWith(".json")) {
+      parseDetails.stepsJSON += parseStepsJSON(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("steps-*.json")) filePatterns.push("steps-*.json");
+    } else if (fnLower.startsWith("calories_in_heart_rate_zone_") && fnLower.endsWith(".csv")) {
+      parseDetails.caloriesInZoneCSV += parseCaloriesInZoneCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("calories_in_heart_rate_zone_*.csv")) filePatterns.push("calories_in_heart_rate_zone_*.csv");
+    } else if (fnLower.startsWith("calories_") && fnLower.endsWith(".csv")) {
+      parseDetails.caloriesCSV += parseCaloriesCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("calories_*.csv")) filePatterns.push("calories_*.csv");
+    } else if (fnLower.startsWith("calories-") && fnLower.endsWith(".json")) {
+      parseDetails.caloriesJSON += parseCaloriesJSON(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("calories-*.json")) filePatterns.push("calories-*.json");
+    } else if (fnLower.startsWith("active_minutes_") && fnLower.endsWith(".csv")) {
+      parseDetails.activeMinutesCSV += parseActiveMinutesCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("active_minutes_*.csv")) filePatterns.push("active_minutes_*.csv");
+    } else if (fnLower.startsWith("time_in_heart_rate_zone_") && fnLower.endsWith(".csv")) {
+      parseDetails.timeInZoneCSV += parseTimeInZoneCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("time_in_heart_rate_zone_*.csv")) filePatterns.push("time_in_heart_rate_zone_*.csv");
+    } else if (fnLower === "daily_resting_heart_rate.csv") {
+      parseDetails.dailyRestingHrCSV += parseDailyRestingHrCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("daily_resting_heart_rate.csv")) filePatterns.push("daily_resting_heart_rate.csv");
+    } else if (fnLower.startsWith("time_in_heart_rate_zones-") && fnLower.endsWith(".json")) {
+      parseDetails.heartRateZonesJSON += parseHeartRateZonesJSON(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("time_in_heart_rate_zones-*.json")) filePatterns.push("time_in_heart_rate_zones-*.json");
+    } else if (fnLower.startsWith("resting_heart_rate-") && fnLower.endsWith(".json")) {
+      parseDetails.restingHrJSON += parseRestingHrJSON(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("resting_heart_rate-*.json")) filePatterns.push("resting_heart_rate-*.json");
+    } else if (fnLower.startsWith("sleep-") && fnLower.endsWith(".json")) {
+      parseDetails.sleepJSON += parseSleepJSON(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("sleep-*.json")) filePatterns.push("sleep-*.json");
+    } else if (fnLower === "sleep_score.csv" || (fnLower.includes("sleep") && fnLower.includes("score") && fnLower.endsWith(".csv"))) {
+      parseDetails.sleepScoreCSV += parseSleepScoreCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("sleep_score.csv")) filePatterns.push("sleep_score.csv");
+    } else if (fnLower.startsWith("usersleeps") && fnLower.endsWith(".csv")) {
+      parseDetails.userSleepsCSV += parseUserSleepsCSV(buf, buckets);
+      filesParsed++;
+      if (!filePatterns.includes("UserSleeps_*.csv")) filePatterns.push("UserSleeps_*.csv");
     }
   }
 
-  const sleepCSVPath = findSleepScoreCSV(entries);
-  if (sleepCSVPath) {
-    const buf = entries.get(sleepCSVPath)!;
-    parseDetails.sleepScore += parseSleepScoreCSV(buf, buckets);
-    filesProcessed++;
-  }
+  console.log(`[takeout] Parsed ${filesParsed} files, ${buckets.size} unique days`);
+  console.log(`[takeout] Parse details:`, JSON.stringify(parseDetails));
+  console.log(`[takeout] File patterns:`, filePatterns);
 
   if (buckets.size === 0) {
     return {
       status: "no_data",
-      dateRange: null,
-      daysAffected: 0,
-      rowsUpserted: 0,
-      rowsSkipped: 0,
-      recomputeRan: false,
-      filesProcessed,
-      parseDetails,
+      dateRange: null, fitbitRootPrefix: fitbitRoot,
+      filesParsed, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      rowsSkipped: 0, recomputeRan: false, parseDetails, filePatterns,
     };
   }
 
@@ -400,7 +532,14 @@ export async function importFitbitTakeout(
   const minDate = sortedDates[0];
   const maxDate = sortedDates[sortedDates.length - 1];
 
-  let rowsUpserted = 0;
+  const { rows: existingDays } = await pool.query(
+    `SELECT day FROM daily_log WHERE day >= $1 AND day <= $2`,
+    [minDate, maxDate],
+  );
+  const existingDaySet = new Set(existingDays.map((r) => r.day));
+
+  let daysInserted = 0;
+  let daysUpdated = 0;
   let rowsSkipped = 0;
 
   for (const [date, b] of buckets.entries()) {
@@ -410,54 +549,53 @@ export async function importFitbitTakeout(
     }
 
     const hasData = b.steps != null || b.energyBurnedKcal != null || b.activeZoneMinutes != null ||
-      b.restingHr != null || b.sleepMinutes != null || b.zone1Min != null;
+      b.restingHr != null || b.sleepMinutes != null || b.zone1Min != null || b.cardioMin != null;
 
     if (!hasData) {
       rowsSkipped++;
       continue;
     }
 
+    const isExisting = existingDaySet.has(date);
+
     if (overwriteFields) {
       await pool.query(
-        `INSERT INTO daily_log (day, steps, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr,
+        `INSERT INTO daily_log (day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
           zone1_min, zone2_min, zone3_min, below_zone1_min, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (day) DO UPDATE SET
-           steps = $2,
-           active_zone_minutes = $3,
-           sleep_minutes = $4,
-           energy_burned_kcal = $5,
-           resting_hr = $6,
-           zone1_min = $7,
-           zone2_min = $8,
-           zone3_min = $9,
-           below_zone1_min = $10,
+           steps = $2, cardio_min = $3, active_zone_minutes = $4, sleep_minutes = $5,
+           energy_burned_kcal = $6, resting_hr = $7, hrv = $8,
+           zone1_min = $9, zone2_min = $10, zone3_min = $11, below_zone1_min = $12,
            updated_at = NOW()`,
-        [date, b.steps, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr,
+        [date, b.steps, b.cardioMin, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr, b.hrv,
           b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min],
       );
     } else {
       await pool.query(
-        `INSERT INTO daily_log (day, morning_weight_lb, steps, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr,
+        `INSERT INTO daily_log (day, morning_weight_lb, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
           zone1_min, zone2_min, zone3_min, below_zone1_min, updated_at)
-         VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (day) DO UPDATE SET
            steps = COALESCE($2, daily_log.steps),
-           active_zone_minutes = COALESCE($3, daily_log.active_zone_minutes),
-           sleep_minutes = COALESCE($4, daily_log.sleep_minutes),
-           energy_burned_kcal = COALESCE($5, daily_log.energy_burned_kcal),
-           resting_hr = COALESCE($6, daily_log.resting_hr),
-           zone1_min = COALESCE($7, daily_log.zone1_min),
-           zone2_min = COALESCE($8, daily_log.zone2_min),
-           zone3_min = COALESCE($9, daily_log.zone3_min),
-           below_zone1_min = COALESCE($10, daily_log.below_zone1_min),
+           cardio_min = COALESCE($3, daily_log.cardio_min),
+           active_zone_minutes = COALESCE($4, daily_log.active_zone_minutes),
+           sleep_minutes = COALESCE($5, daily_log.sleep_minutes),
+           energy_burned_kcal = COALESCE($6, daily_log.energy_burned_kcal),
+           resting_hr = COALESCE($7, daily_log.resting_hr),
+           hrv = COALESCE($8, daily_log.hrv),
+           zone1_min = COALESCE($9, daily_log.zone1_min),
+           zone2_min = COALESCE($10, daily_log.zone2_min),
+           zone3_min = COALESCE($11, daily_log.zone3_min),
+           below_zone1_min = COALESCE($12, daily_log.below_zone1_min),
            updated_at = NOW()`,
-        [date, b.steps, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr,
+        [date, b.steps, b.cardioMin, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr, b.hrv,
           b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min],
       );
     }
 
-    rowsUpserted++;
+    if (isExisting) daysUpdated++;
+    else daysInserted++;
   }
 
   let recomputeRan = false;
@@ -468,20 +606,28 @@ export async function importFitbitTakeout(
 
   const importId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
   await pool.query(
-    `INSERT INTO fitbit_takeout_imports (id, original_filename, sha256, timezone, date_range_start, date_range_end, days_affected, rows_upserted, rows_skipped)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [importId, originalFilename, sha256, timezone, minDate, maxDate, buckets.size, rowsUpserted, rowsSkipped],
+    `INSERT INTO fitbit_takeout_imports (id, original_filename, sha256, timezone, fitbit_root_prefix,
+      date_range_start, date_range_end, days_affected, rows_upserted, rows_skipped, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [importId, originalFilename, sha256, timezone, fitbitRoot, minDate, maxDate,
+      daysInserted + daysUpdated, daysInserted + daysUpdated, rowsSkipped,
+      `Patterns: ${filePatterns.join(", ")}`],
   );
+
+  console.log(`[takeout] Import complete: ${daysInserted} inserted, ${daysUpdated} updated, ${rowsSkipped} skipped`);
 
   return {
     status: "ok",
     dateRange: { start: minDate, end: maxDate },
-    daysAffected: buckets.size,
-    rowsUpserted,
+    fitbitRootPrefix: fitbitRoot,
+    filesParsed,
+    daysAffected: daysInserted + daysUpdated,
+    daysInserted,
+    daysUpdated,
     rowsSkipped,
     recomputeRan,
-    filesProcessed,
     parseDetails,
+    filePatterns,
   };
 }
 

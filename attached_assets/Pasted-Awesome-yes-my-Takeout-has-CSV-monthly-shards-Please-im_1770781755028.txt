@@ -1,0 +1,47 @@
+Awesome — yes, my Takeout has CSV monthly shards. Please implement the importer to pass these invariants:
+
+A) Dynamic Fitbit root detection (no hardcoded paths)
+	•	Scan ZIP entries and find the first path segment containing "/Fitbit/".
+	•	Set fitbitRootPrefix = prefix + "/Fitbit/" and use it for all lookups.
+	•	If not found, return a friendly error.
+
+B) Support BOTH formats if present
+My ZIP may contain:
+	•	CSV monthly shards under something like Physical Activity_GoogleData/ (steps, calories, active minutes, HR zone minutes, etc.)
+	•	Possibly “Global Export Data/” JSON-ish files too
+Importer must parse whatever exists and merge into one daily aggregate map.
+
+C) Daily aggregation must be correct and stable
+	•	All imports must roll up to a Map<localDate, dailyAggregate>.
+	•	Use user timezone for any timestamps; if a file is already daily, just trust the date field but normalize to YYYY-MM-DD.
+	•	Sleep should bucket by wake date (session end date) in local time.
+
+D) Upsert must never wipe existing manual values
+Use COALESCE upsert (default):
+	•	If Fitbit doesn’t provide a field for a day, do not overwrite the existing value with null.
+	•	Only update a column if the imported value is non-null, unless overwrite_fields=true is explicitly set.
+
+E) Recompute after import (range-based)
+After upserts, call:
+	•	recompute(from_date=minDate, to_date=maxDate)
+Return a JSON summary including dateRange, filesParsed, daysInserted, daysUpdated, rowsSkipped.
+
+F) Dedupe + audit trail
+Create fitbit_takeout_imports with:
+	•	sha256 unique
+	•	fitbit_root_prefix
+	•	file counts + date range + inserted/updated totals
+If sha256 exists → return duplicate_import (no reprocessing).
+
+G) Minimum acceptance tests
+After uploading my ZIP:
+	1.	It must report filesParsed > 1 (because monthly shards)
+	2.	It must populate daily_logs across the full date range (not just one day)
+	3.	It must preserve manual fields (COALESCE verified)
+	4.	It must not crash if HRV is absent (HRV stays null)
+	5.	It must produce the same totals if I re-upload the same ZIP (dedupe prevents duplicates)
+
+Please send back:
+	•	A list of discovered file patterns (glob-like) you’re parsing from the ZIP
+	•	The exact column mapping for each CSV type (steps, calories, sleep, RHR, zones)
+	•	A sample of the returned summary JSON for my upload
