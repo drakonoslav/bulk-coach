@@ -8,6 +8,11 @@ interface Snapshot {
   total_nights: number;
   total_erections: number;
   total_duration_sec: number;
+  number_of_recordings: number;
+  erectile_fitness_score: number | null;
+  avg_firmness_nocturnal: number | null;
+  avg_erections_per_night: number | null;
+  avg_duration_per_night_sec: number | null;
 }
 
 interface ParsedSnapshot {
@@ -15,6 +20,11 @@ interface ParsedSnapshot {
   total_nights: number;
   total_erections: number;
   total_duration_sec: number;
+  number_of_recordings: number;
+  erectile_fitness_score: number | null;
+  avg_firmness_nocturnal: number | null;
+  avg_erections_per_night: number | null;
+  avg_duration_per_night_sec: number | null;
 }
 
 interface DeriveResult {
@@ -67,6 +77,21 @@ function parseHmsToSeconds(val: string): number {
     return parts[0] * 60 + parts[1];
   }
   throw new Error(`Cannot parse duration value: "${val}". Expected HH:MM:SS, MM:SS, or seconds.`);
+}
+
+function parseOptionalFloat(val: string | undefined): number | null {
+  if (val == null || val.trim() === "") return null;
+  const n = parseFloat(val.trim());
+  return isNaN(n) ? null : n;
+}
+
+function parseOptionalHms(val: string | undefined): number | null {
+  if (val == null || val.trim() === "") return null;
+  try {
+    return parseHmsToSeconds(val);
+  } catch {
+    return null;
+  }
 }
 
 export function parseSnapshotFile(fileBuffer: Buffer, _filename: string): ParsedSnapshot {
@@ -122,6 +147,24 @@ export function parseSnapshotFile(fileBuffer: Buffer, _filename: string): Parsed
     "nocturnal_duration_seconds",
     "total_duration_seconds",
   );
+  const recIdx = findCol(
+    "number_of_recordings",
+  );
+  const fitnessIdx = findCol(
+    "erectile_fitness_score",
+  );
+  const firmnessIdx = findCol(
+    "average_firmness_of_nocturnal_erections",
+    "avg_firmness_nocturnal",
+  );
+  const avgErPerNightIdx = findCol(
+    "average_number_of_nocturnal_erections_per_night",
+    "avg_erections_per_night",
+  );
+  const avgDurPerNightIdx = findCol(
+    "average_total_duration_of_all_nocturnal_erections_per_night",
+    "avg_duration_per_night",
+  );
 
   if (nightsIdx === -1) throw new Error("Missing column: number_of_recordings_with_nocturnal_or_morning_erections");
   if (erIdx === -1) throw new Error("Missing column for erection count (tried: total_number_of_nocturnal_and_morning_erections, total_nocturnal_erections)");
@@ -130,6 +173,7 @@ export function parseSnapshotFile(fileBuffer: Buffer, _filename: string): Parsed
   const totalNights = parseInt(values[nightsIdx], 10);
   const totalErections = parseInt(values[erIdx], 10);
   const totalDurationSec = parseHmsToSeconds(values[durIdx]);
+  const numberOfRecordings = recIdx !== -1 ? parseInt(values[recIdx], 10) : totalNights;
 
   if (isNaN(totalNights)) throw new Error("Invalid total_nights value");
   if (isNaN(totalErections)) throw new Error("Invalid erection count value");
@@ -139,6 +183,11 @@ export function parseSnapshotFile(fileBuffer: Buffer, _filename: string): Parsed
     total_nights: totalNights,
     total_erections: totalErections,
     total_duration_sec: totalDurationSec,
+    number_of_recordings: isNaN(numberOfRecordings) ? totalNights : numberOfRecordings,
+    erectile_fitness_score: fitnessIdx !== -1 ? parseOptionalFloat(values[fitnessIdx]) : null,
+    avg_firmness_nocturnal: firmnessIdx !== -1 ? parseOptionalFloat(values[firmnessIdx]) : null,
+    avg_erections_per_night: avgErPerNightIdx !== -1 ? parseOptionalFloat(values[avgErPerNightIdx]) : null,
+    avg_duration_per_night_sec: avgDurPerNightIdx !== -1 ? parseOptionalHms(values[avgDurPerNightIdx]) : null,
   };
 }
 
@@ -162,10 +211,18 @@ export async function importSnapshotAndDerive(
   }
 
   const { rows: insertedRows } = await pool.query(
-    `INSERT INTO erection_summary_snapshots (sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds, original_filename)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO erection_summary_snapshots (
+       sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds,
+       number_of_recordings, erectile_fitness_score, avg_firmness_nocturnal, avg_erections_per_night, avg_duration_per_night_sec,
+       original_filename
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
-    [parsed.sha256, sessionDate, parsed.total_nights, parsed.total_erections, parsed.total_duration_sec, originalFilename],
+    [
+      parsed.sha256, sessionDate, parsed.total_nights, parsed.total_erections, parsed.total_duration_sec,
+      parsed.number_of_recordings, parsed.erectile_fitness_score, parsed.avg_firmness_nocturnal, parsed.avg_erections_per_night, parsed.avg_duration_per_night_sec,
+      originalFilename,
+    ],
   );
   const sNew = rowToSnapshot(insertedRows[0]);
 
@@ -178,28 +235,39 @@ export async function importSnapshotAndDerive(
   );
 
   if (prevRows.length === 0) {
-    await upsertMeasuredSession(
-      sessionDate,
-      sNew.total_erections,
-      sNew.total_duration_sec,
-      sNew.id,
-      false,
-    );
-
-    await recomputeGapsAndProxy(sessionDate);
-
-    return {
-      snapshot: sNew,
-      derived: {
+    if (sNew.total_nights === 1) {
+      await upsertMeasuredSession(
         sessionDate,
-        deltaErections: sNew.total_erections,
-        deltaDurationSec: sNew.total_duration_sec,
-        multiNightCombined: false,
-        deltaNights: sNew.total_nights,
-      },
-      note: "baseline_measured",
-      gapsFilled: 0,
-    };
+        sNew.total_erections,
+        sNew.total_duration_sec,
+        sNew.id,
+        false,
+      );
+
+      await recomputeGapsAndProxy(sessionDate);
+
+      return {
+        snapshot: sNew,
+        derived: {
+          sessionDate,
+          deltaErections: sNew.total_erections,
+          deltaDurationSec: sNew.total_duration_sec,
+          multiNightCombined: false,
+          deltaNights: 1,
+        },
+        note: "baseline_measured",
+        gapsFilled: 0,
+      };
+    } else {
+      await recomputeGapsAndProxy(sessionDate);
+
+      return {
+        snapshot: sNew,
+        derived: null,
+        note: "baseline_seed_no_session",
+        gapsFilled: 0,
+      };
+    }
   }
 
   const sPrev = rowToSnapshot(prevRows[0]);
@@ -429,5 +497,10 @@ function rowToSnapshot(row: Record<string, unknown>): Snapshot {
     total_nights: Number(row.total_nights),
     total_erections: Number(row.total_nocturnal_erections),
     total_duration_sec: Number(row.total_nocturnal_duration_seconds),
+    number_of_recordings: Number(row.number_of_recordings ?? row.total_nights),
+    erectile_fitness_score: row.erectile_fitness_score != null ? Number(row.erectile_fitness_score) : null,
+    avg_firmness_nocturnal: row.avg_firmness_nocturnal != null ? Number(row.avg_firmness_nocturnal) : null,
+    avg_erections_per_night: row.avg_erections_per_night != null ? Number(row.avg_erections_per_night) : null,
+    avg_duration_per_night_sec: row.avg_duration_per_night_sec != null ? Number(row.avg_duration_per_night_sec) : null,
   };
 }

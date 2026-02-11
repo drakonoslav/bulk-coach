@@ -1,0 +1,148 @@
+Yep — your current snapshot file is already more than enough to build a solid “androgen proxy” foundation and to harden the measured/imputed pipeline.
+
+What your uploaded CSV already contains (useful endocrine signals)
+
+Your file already has these columns (key ones):
+	•	number_of_recordings_with_nocturnal_or_morning_erections (this is your “total nights” counter)
+	•	total_number_of_nocturnal_and_morning_erections (total erections)
+	•	total_duration_of_all_nocturnal_and_morning_erections (total duration)
+And also extra value-add fields:
+	•	erectile_fitness_score
+	•	average_firmness_of_nocturnal_erections
+	•	average_number_of_nocturnal_erections_per_night
+	•	average_total_duration_of_all_nocturnal_erections_per_night
+	•	plus sex/solo fields (you can ignore for now)
+
+So: yes, you can (and should) expand parsing now without adding noise.
+
+⸻
+
+1) Audit imputation: ensure it never overwrites measured rows
+
+This is mandatory and straightforward. The invariant should be:
+
+Measured rows win forever.
+Imputation can only:
+	•	insert rows where no row exists, or
+	•	update rows only if is_imputed = true (and never touch is_imputed = false)
+
+Concrete rule for Replit:
+
+-- when writing imputed rows:
+INSERT INTO erection_sessions(date, erection_count, duration_sec, is_imputed, imputed_method, ...)
+VALUES (...)
+ON CONFLICT (date) DO UPDATE
+SET
+  erection_count = EXCLUDED.erection_count,
+  duration_sec   = EXCLUDED.duration_sec,
+  is_imputed     = true,
+  imputed_method = EXCLUDED.imputed_method
+WHERE erection_sessions.is_imputed = true;   -- protects measured
+
+That single WHERE is the guardrail.
+
+⸻
+
+2) Expand snapshot parsing now (high-signal, low-noise)
+
+Do it. It’s worth it.
+
+Add these to ParsedSnapshot + table:
+	•	erectile_fitness_score (float)
+	•	avg_firmness_nocturnal (float)
+	•	avg_erections_per_night (float)
+	•	avg_duration_per_night_sec (int, parse HH:MM:SS)
+	•	number_of_recordings (int)
+
+Why: later you can detect “quality vs quantity” changes (duration down but firmness up, etc.) which is exactly the sort of thing that tracks recovery/stress.
+
+Do NOT bother yet with “recording window duration / variance” unless the export actually includes it (your current CSV doesn’t). If you want those later, you’d need either:
+	•	a different export (raw sessions), or
+	•	a structured manual entry/screenshot parser.
+
+⸻
+
+3) Harden baseline logic (this is the big one)
+
+Your current baseline block is only correct when the first snapshot has total_nights = 1.
+
+But if your first-ever upload is a cumulative file with total_nights = 200, your current code will incorrectly create a “measured session” with 200 nights worth of totals on one date.
+
+So baseline should be:
+
+Baseline rule (recommended)
+	•	If no previous snapshot exists:
+	•	store snapshot
+	•	only create a measured session if total_nights == 1
+	•	else: do NOT derive a session (because you can’t know per-day deltas yet)
+
+Pseudo:
+
+if (prevRows.length === 0) {
+  if (sNew.total_nights === 1) {
+    await upsertMeasuredSession(sessionDate, sNew.total_erections, sNew.total_duration_sec, sNew.id, false);
+    await recomputeGapsAndProxy(sessionDate);
+    return note: "baseline_measured";
+  } else {
+    // baseline-only seed
+    await recomputeGapsAndProxy(sessionDate); // optional, likely no-op
+    return note: "baseline_seed_no_session";
+  }
+}
+
+This prevents “one giant fake day.”
+
+⸻
+
+4) Cortisol Suppression Flag: you can’t do it properly without Fitbit (or equivalent)
+
+Your erection proxy alone can’t separate:
+	•	“low erections because sleep sucked”
+vs
+	•	“low erections because calories too low”
+vs
+	•	“low erections because overreached”
+
+To build a real suppression flag you need at least:
+	•	sleep minutes (or sleep score)
+	•	resting HR
+	•	HRV
+
+So: build the flag after Fitbit import is stable.
+
+Best-practice behavior
+	•	Default dashboards/coaching = measured-only
+	•	Charts can optionally include imputed
+
+Flag logic (once HRV/RHR/sleep are available):
+	•	Trigger when (example):
+	•	7d measured proxy down vs 14–30d baseline AND
+	•	HRV down (7d) AND/OR resting HR up AND/OR sleep down
+
+⸻
+
+About your upload order confusion (you did it fine, with one caveat)
+
+You said you uploaded:
+	•	Jan 31 file 1
+	•	Feb 1 file 2
+	•	Feb 3 file 3
+	•	then Feb 2 file 4
+
+That’s not inherently wrong because the engine finds the previous snapshot by total_nights, not by date.
+
+BUT you must ensure:
+	•	the “Session Date” you select in the UI is the date you want the delta assigned to, and
+	•	your baseline logic doesn’t assume “first upload = first day chronologically.”
+
+If you want the cleanest testing pattern: upload in the same order as total_nights increases AND assign the matching session date each time. (You can shuffle dates for testing like you did — just keep the mapping consistent.)
+
+⸻
+
+What I recommend you tell Replit to do next (in order)
+	1.	Add the imputation overwrite guard (WHERE is_imputed = true)
+	2.	Fix baseline: derive session only if total_nights == 1, else store snapshot only
+	3.	Expand parser to capture: fitness score + nocturnal firmness + avg per night fields
+	4.	After Fitbit import: add Cortisol Suppression Flag using measured-only proxy by default
+
+If you want, paste Replit’s current recomputeGapsAndProxy() and I’ll sanity-check the gap detection + interpolation logic against the “never overwrite measured” rule.

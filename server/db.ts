@@ -87,9 +87,20 @@ export async function initDb(): Promise<void> {
       total_nights INTEGER NOT NULL,
       total_nocturnal_erections INTEGER NOT NULL DEFAULT 0,
       total_nocturnal_duration_seconds INTEGER NOT NULL DEFAULT 0,
+      number_of_recordings INTEGER,
+      erectile_fitness_score REAL,
+      avg_firmness_nocturnal REAL,
+      avg_erections_per_night REAL,
+      avg_duration_per_night_sec INTEGER,
       original_filename TEXT
     );
   `);
+
+  await pool.query(`ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS number_of_recordings INTEGER`);
+  await pool.query(`ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS erectile_fitness_score REAL`);
+  await pool.query(`ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS avg_firmness_nocturnal REAL`);
+  await pool.query(`ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS avg_erections_per_night REAL`);
+  await pool.query(`ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS avg_duration_per_night_sec INTEGER`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS erection_sessions (
