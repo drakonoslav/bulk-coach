@@ -164,7 +164,7 @@ async function upsertDailyLog(row: Record<string, unknown>): Promise<"insert" | 
       updated_at = NOW()`,
     [
       day,
-      row.morning_weight_lb ?? 0,
+      row.morning_weight_lb ?? null,
       row.evening_weight_lb ?? null,
       row.waist_in ?? null,
       row.bf_morning_r1 ?? null,
@@ -185,7 +185,7 @@ async function upsertDailyLog(row: Record<string, unknown>): Promise<"insert" | 
       row.active_zone_minutes ?? null,
       row.lift_done ?? false,
       row.deload_week ?? false,
-      row.adherence ?? 1.0,
+      row.adherence ?? null,
       row.performance_note ?? null,
       row.notes ?? null,
       row.energy_burned_kcal ?? null,

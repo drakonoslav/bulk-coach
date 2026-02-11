@@ -4,7 +4,7 @@ import multer from "multer";
 import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
-import { importFitbitTakeout, getDiagnostics } from "./fitbit-takeout";
+import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import {
   parseSnapshotFile,
   importSnapshotAndDerive,
@@ -102,7 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.cardioMin ?? null,
           b.liftDone ?? false,
           b.deloadWeek ?? false,
-          b.adherence ?? 1.0,
+          b.adherence ?? null,
           b.performanceNote ?? null,
           b.notes ?? null,
         ],
@@ -267,7 +267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
       }
-      const diagData = getDiagnostics(date);
+      const diagData = await getDiagnosticsFromDB(date);
       const { rows: dbRows } = await pool.query(
         `SELECT day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
           zone1_min, zone2_min, zone3_min, below_zone1_min, morning_weight_lb, waist_in, adherence, notes

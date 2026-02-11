@@ -8,7 +8,7 @@ export async function initDb(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS daily_log (
       day TEXT PRIMARY KEY,
-      morning_weight_lb REAL NOT NULL DEFAULT 0,
+      morning_weight_lb REAL,
       evening_weight_lb REAL,
       waist_in REAL,
 
@@ -34,7 +34,7 @@ export async function initDb(): Promise<void> {
       lift_done BOOLEAN DEFAULT false,
       deload_week BOOLEAN DEFAULT false,
 
-      adherence REAL DEFAULT 1.0,
+      adherence REAL,
       performance_note TEXT,
       notes TEXT,
 
@@ -99,6 +99,65 @@ export async function initDb(): Promise<void> {
     );
   `);
   await pool.query(`ALTER TABLE fitbit_takeout_imports ADD COLUMN IF NOT EXISTS fitbit_root_prefix TEXT`);
+
+  await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP NOT NULL`);
+  await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP DEFAULT`);
+  await pool.query(`ALTER TABLE daily_log ALTER COLUMN adherence DROP DEFAULT`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_daily_sources (
+      date TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      source TEXT NOT NULL,
+      import_id TEXT,
+      file_path TEXT,
+      rows_consumed INTEGER DEFAULT 0,
+      value NUMERIC,
+      PRIMARY KEY (date, metric)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_import_conflicts (
+      id SERIAL PRIMARY KEY,
+      import_id TEXT,
+      date TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      csv_value NUMERIC,
+      json_value NUMERIC,
+      chosen_source TEXT NOT NULL,
+      file_path_csv TEXT,
+      file_path_json TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_sleep_bucketing (
+      id SERIAL PRIMARY KEY,
+      import_id TEXT,
+      date TEXT NOT NULL,
+      sleep_end_raw TEXT,
+      sleep_end_local TEXT,
+      bucket_date TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_import_file_contributions (
+      id SERIAL PRIMARY KEY,
+      import_id TEXT,
+      metric TEXT NOT NULL,
+      source TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      rows_consumed INTEGER DEFAULT 0,
+      days_touched INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS erection_summary_snapshots (

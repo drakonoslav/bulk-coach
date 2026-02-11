@@ -77,28 +77,105 @@ let lastTimezone: string = "America/New_York";
 let lastFitbitRoot: string | null = null;
 let lastImportSummary: ImportSummary | null = null;
 
-export function getDiagnostics(date: string): {
+export async function getDiagnosticsFromDB(date: string): Promise<{
   date: string;
-  diagnostics: DiagnosticDay | null;
-  neighbors: Record<string, DiagnosticDay | null>;
+  sourceAttribution: Record<string, { source: string; file_path: string; rows_consumed: number; value: number | null }>;
+  neighbors: Record<string, Record<string, { source: string; file_path: string; rows_consumed: number; value: number | null }>>;
+  sleepBucketing: Array<{ sleep_end_raw: string; sleep_end_local: string; bucket_date: string; minutes: number; source: string }>;
+  neighborSleepBucketing: Record<string, Array<{ sleep_end_raw: string; sleep_end_local: string; bucket_date: string; minutes: number; source: string }>>;
+  conflicts: Array<{ metric: string; csv_value: number; json_value: number; chosen_source: string; file_path_csv: string | null; file_path_json: string | null }>;
   timezoneUsed: string;
   fitbitRootPrefix: string | null;
   sleepBucketRule: string;
   importSummary: ImportSummary | null;
-  dbValues: Record<string, unknown> | null;
-} {
-  const diag = lastDiagnostics?.get(date) ?? null;
-  const prev = lastDiagnostics?.get(shiftDate(date, -1)) ?? null;
-  const next = lastDiagnostics?.get(shiftDate(date, 1)) ?? null;
+  dbValues: Record<string, unknown>;
+}> {
+  const prevDate = shiftDate(date, -1);
+  const nextDate = shiftDate(date, 1);
+  const threeDates = [prevDate, date, nextDate];
+
+  const { rows: sourceRows } = await pool.query(
+    `SELECT date, metric, source, file_path, rows_consumed, value FROM fitbit_daily_sources WHERE date = ANY($1) ORDER BY date, metric`,
+    [threeDates],
+  );
+
+  const buildSourceMap = (targetDate: string) => {
+    const map: Record<string, { source: string; file_path: string; rows_consumed: number; value: number | null }> = {};
+    for (const r of sourceRows) {
+      if (r.date === targetDate) {
+        map[r.metric] = { source: r.source, file_path: r.file_path, rows_consumed: r.rows_consumed, value: r.value != null ? parseFloat(r.value) : null };
+      }
+    }
+    return map;
+  };
+
+  const { rows: sleepRows } = await pool.query(
+    `SELECT date, sleep_end_raw, sleep_end_local, bucket_date, minutes, source FROM fitbit_sleep_bucketing WHERE date = ANY($1) ORDER BY date`,
+    [threeDates],
+  );
+
+  const buildSleepList = (targetDate: string) =>
+    sleepRows.filter((r: any) => r.date === targetDate).map((r: any) => ({
+      sleep_end_raw: r.sleep_end_raw, sleep_end_local: r.sleep_end_local,
+      bucket_date: r.bucket_date, minutes: r.minutes, source: r.source,
+    }));
+
+  const { rows: conflictRows } = await pool.query(
+    `SELECT metric, csv_value, json_value, chosen_source, file_path_csv, file_path_json FROM fitbit_import_conflicts WHERE date = $1`,
+    [date],
+  );
+
+  const { rows: importRows } = await pool.query(
+    `SELECT timezone, fitbit_root_prefix, notes FROM fitbit_takeout_imports ORDER BY uploaded_at DESC LIMIT 1`,
+  );
+  const lastImport = importRows[0] ?? null;
+  const tz = lastImport?.timezone ?? lastTimezone;
+  const rootPrefix = lastImport?.fitbit_root_prefix ?? lastFitbitRoot;
+
+  let importSummary: ImportSummary | null = lastImportSummary;
+  if (!importSummary && lastImport?.notes) {
+    try {
+      const n = JSON.parse(lastImport.notes);
+      if (n.conflictsCount != null) {
+        const { rows: summaryRows } = await pool.query(
+          `SELECT
+            COUNT(DISTINCT date) FILTER (WHERE source = 'csv') AS csv_only,
+            COUNT(DISTINCT date) FILTER (WHERE source = 'json') AS json_only,
+            COUNT(DISTINCT date) FILTER (WHERE source = 'both') AS both_src
+           FROM fitbit_daily_sources`,
+        );
+        const s = summaryRows[0];
+        importSummary = {
+          days_with_csv: parseInt(s.csv_only) || 0,
+          days_with_json: parseInt(s.json_only) || 0,
+          days_with_both: parseInt(s.both_src) || 0,
+          conflicts_count: n.conflictsCount,
+        };
+      }
+    } catch {}
+  }
+
   return {
     date,
-    diagnostics: diag,
-    neighbors: { [shiftDate(date, -1)]: prev, [shiftDate(date, 1)]: next },
-    timezoneUsed: lastTimezone,
-    fitbitRootPrefix: lastFitbitRoot,
+    sourceAttribution: buildSourceMap(date),
+    neighbors: {
+      [prevDate]: buildSourceMap(prevDate),
+      [nextDate]: buildSourceMap(nextDate),
+    },
+    sleepBucketing: buildSleepList(date),
+    neighborSleepBucketing: {
+      [prevDate]: buildSleepList(prevDate),
+      [nextDate]: buildSleepList(nextDate),
+    },
+    conflicts: conflictRows.map((r: any) => ({
+      metric: r.metric, csv_value: parseFloat(r.csv_value), json_value: parseFloat(r.json_value),
+      chosen_source: r.chosen_source, file_path_csv: r.file_path_csv, file_path_json: r.file_path_json,
+    })),
+    timezoneUsed: tz,
+    fitbitRootPrefix: rootPrefix,
     sleepBucketRule: "wake_date: sleep_end (UTC) + offset → local datetime → DATE(local) = bucket_date. Multiple segments on same wake-date are summed.",
-    importSummary: lastImportSummary,
-    dbValues: null,
+    importSummary,
+    dbValues: {},
   };
 }
 
@@ -942,9 +1019,9 @@ export async function importFitbitTakeout(
       );
     } else {
       await pool.query(
-        `INSERT INTO daily_log (day, morning_weight_lb, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
+        `INSERT INTO daily_log (day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
           zone1_min, zone2_min, zone3_min, below_zone1_min, updated_at)
-         VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (day) DO UPDATE SET
            steps = COALESCE($2, daily_log.steps),
            cardio_min = COALESCE($3, daily_log.cardio_min),
@@ -983,6 +1060,8 @@ export async function importFitbitTakeout(
       JSON.stringify({ filePatterns, conflictsCount: conflicts.length, filesSeen, filesParsed })],
   );
 
+  await persistDiagnosticsToDB(importId, diags, conflicts);
+
   console.log(`[takeout] Import complete: ${daysInserted} inserted, ${daysUpdated} updated, ${rowsSkipped} skipped, ${conflicts.length} conflicts resolved`);
 
   return {
@@ -1004,6 +1083,76 @@ export async function importFitbitTakeout(
     sleepBucketRule: "wake_date: sleep_end (UTC) + offset → local datetime → DATE(local) = bucket_date",
     importSummary: lastImportSummary!,
   };
+}
+
+async function persistDiagnosticsToDB(
+  importId: string,
+  diags: Map<string, DiagnosticDay>,
+  conflicts: ConflictEntry[],
+): Promise<void> {
+  const metrics: Metric[] = ["steps", "calories", "activeMinutes", "zones", "restingHr", "sleep"];
+  const metricValueKey: Record<Metric, keyof DayBucket> = {
+    steps: "steps", calories: "energyBurnedKcal", activeMinutes: "activeZoneMinutes",
+    zones: "zone1Min", restingHr: "restingHr", sleep: "sleepMinutes",
+  };
+
+  const fileContribs = new Map<string, { metric: string; source: string; rows: number; days: Set<string> }>();
+
+  for (const [date, d] of diags) {
+    for (const m of metrics) {
+      const src = d.source[m];
+      if (src === "none") continue;
+      const val = d.computedValues[metricValueKey[m]] ?? null;
+      const filePaths = d.rawFiles[m].join(", ");
+      const rows = d.rawRowCounts[m];
+
+      await pool.query(
+        `INSERT INTO fitbit_daily_sources (date, metric, source, import_id, file_path, rows_consumed, value)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (date, metric) DO UPDATE SET
+           source = $3, import_id = $4, file_path = $5, rows_consumed = $6, value = $7`,
+        [date, m, src, importId, filePaths, rows, val],
+      );
+
+      for (const fp of d.rawFiles[m]) {
+        const key = `${m}|${src === "both" ? "csv" : src}|${fp}`;
+        if (!fileContribs.has(key)) {
+          fileContribs.set(key, { metric: m, source: src === "both" ? "csv" : src, rows: 0, days: new Set() });
+        }
+        const fc = fileContribs.get(key)!;
+        fc.rows += rows;
+        fc.days.add(date);
+      }
+    }
+
+    for (const sb of d.sleepBucketing) {
+      await pool.query(
+        `INSERT INTO fitbit_sleep_bucketing (import_id, date, sleep_end_raw, sleep_end_local, bucket_date, minutes, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [importId, date, sb.sleep_end_raw, sb.sleep_end_local, sb.bucket_date, sb.minutes, sb.source],
+      );
+    }
+  }
+
+  for (const [, fc] of fileContribs) {
+    await pool.query(
+      `INSERT INTO fitbit_import_file_contributions (import_id, metric, source, file_path, rows_consumed, days_touched)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [importId, fc.metric, fc.source, fc.metric, fc.rows, fc.days.size],
+    );
+  }
+
+  for (const c of conflicts) {
+    const csvFiles = diags.get(c.date)?.rawFiles[c.metric]?.filter(f => f.endsWith(".csv")).join(", ") ?? null;
+    const jsonFiles = diags.get(c.date)?.rawFiles[c.metric]?.filter(f => f.endsWith(".json")).join(", ") ?? null;
+    await pool.query(
+      `INSERT INTO fitbit_import_conflicts (import_id, date, metric, csv_value, json_value, chosen_source, file_path_csv, file_path_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [importId, c.date, c.metric, c.csvValue, c.jsonValue, c.resolution, csvFiles, jsonFiles],
+    );
+  }
+
+  console.log(`[takeout] Persisted diagnostics: ${diags.size} day-sources, ${conflicts.length} conflicts, sleep bucketing entries`);
 }
 
 async function recomputeRangeSpan(minDay: string, maxDay: string): Promise<void> {
