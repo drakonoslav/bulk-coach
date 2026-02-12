@@ -841,34 +841,6 @@ export default function LogScreen() {
               </View>
             );
           })()}
-          <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4, fontFamily: "Rubik_400Regular" }}>
-            Legacy bed/wake below (kept for backward compat)
-          </Text>
-          <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <Text style={styles.timeLabel}>Bedtime</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={sleepStart}
-                onChangeText={setSleepStart}
-                placeholder="22:30"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
-            <Ionicons name="arrow-forward" size={16} color={Colors.textTertiary} style={{ marginTop: 24 }} />
-            <View style={styles.timeField}>
-              <Text style={styles.timeLabel}>Wake Up</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={sleepEnd}
-                onChangeText={setSleepEnd}
-                placeholder="06:30"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
-          </View>
           <View style={styles.inputGroup}>
             <View style={styles.inputLabel}>
               <Ionicons name="refresh-outline" size={16} color={Colors.secondary} />

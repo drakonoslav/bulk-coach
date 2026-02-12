@@ -48,6 +48,11 @@ interface DayBucket {
   restingHr: number | null;
   sleepMinutes: number | null;
   hrv: number | null;
+  sleepStartTime: string | null;
+  sleepEndTime: string | null;
+  sleepLatencyMin: number | null;
+  sleepWasoMin: number | null;
+  tossedMinutes: number | null;
 }
 
 interface SleepBucketEntry {
@@ -214,7 +219,16 @@ function emptyBucket(): DayBucket {
     zone1Min: null, zone2Min: null, zone3Min: null, belowZone1Min: null,
     activeZoneMinutes: null, cardioMin: null,
     restingHr: null, sleepMinutes: null, hrv: null,
+    sleepStartTime: null, sleepEndTime: null,
+    sleepLatencyMin: null, sleepWasoMin: null, tossedMinutes: null,
   };
+}
+
+function extractTimeHHMM(dtStr: string | null): string | null {
+  if (!dtStr) return null;
+  const m = dtStr.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
 }
 
 function emptyDiagnostic(): DiagnosticDay {
@@ -830,6 +844,11 @@ function parseSleepJSON(
       }
       const b = ensureBucket(buckets, date);
       b.sleepMinutes = (b.sleepMinutes || 0) + minsVal;
+      if (!b.sleepStartTime && item.startTime) b.sleepStartTime = item.startTime;
+      if (!b.sleepEndTime && item.endTime) b.sleepEndTime = item.endTime;
+      if (b.sleepLatencyMin == null && item.minutesToFallAsleep != null) b.sleepLatencyMin = parseInt(item.minutesToFallAsleep, 10) || null;
+      if (b.sleepWasoMin == null && item.minutesAwake != null) b.sleepWasoMin = parseInt(item.minutesAwake, 10) || null;
+      if (b.tossedMinutes == null && item.restlessDuration != null) b.tossedMinutes = parseInt(item.restlessDuration, 10) || null;
       d.rawRowCounts.sleep++;
       d.source.sleep = d.source.sleep === "csv" ? "both" : "json";
       count++;
@@ -1102,21 +1121,23 @@ export async function importFitbitTakeout(
     if (overwriteFields) {
       await pool.query(
         `INSERT INTO daily_log (day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
-          zone1_min, zone2_min, zone3_min, below_zone1_min, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+          zone1_min, zone2_min, zone3_min, below_zone1_min, actual_bed_time, actual_wake_time, sleep_latency_min, sleep_waso_min, tossed_minutes, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
          ON CONFLICT (day) DO UPDATE SET
            steps = $2, cardio_min = $3, active_zone_minutes = $4, sleep_minutes = $5,
            energy_burned_kcal = $6, resting_hr = $7, hrv = $8,
            zone1_min = $9, zone2_min = $10, zone3_min = $11, below_zone1_min = $12,
+           actual_bed_time = $13, actual_wake_time = $14, sleep_latency_min = $15, sleep_waso_min = $16, tossed_minutes = $17,
            updated_at = NOW()`,
         [date, b.steps, b.cardioMin, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr, b.hrv,
-          b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min],
+          b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min,
+          extractTimeHHMM(b.sleepStartTime), extractTimeHHMM(b.sleepEndTime), b.sleepLatencyMin, b.sleepWasoMin, b.tossedMinutes],
       );
     } else {
       await pool.query(
         `INSERT INTO daily_log (day, steps, cardio_min, active_zone_minutes, sleep_minutes, energy_burned_kcal, resting_hr, hrv,
-          zone1_min, zone2_min, zone3_min, below_zone1_min, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+          zone1_min, zone2_min, zone3_min, below_zone1_min, actual_bed_time, actual_wake_time, sleep_latency_min, sleep_waso_min, tossed_minutes, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
          ON CONFLICT (day) DO UPDATE SET
            steps = COALESCE($2, daily_log.steps),
            cardio_min = COALESCE($3, daily_log.cardio_min),
@@ -1129,9 +1150,15 @@ export async function importFitbitTakeout(
            zone2_min = COALESCE($10, daily_log.zone2_min),
            zone3_min = COALESCE($11, daily_log.zone3_min),
            below_zone1_min = COALESCE($12, daily_log.below_zone1_min),
+           actual_bed_time = COALESCE($13, daily_log.actual_bed_time),
+           actual_wake_time = COALESCE($14, daily_log.actual_wake_time),
+           sleep_latency_min = COALESCE($15, daily_log.sleep_latency_min),
+           sleep_waso_min = COALESCE($16, daily_log.sleep_waso_min),
+           tossed_minutes = COALESCE($17, daily_log.tossed_minutes),
            updated_at = NOW()`,
         [date, b.steps, b.cardioMin, b.activeZoneMinutes, b.sleepMinutes, b.energyBurnedKcal, b.restingHr, b.hrv,
-          b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min],
+          b.zone1Min, b.zone2Min, b.zone3Min, b.belowZone1Min,
+          extractTimeHHMM(b.sleepStartTime), extractTimeHHMM(b.sleepEndTime), b.sleepLatencyMin, b.sleepWasoMin, b.tossedMinutes],
       );
     }
 
