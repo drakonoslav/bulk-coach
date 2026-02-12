@@ -398,6 +398,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/import/takeout_history/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await pool.query(`DELETE FROM fitbit_takeout_imports WHERE id = $1`, [id]);
+      res.json({ status: "ok" });
+    } catch (err: unknown) {
+      console.error("delete takeout history error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/import/history/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await pool.query(`DELETE FROM fitbit_imports WHERE id = $1`, [id]);
+      res.json({ status: "ok" });
+    } catch (err: unknown) {
+      console.error("delete import history error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const shiftDateStr = (d: string, offset: number): string => {
     const dt = new Date(d + "T12:00:00Z");
     dt.setUTCDate(dt.getUTCDate() + offset);

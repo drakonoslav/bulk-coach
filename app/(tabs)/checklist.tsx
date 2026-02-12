@@ -151,6 +151,25 @@ export default function ChecklistScreen() {
     } catch {}
   }, []);
 
+  const deleteImportRecord = useCallback(async (type: "csv" | "takeout", id: string) => {
+    const baseUrl = getApiUrl();
+    const endpoint = type === "csv" ? `/api/import/history/${id}` : `/api/import/takeout_history/${id}`;
+    try {
+      const res = await fetch(new URL(endpoint, baseUrl).toString(), {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        if (type === "csv") {
+          setImportHistory((prev) => prev.filter((i) => i.id !== id));
+        } else {
+          setTakeoutHistory((prev) => prev.filter((i) => i.id !== id));
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {}
+  }, []);
+
   const loadReadinessAndTemplate = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
@@ -967,6 +986,13 @@ export default function ChecklistScreen() {
                   <Text style={styles.historyDate}>
                     {new Date(item.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </Text>
+                  <Pressable
+                    onPress={() => deleteImportRecord("csv", item.id)}
+                    hitSlop={8}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={Colors.textSecondary} />
+                  </Pressable>
                 </View>
               ))}
             </View>
@@ -1081,6 +1107,13 @@ export default function ChecklistScreen() {
                   <Text style={styles.historyDate}>
                     {new Date(item.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </Text>
+                  <Pressable
+                    onPress={() => deleteImportRecord("takeout", item.id)}
+                    hitSlop={8}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={Colors.textSecondary} />
+                  </Pressable>
                 </View>
               ))}
             </View>
