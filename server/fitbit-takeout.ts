@@ -1088,7 +1088,19 @@ export async function importFitbitTakeout(
     };
   }
 
-  const sortedDates = Array.from(csvBuckets.keys()).sort();
+  const IMPORT_CUTOFF_PRE = "2026-01-01";
+  const sortedDates = Array.from(csvBuckets.keys()).filter(d => d >= IMPORT_CUTOFF_PRE).sort();
+  if (sortedDates.length === 0) {
+    return {
+      status: "no_data",
+      dateRange: null, fitbitRootPrefix: fitbitRoot,
+      filesParsed, filesSeen, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+      rowsSkipped: 0, recomputeRan: false, parseDetails, filePatterns,
+      conflictsDetected: conflicts.slice(0, 50), rowsPerDayDistribution,
+      timezoneUsed: timezone, sleepBucketRule: "wake_date",
+      importSummary: lastImportSummary!,
+    };
+  }
   const minDate = sortedDates[0];
   const maxDate = sortedDates[sortedDates.length - 1];
 
@@ -1102,8 +1114,15 @@ export async function importFitbitTakeout(
   let daysUpdated = 0;
   let rowsSkipped = 0;
 
+  const IMPORT_CUTOFF = "2026-01-01";
+
   for (const [date, b] of csvBuckets.entries()) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      rowsSkipped++;
+      continue;
+    }
+
+    if (date < IMPORT_CUTOFF) {
       rowsSkipped++;
       continue;
     }
