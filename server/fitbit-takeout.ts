@@ -366,6 +366,11 @@ async function extractZipEntries(fileBuffer: Buffer): Promise<Map<string, Buffer
   return entries;
 }
 
+const ROW_CUTOFF_DATE = "2026-01-01";
+function isBeforeCutoff(date: string): boolean {
+  return date < ROW_CUTOFF_DATE;
+}
+
 function trackRowsPerDay(dist: Record<string, number[]>, key: string, dayCounts: Map<string, number>): void {
   if (!dist[key]) dist[key] = [];
   for (const count of dayCounts.values()) {
@@ -392,6 +397,7 @@ function parseStepsCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const val = parseInt(row[stepsCol], 10);
     if (isNaN(val)) continue;
     const b = ensureBucket(buckets, date);
@@ -420,6 +426,7 @@ function parseCaloriesCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const val = parseFloat(row[calCol]);
     if (isNaN(val)) continue;
     const b = ensureBucket(buckets, date);
@@ -450,6 +457,7 @@ function parseActiveMinutesCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const light = lightCol !== -1 ? parseInt(row[lightCol], 10) || 0 : 0;
     const mod = modCol !== -1 ? parseInt(row[modCol], 10) || 0 : 0;
     const very = veryCol !== -1 ? parseInt(row[veryCol], 10) || 0 : 0;
@@ -483,6 +491,7 @@ function parseTimeInZoneCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const zoneType = (zoneCol !== -1 ? row[zoneCol] || "" : "").toUpperCase();
     const b = ensureBucket(buckets, date);
     if (zoneType.includes("LIGHT") || zoneType === "LIGHT") {
@@ -517,6 +526,7 @@ function parseCaloriesInZoneCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const d = ensureDiag(diags, date);
     if (!d.rawFiles.zones.includes(filename)) d.rawFiles.zones.push(filename);
     count++;
@@ -536,6 +546,7 @@ function parseDailyRestingHrCSV(
   for (const row of rows) {
     const date = extractDateFromISO(row[tsCol] || "");
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const val = Math.round(parseFloat(row[bpmCol]));
     if (isNaN(val) || val <= 0) continue;
     ensureBucket(buckets, date).restingHr = val;
@@ -581,6 +592,7 @@ function parseUserSleepsCSV(
       }
     }
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     const b = ensureBucket(buckets, date);
     b.sleepMinutes = (b.sleepMinutes || 0) + mins;
     const d = ensureDiag(diags, date);
@@ -633,6 +645,7 @@ function parseSleepScoreCSV(
       if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
     }
     if (!date) continue;
+    if (isBeforeCutoff(date)) continue;
     if (rhrCol !== -1 && row[rhrCol]) {
       const hr = parseInt(row[rhrCol], 10);
       if (!isNaN(hr) && hr > 0) {
@@ -662,6 +675,7 @@ function parseStepsJSON(
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
+      if (isBeforeCutoff(date)) continue;
       const val = parseInt(item.value, 10);
       if (isNaN(val)) continue;
       jsonDayTotals.set(date, (jsonDayTotals.get(date) || 0) + val);
@@ -700,6 +714,7 @@ function parseCaloriesJSON(
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
+      if (isBeforeCutoff(date)) continue;
       const val = parseFloat(item.value);
       if (isNaN(val)) continue;
       jsonDayTotals.set(date, (jsonDayTotals.get(date) || 0) + val);
@@ -735,6 +750,7 @@ function parseHeartRateZonesJSON(
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
+      if (isBeforeCutoff(date)) continue;
       const zones = item.value?.valuesInZones;
       if (!zones) continue;
       const d = ensureDiag(diags, date);
@@ -772,6 +788,7 @@ function parseRestingHrJSON(
     for (const item of data) {
       const date = parseFitbitDateTime(item.dateTime);
       if (!date) continue;
+      if (isBeforeCutoff(date)) continue;
       const val = item.value?.value ?? item.value;
       if (val == null || val <= 0) continue;
       const hr = Math.round(parseFloat(val));
@@ -810,6 +827,7 @@ function parseSleepJSON(
         date = item.dateOfSleep.match(/^\d{4}-\d{2}-\d{2}/) ? item.dateOfSleep.slice(0, 10) : null;
       }
       if (!date) continue;
+      if (isBeforeCutoff(date)) continue;
       const mins = item.minutesAsleep;
       if (mins == null) continue;
       const minsVal = parseInt(mins, 10);
@@ -927,8 +945,26 @@ export async function importFitbitTakeout(
   const csvRestingHrDays = new Set<string>();
   const csvSleepDays = new Set<string>();
 
+  const CUTOFF_YEAR = 2026;
+  const CUTOFF_DATE = "2026-01-01";
+
+  function fileIsBeforeCutoff(fnLower: string): boolean {
+    const yearMatch = fnLower.match(/(\d{4})/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[1], 10);
+      if (year >= 2000 && year < CUTOFF_YEAR) return true;
+    }
+    const monthMatch = fnLower.match(/(\d{4})-(\d{2})/);
+    if (monthMatch) {
+      const y = parseInt(monthMatch[1], 10);
+      if (y >= 2000 && y < CUTOFF_YEAR) return true;
+    }
+    return false;
+  }
+
   const csvFiles: Array<{ path: string; filename: string; fnLower: string; buf: Buffer }> = [];
   const jsonFiles: Array<{ path: string; filename: string; fnLower: string; buf: Buffer }> = [];
+  let filesSkippedByDate = 0;
 
   for (const [path, buf] of entries.entries()) {
     if (!path.startsWith(fitbitRoot)) continue;
@@ -936,9 +972,15 @@ export async function importFitbitTakeout(
     const fnLower = filename.toLowerCase();
     if (fnLower.endsWith(".txt")) continue;
     filesSeen++;
+    if (fileIsBeforeCutoff(fnLower)) {
+      filesSkippedByDate++;
+      continue;
+    }
     if (fnLower.endsWith(".csv")) csvFiles.push({ path, filename, fnLower, buf });
     else if (fnLower.endsWith(".json")) jsonFiles.push({ path, filename, fnLower, buf });
   }
+
+  console.log(`[takeout] Files: ${filesSeen} seen, ${filesSkippedByDate} skipped (pre-${CUTOFF_YEAR}), ${csvFiles.length} CSV + ${jsonFiles.length} JSON to parse`);
 
   for (const { filename, fnLower, buf } of csvFiles) {
     if (fnLower.startsWith("steps_") && fnLower.endsWith(".csv")) {
