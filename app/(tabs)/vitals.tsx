@@ -307,7 +307,7 @@ export default function VitalsScreen() {
       dryRunForm.append("mode", "merge");
       dryRunForm.append("dry_run", "true");
 
-      const dryRes = await expoFetch(
+      const dryRes = await globalThis.fetch(
         new URL("/api/backup/import", baseUrl).toString(),
         { method: "POST", body: dryRunForm, credentials: "include" },
       );
@@ -355,7 +355,7 @@ export default function VitalsScreen() {
                 importForm.append("mode", "merge");
                 importForm.append("dry_run", "false");
 
-                const importRes = await expoFetch(
+                const importRes = await globalThis.fetch(
                   new URL("/api/backup/import", baseUrl).toString(),
                   { method: "POST", body: importForm, credentials: "include" },
                 );
