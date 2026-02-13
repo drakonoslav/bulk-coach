@@ -285,6 +285,88 @@ export default function ChecklistScreen() {
     }
   };
 
+  const handleTakeoutForceReimport = async (fileUri: string, fileName: string, fileSize: number, webBuf: ArrayBuffer | null) => {
+    setUploadingTakeout(true);
+    setTakeoutProgress("Reimporting with force...");
+    try {
+      const baseUrl = getApiUrl();
+      const CHUNK_SIZE = 5 * 1024 * 1024;
+      const totalChunks = Math.max(1, Math.ceil(fileSize / CHUNK_SIZE));
+      const initRes = await globalThis.fetch(
+        new URL("/api/import/takeout_chunk_init", baseUrl).toString(),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: fileName, totalChunks, fileSize }) }
+      );
+      if (!initRes.ok) throw new Error("Failed to start upload");
+      const { uploadId } = await initRes.json();
+
+      if (Platform.OS === "web") {
+        const arrayBuf = webBuf || await (await globalThis.fetch(fileUri)).arrayBuffer();
+        for (let i = 0; i < totalChunks; i++) {
+          setTakeoutProgress(`Uploading chunk ${i + 1}/${totalChunks}...`);
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, fileSize);
+          const chunkBlob = new Blob([arrayBuf.slice(start, end)]);
+          const fd = new FormData();
+          fd.append("chunk", chunkBlob, `chunk_${i}`);
+          fd.append("uploadId", uploadId);
+          fd.append("chunkIndex", String(i));
+          await globalThis.fetch(new URL("/api/import/takeout_chunk_upload", baseUrl).toString(), { method: "POST", body: fd, credentials: "include" });
+        }
+      } else {
+        const cacheDir = FileSystem.cacheDirectory || "";
+        for (let i = 0; i < totalChunks; i++) {
+          setTakeoutProgress(`Uploading chunk ${i + 1}/${totalChunks}...`);
+          const start = i * CHUNK_SIZE;
+          const length = Math.min(CHUNK_SIZE, fileSize - start);
+          const base64Chunk = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64, position: start, length });
+          const chunkUri = cacheDir + `chunk_${uploadId}_${i}.bin`;
+          await FileSystem.writeAsStringAsync(chunkUri, base64Chunk, { encoding: FileSystem.EncodingType.Base64 });
+          await FileSystem.uploadAsync(new URL("/api/import/takeout_chunk_upload", baseUrl).toString(), chunkUri, {
+            httpMethod: "POST", uploadType: FileSystem.FileSystemUploadType.MULTIPART, fieldName: "chunk", parameters: { uploadId, chunkIndex: String(i) },
+          });
+          await FileSystem.deleteAsync(chunkUri, { idempotent: true });
+        }
+      }
+
+      setTakeoutProgress("Processing ZIP (force reimport)...");
+      const finalRes = await globalThis.fetch(
+        new URL("/api/import/takeout_chunk_finalize", baseUrl).toString(),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uploadId, overwrite_fields: "false", timezone: "America/New_York", force: "true" }) }
+      );
+      if (!finalRes.ok) throw new Error("Server error during reimport");
+      const finalData = await finalRes.json();
+
+      if (finalData.jobId) {
+        let attempts = 0;
+        while (attempts < 120) {
+          await new Promise((r) => setTimeout(r, 3000));
+          attempts++;
+          setTakeoutProgress(`Processing ZIP (${attempts * 3}s elapsed)...`);
+          try {
+            const pollRes = await globalThis.fetch(new URL(`/api/import/takeout_job/${finalData.jobId}`, baseUrl).toString());
+            if (!pollRes.ok) continue;
+            const job = await pollRes.json();
+            if (job.status === "processing") continue;
+            if (job.status === "done") { setLastTakeoutResult(job.result); break; }
+            if (job.status === "error") { Alert.alert("Import Error", job.error || "Processing failed"); return; }
+          } catch {}
+        }
+      } else {
+        setLastTakeoutResult(finalData);
+      }
+
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await loadHistory();
+      await loadReadinessAndTemplate();
+    } catch (err: any) {
+      Alert.alert("Import Error", err?.message || "Reimport failed");
+    } finally {
+      setUploadingTakeout(false);
+      setTakeoutProgress("");
+      setPicking(false);
+    }
+  };
+
   const handleTakeoutImport = async () => {
     if (picking) return;
     setPicking(true);
@@ -408,8 +490,14 @@ export default function ChecklistScreen() {
       const finalData = await doChunkedUpload(asset.uri, asset.name || "takeout.zip", fileSize, webArrayBuf);
 
       if (!finalData.jobId) {
+        if (finalData.status === "duplicate") {
+          Alert.alert("Duplicate File", "This ZIP was previously imported. Reimport with updated parsers?", [
+            { text: "Cancel", style: "cancel" },
+            { text: "Reimport", onPress: () => handleTakeoutForceReimport(asset.uri, asset.name || "takeout.zip", fileSize, webArrayBuf) },
+          ]);
+          return;
+        }
         setLastTakeoutResult(finalData);
-        if (finalData.status === "duplicate") Alert.alert("Duplicate File", "This ZIP has already been imported.");
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await loadHistory();
         return;
@@ -432,9 +520,6 @@ export default function ChecklistScreen() {
           if (job.status === "processing") continue;
           if (job.status === "done") {
             setLastTakeoutResult(job.result);
-            if (job.result?.status === "duplicate") {
-              Alert.alert("Duplicate File", "This ZIP has already been imported.");
-            }
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await loadHistory();
             return;

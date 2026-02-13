@@ -368,7 +368,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const overwriteFields = req.body?.overwrite_fields === "true";
       const timezone = req.body?.timezone || "America/New_York";
-      const result = await importFitbitTakeout(req.file.buffer, req.file.originalname, overwriteFields, timezone);
+      const force = req.body?.force === "true";
+      const result = await importFitbitTakeout(req.file.buffer, req.file.originalname, overwriteFields, timezone, force);
       res.json(result);
     } catch (err: unknown) {
       console.error("fitbit takeout import error:", err);
@@ -420,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/import/takeout_chunk_finalize", async (req: Request, res: Response) => {
     try {
-      const { uploadId, overwrite_fields, timezone } = req.body;
+      const { uploadId, overwrite_fields, timezone, force } = req.body;
       if (!uploadId) {
         return res.status(400).json({ error: "Missing uploadId" });
       }
@@ -450,7 +451,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const fullBuffer = Buffer.concat(chunks);
           const overwriteFieldsBool = overwrite_fields === "true" || overwrite_fields === true;
           const tz = timezone || "America/New_York";
-          const result = await importFitbitTakeout(fullBuffer, meta.filename, overwriteFieldsBool, tz);
+          const forceBool = force === "true" || force === true;
+          const result = await importFitbitTakeout(fullBuffer, meta.filename, overwriteFieldsBool, tz, forceBool);
           fs.rmSync(uploadDir, { recursive: true, force: true });
           jobResults.set(jobId, { status: "done", result });
           setTimeout(() => jobResults.delete(jobId), 600000);

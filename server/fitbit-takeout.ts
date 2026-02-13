@@ -950,24 +950,27 @@ export async function importFitbitTakeout(
   originalFilename: string,
   overwriteFields: boolean = false,
   timezone: string = "America/New_York",
+  force: boolean = false,
 ): Promise<TakeoutImportResult> {
   lastTimezone = timezone;
   const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-  const { rows: existing } = await pool.query(
-    `SELECT id FROM fitbit_takeout_imports WHERE sha256 = $1`,
-    [sha256],
-  );
-  if (existing.length > 0) {
-    return {
-      status: "duplicate",
-      dateRange: null, fitbitRootPrefix: null,
-      filesParsed: 0, filesSeen: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
-      rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
-      conflictsDetected: [], rowsPerDayDistribution: {},
-      timezoneUsed: timezone, sleepBucketRule: "wake_date",
-      importSummary: { days_with_csv: 0, days_with_json: 0, days_with_both: 0, conflicts_count: 0 },
-    };
+  if (!force) {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM fitbit_takeout_imports WHERE sha256 = $1`,
+      [sha256],
+    );
+    if (existing.length > 0) {
+      return {
+        status: "duplicate",
+        dateRange: null, fitbitRootPrefix: null,
+        filesParsed: 0, filesSeen: 0, daysAffected: 0, daysInserted: 0, daysUpdated: 0,
+        rowsSkipped: 0, recomputeRan: false, parseDetails: {}, filePatterns: [],
+        conflictsDetected: [], rowsPerDayDistribution: {},
+        timezoneUsed: timezone, sleepBucketRule: "wake_date",
+        importSummary: { days_with_csv: 0, days_with_json: 0, days_with_both: 0, conflicts_count: 0 },
+      };
+    }
   }
 
   console.log("[takeout] Extracting ZIP entries...");
