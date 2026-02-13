@@ -502,6 +502,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/import/takeout_reset_hashes", async (_req: Request, res: Response) => {
+    try {
+      const { rowCount } = await pool.query(`DELETE FROM fitbit_takeout_imports`);
+      res.json({ status: "ok", cleared: rowCount });
+    } catch (err: unknown) {
+      console.error("reset takeout hashes error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.delete("/api/import/history/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
