@@ -22,6 +22,8 @@ import {
   batchUpsertRrIntervals,
   recomputeHrvBaselines,
   computeSessionStrain,
+  computeSessionBiases,
+  analyzeSessionHrv,
   type SleepSummary,
   type VitalsDaily,
   type WorkoutSession,
@@ -1296,10 +1298,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       w.session_strain_score = w.session_strain_score ?? strainScore;
       w.session_type_tag = w.session_type_tag ?? typeTag;
+      const biases = computeSessionBiases(w.workout_type || "other", w.avg_hr, w.max_hr, w.duration_minutes);
+      w.strength_bias = w.strength_bias ?? biases.strength_bias;
+      w.cardio_bias = w.cardio_bias ?? biases.cardio_bias;
+      w.pre_session_rmssd = w.pre_session_rmssd ?? null;
+      w.suppression_depth_pct = w.suppression_depth_pct ?? null;
+      w.rebound_bpm_per_min = w.rebound_bpm_per_min ?? null;
+      w.baseline_window_seconds = w.baseline_window_seconds ?? 120;
       await upsertWorkoutSession(w);
-      res.json({ ok: true, session_id: w.session_id, strain: strainScore, typeTag });
+      res.json({ ok: true, session_id: w.session_id, strain: strainScore, typeTag, ...biases });
     } catch (err) {
       console.error("canonical workout upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/:sessionId/analyze-hrv", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const result = await analyzeSessionHrv(sessionId);
+      res.json({ ok: true, session_id: sessionId, ...result });
+    } catch (err: any) {
+      console.error("session hrv analysis error:", err);
+      if (err.message?.includes("not found")) {
+        return res.status(404).json({ error: err.message });
+      }
       res.status(500).json({ error: "Internal server error" });
     }
   });
