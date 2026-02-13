@@ -465,7 +465,7 @@ export default function ChecklistScreen() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ uploadId, overwrite_fields: "false", timezone: "America/New_York" }),
+            body: JSON.stringify({ uploadId, overwrite_fields: "false", timezone: "America/New_York", force: "true" }),
           }
         );
         if (!finalRes.ok) {
@@ -490,13 +490,6 @@ export default function ChecklistScreen() {
       const finalData = await doChunkedUpload(asset.uri, asset.name || "takeout.zip", fileSize, webArrayBuf);
 
       if (!finalData.jobId) {
-        if (finalData.status === "duplicate") {
-          Alert.alert("Duplicate File", "This ZIP was previously imported. Reimport with updated parsers?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Reimport", onPress: () => handleTakeoutForceReimport(asset.uri, asset.name || "takeout.zip", fileSize, webArrayBuf) },
-          ]);
-          return;
-        }
         setLastTakeoutResult(finalData);
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await loadHistory();
