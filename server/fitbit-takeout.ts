@@ -563,9 +563,7 @@ function parseHrvDetailsCSV(
   buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
   filename: string,
 ): number {
-  const SLEEP_START_MIN = 20 * 60;
-  const SLEEP_END_MIN = 8 * 60;
-  const COVERAGE_MIN = 0.5;
+  const COVERAGE_MIN = 0.3;
 
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date", "datetime");
@@ -575,6 +573,8 @@ function parseHrvDetailsCSV(
 
   const dayReadings = new Map<string, number[]>();
   let totalRows = 0;
+  let skippedCoverage = 0;
+  let skippedParse = 0;
 
   for (const row of rows) {
     const tsRaw = (row[tsCol] || "").trim();
@@ -584,27 +584,21 @@ function parseHrvDetailsCSV(
 
     if (covCol !== -1) {
       const cov = parseFloat(row[covCol]);
-      if (isNaN(cov) || cov < COVERAGE_MIN) continue;
+      if (isNaN(cov) || cov < COVERAGE_MIN) {
+        skippedCoverage++;
+        continue;
+      }
     }
 
     const dateStr = tsRaw.replace("T", " ").slice(0, 19);
     const parts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):?(\d{2})?/);
-    if (!parts) continue;
-    const [, yr, mo, dy, hhStr, mmStr] = parts;
-    const hh = parseInt(hhStr, 10);
-    const mm = parseInt(mmStr, 10);
-    const timeMin = hh * 60 + mm;
-
-    if (!(timeMin >= SLEEP_START_MIN || timeMin <= SLEEP_END_MIN)) continue;
-
-    let bucketDate: string;
-    if (timeMin >= SLEEP_START_MIN) {
-      const d = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(dy));
-      d.setDate(d.getDate() + 1);
-      bucketDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    } else {
-      bucketDate = `${yr}-${mo}-${dy}`;
+    if (!parts) {
+      skippedParse++;
+      continue;
     }
+    const [, yr, mo, dy] = parts;
+
+    const bucketDate = `${yr}-${mo}-${dy}`;
 
     if (isBeforeCutoff(bucketDate)) continue;
 
@@ -613,10 +607,13 @@ function parseHrvDetailsCSV(
     totalRows++;
   }
 
+  console.log(`[hrv-parser] file=${filename} totalRows=${totalRows} skippedCoverage=${skippedCoverage} skippedParse=${skippedParse}`);
+
   let daysSet = 0;
   for (const [date, readings] of dayReadings) {
     if (readings.length === 0) continue;
     const mean = Math.round(readings.reduce((s, v) => s + v, 0) / readings.length * 10) / 10;
+    console.log(`[hrv-parser] date=${date} readings=${readings.length} mean=${mean} file=${filename}`);
     const b = ensureBucket(buckets, date);
     b.hrv = mean;
     const d = ensureDiag(diags, date);
@@ -626,6 +623,7 @@ function parseHrvDetailsCSV(
     daysSet++;
   }
 
+  console.log(`[hrv-parser] totalRows=${totalRows} daysSet=${daysSet} dayReadings=${JSON.stringify(Array.from(dayReadings.keys()))}`);
   return daysSet;
 }
 
@@ -1257,6 +1255,10 @@ export async function importFitbitTakeout(
     }
 
     const isExisting = existingDaySet.has(date);
+
+    if (b.hrv != null) {
+      console.log(`[takeout-upsert] date=${date} hrv=${b.hrv} isExisting=${isExisting} overwrite=${overwriteFields}`);
+    }
 
     if (overwriteFields) {
       await pool.query(
