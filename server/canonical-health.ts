@@ -47,6 +47,12 @@ export interface WorkoutSession {
   session_strain_score: number | null;
   session_type_tag: string | null;
   recovery_slope: number | null;
+  strength_bias: number | null;
+  cardio_bias: number | null;
+  pre_session_rmssd: number | null;
+  suppression_depth_pct: number | null;
+  rebound_bpm_per_min: number | null;
+  baseline_window_seconds: number | null;
   source: string;
 }
 
@@ -138,8 +144,10 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
     `INSERT INTO workout_session
        (session_id, date, start_ts, end_ts, workout_type, duration_minutes,
         avg_hr, max_hr, calories_burned, session_strain_score, session_type_tag,
-        recovery_slope, source, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        recovery_slope, strength_bias, cardio_bias,
+        pre_session_rmssd, suppression_depth_pct, rebound_bpm_per_min,
+        baseline_window_seconds, source, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
      ON CONFLICT (session_id) DO UPDATE SET
        date = EXCLUDED.date,
        start_ts = EXCLUDED.start_ts,
@@ -152,11 +160,19 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
        session_strain_score = COALESCE(EXCLUDED.session_strain_score, workout_session.session_strain_score),
        session_type_tag = COALESCE(EXCLUDED.session_type_tag, workout_session.session_type_tag),
        recovery_slope = COALESCE(EXCLUDED.recovery_slope, workout_session.recovery_slope),
+       strength_bias = COALESCE(EXCLUDED.strength_bias, workout_session.strength_bias),
+       cardio_bias = COALESCE(EXCLUDED.cardio_bias, workout_session.cardio_bias),
+       pre_session_rmssd = COALESCE(EXCLUDED.pre_session_rmssd, workout_session.pre_session_rmssd),
+       suppression_depth_pct = COALESCE(EXCLUDED.suppression_depth_pct, workout_session.suppression_depth_pct),
+       rebound_bpm_per_min = COALESCE(EXCLUDED.rebound_bpm_per_min, workout_session.rebound_bpm_per_min),
+       baseline_window_seconds = COALESCE(EXCLUDED.baseline_window_seconds, workout_session.baseline_window_seconds),
        source = EXCLUDED.source,
        updated_at = NOW()`,
     [w.session_id, w.date, w.start_ts, w.end_ts, w.workout_type, w.duration_minutes,
      w.avg_hr, w.max_hr, w.calories_burned, w.session_strain_score, w.session_type_tag,
-     w.recovery_slope, w.source]
+     w.recovery_slope, w.strength_bias, w.cardio_bias,
+     w.pre_session_rmssd, w.suppression_depth_pct, w.rebound_bpm_per_min,
+     w.baseline_window_seconds, w.source]
   );
 }
 
@@ -404,4 +420,205 @@ export function computeRecoverySlope(
   if (elapsedMin < 1) return null;
 
   return Math.round(((firstHr - lastHr) / elapsedMin) * 100) / 100;
+}
+
+export interface SessionHrvAnalysis {
+  pre_session_rmssd: number | null;
+  suppression_depth_pct: number | null;
+  rebound_bpm_per_min: number | null;
+  baseline_window_seconds: number;
+  baseline_rr_count: number;
+}
+
+export function computeRmssdFromRr(rrIntervalsMs: number[]): number | null {
+  if (rrIntervalsMs.length < 2) return null;
+
+  const filtered = rrIntervalsMs.filter(rr => rr >= 300 && rr <= 2000);
+  if (filtered.length < 2) return null;
+
+  let sumSqDiff = 0;
+  for (let i = 1; i < filtered.length; i++) {
+    const diff = filtered[i] - filtered[i - 1];
+    sumSqDiff += diff * diff;
+  }
+  const rmssd = Math.sqrt(sumSqDiff / (filtered.length - 1));
+  return Math.round(rmssd * 100) / 100;
+}
+
+export function computeSessionBaselineHrv(
+  rrIntervals: WorkoutRrInterval[],
+  sessionStartTs: string,
+  baselineWindowSec: number = 120,
+): SessionHrvAnalysis {
+  const startTime = new Date(sessionStartTs).getTime();
+  if (isNaN(startTime)) {
+    return { pre_session_rmssd: null, suppression_depth_pct: null, rebound_bpm_per_min: null, baseline_window_seconds: baselineWindowSec, baseline_rr_count: 0 };
+  }
+
+  const windowEnd = startTime;
+  const windowStart = startTime - baselineWindowSec * 1000;
+
+  const baselineRr = rrIntervals
+    .filter(r => {
+      const t = new Date(r.ts).getTime();
+      return t >= windowStart && t < windowEnd;
+    })
+    .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+    .map(r => r.rr_ms);
+
+  const preRmssd = computeRmssdFromRr(baselineRr);
+
+  return {
+    pre_session_rmssd: preRmssd,
+    suppression_depth_pct: null,
+    rebound_bpm_per_min: null,
+    baseline_window_seconds: baselineWindowSec,
+    baseline_rr_count: baselineRr.length,
+  };
+}
+
+export function computeSuppressionAndRebound(
+  hrSamples: WorkoutHrSample[],
+  preSessionRmssd: number,
+  sessionStartTs: string,
+  sessionEndTs: string | null,
+): { suppression_depth_pct: number | null; rebound_bpm_per_min: number | null } {
+  const startTime = new Date(sessionStartTs).getTime();
+  if (isNaN(startTime) || preSessionRmssd <= 0) {
+    return { suppression_depth_pct: null, rebound_bpm_per_min: null };
+  }
+
+  const restingHr = 60000 / preSessionRmssd;
+
+  const sorted = hrSamples
+    .filter(s => new Date(s.ts).getTime() >= startTime)
+    .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+  if (sorted.length < 5) {
+    return { suppression_depth_pct: null, rebound_bpm_per_min: null };
+  }
+
+  const peakHr = Math.max(...sorted.map(s => s.hr_bpm));
+  const suppressionPct = restingHr > 0
+    ? Math.round(((peakHr - restingHr) / restingHr) * 1000) / 10
+    : null;
+
+  let reboundRate: number | null = null;
+  if (sessionEndTs) {
+    const endTime = new Date(sessionEndTs).getTime();
+    if (!isNaN(endTime)) {
+      const postSamples = sorted
+        .filter(s => {
+          const t = new Date(s.ts).getTime();
+          return t >= endTime && t <= endTime + 5 * 60 * 1000;
+        });
+
+      if (postSamples.length >= 2) {
+        const firstPost = postSamples[0];
+        const lastPost = postSamples[postSamples.length - 1];
+        const elapsedMin = (new Date(lastPost.ts).getTime() - new Date(firstPost.ts).getTime()) / 60000;
+        if (elapsedMin >= 0.5) {
+          reboundRate = Math.round(((firstPost.hr_bpm - lastPost.hr_bpm) / elapsedMin) * 100) / 100;
+        }
+      }
+    }
+  }
+
+  return { suppression_depth_pct: suppressionPct, rebound_bpm_per_min: reboundRate };
+}
+
+export function computeSessionBiases(
+  workoutType: string,
+  avgHr: number | null,
+  maxHr: number | null,
+  durationMin: number | null,
+): { strength_bias: number; cardio_bias: number } {
+  let strength = 0;
+  let cardio = 0;
+
+  if (workoutType === "strength") {
+    strength = 0.8;
+    cardio = 0.2;
+  } else if (workoutType === "cardio") {
+    strength = 0.1;
+    cardio = 0.9;
+  } else if (workoutType === "hiit") {
+    strength = 0.5;
+    cardio = 0.5;
+  } else if (workoutType === "flexibility") {
+    strength = 0.1;
+    cardio = 0.05;
+  } else {
+    strength = 0.4;
+    cardio = 0.4;
+  }
+
+  if (avgHr != null && maxHr != null && maxHr > 0) {
+    const hrRatio = avgHr / maxHr;
+    if (hrRatio > 0.85) {
+      cardio = Math.min(cardio + 0.15, 1.0);
+    } else if (hrRatio < 0.65) {
+      strength = Math.min(strength + 0.1, 1.0);
+    }
+  }
+
+  if (durationMin != null) {
+    if (durationMin > 60) {
+      cardio = Math.min(cardio + 0.05, 1.0);
+    }
+    if (durationMin < 30 && workoutType === "strength") {
+      strength = Math.min(strength + 0.05, 1.0);
+    }
+  }
+
+  return {
+    strength_bias: Math.round(strength * 100) / 100,
+    cardio_bias: Math.round(cardio * 100) / 100,
+  };
+}
+
+export async function analyzeSessionHrv(sessionId: string): Promise<SessionHrvAnalysis & { suppression_depth_pct: number | null; rebound_bpm_per_min: number | null }> {
+  const { rows: sessions } = await pool.query(
+    `SELECT * FROM workout_session WHERE session_id = $1`,
+    [sessionId]
+  );
+  if (sessions.length === 0) throw new Error(`Session ${sessionId} not found`);
+  const session = sessions[0];
+
+  const rrIntervals = await getRrIntervalsForSession(sessionId);
+  const hrSamples = await getHrSamplesForSession(sessionId);
+
+  const baseline = computeSessionBaselineHrv(rrIntervals, session.start_ts, session.baseline_window_seconds || 120);
+
+  let suppression: { suppression_depth_pct: number | null; rebound_bpm_per_min: number | null } = {
+    suppression_depth_pct: null,
+    rebound_bpm_per_min: null,
+  };
+
+  if (baseline.pre_session_rmssd != null && hrSamples.length > 0) {
+    suppression = computeSuppressionAndRebound(hrSamples, baseline.pre_session_rmssd, session.start_ts, session.end_ts);
+  }
+
+  const biases = computeSessionBiases(session.workout_type, session.avg_hr, session.max_hr, session.duration_minutes);
+
+  await pool.query(
+    `UPDATE workout_session SET
+       pre_session_rmssd = $2,
+       suppression_depth_pct = $3,
+       rebound_bpm_per_min = $4,
+       baseline_window_seconds = $5,
+       strength_bias = $6,
+       cardio_bias = $7,
+       updated_at = NOW()
+     WHERE session_id = $1`,
+    [sessionId, baseline.pre_session_rmssd, suppression.suppression_depth_pct,
+     suppression.rebound_bpm_per_min, baseline.baseline_window_seconds,
+     biases.strength_bias, biases.cardio_bias]
+  );
+
+  return {
+    ...baseline,
+    suppression_depth_pct: suppression.suppression_depth_pct,
+    rebound_bpm_per_min: suppression.rebound_bpm_per_min,
+  };
 }
