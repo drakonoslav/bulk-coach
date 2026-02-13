@@ -273,8 +273,8 @@ function median(values: number[]): number {
 
 export async function recomputeHrvBaselines(startDate: string, endDate: string): Promise<number> {
   const { rows: vitals } = await pool.query(
-    `SELECT date, hrv_rmssd_ms, hrv_sdnn_ms, source FROM vitals_daily
-     WHERE date >= ($1::date - interval '14 days')::text AND date <= $2
+    `SELECT date::text as date, hrv_rmssd_ms, hrv_sdnn_ms, source FROM vitals_daily
+     WHERE date >= ($1::date - interval '14 days') AND date <= $2::date
      ORDER BY date ASC`,
     [startDate, endDate]
   );
