@@ -6,7 +6,7 @@ import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
 
-type Metric = "steps" | "calories" | "activeMinutes" | "zones" | "restingHr" | "sleep";
+type Metric = "steps" | "calories" | "activeMinutes" | "zones" | "restingHr" | "sleep" | "hrv";
 
 export interface TakeoutImportResult {
   status: string;
@@ -233,10 +233,10 @@ function extractTimeHHMM(dtStr: string | null): string | null {
 
 function emptyDiagnostic(): DiagnosticDay {
   return {
-    rawFiles: { steps: [], calories: [], activeMinutes: [], zones: [], restingHr: [], sleep: [] },
-    rawRowCounts: { steps: 0, calories: 0, activeMinutes: 0, zones: 0, restingHr: 0, sleep: 0 },
+    rawFiles: { steps: [], calories: [], activeMinutes: [], zones: [], restingHr: [], sleep: [], hrv: [] },
+    rawRowCounts: { steps: 0, calories: 0, activeMinutes: 0, zones: 0, restingHr: 0, sleep: 0, hrv: 0 },
     computedValues: {},
-    source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none" },
+    source: { steps: "none", calories: "none", activeMinutes: "none", zones: "none", restingHr: "none", sleep: "none", hrv: "none" },
     sleepBucketing: [],
     sleepRowDiagnostics: [],
     sleepValidation: null,
@@ -557,6 +557,69 @@ function parseDailyRestingHrCSV(
     count++;
   }
   return count;
+}
+
+function parseHrvDetailsCSV(
+  buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
+  filename: string,
+): number {
+  const { headers, rows } = parseCSVRows(buf);
+  const tsCol = colIdx(headers, "timestamp", "date", "datetime");
+  const rmssdCol = colIdx(headers, "rmssd");
+  const covCol = colIdx(headers, "coverage");
+  if (tsCol === -1 || rmssdCol === -1) return 0;
+
+  const dayReadings = new Map<string, number[]>();
+  let totalRows = 0;
+
+  for (const row of rows) {
+    const tsRaw = (row[tsCol] || "").trim();
+    if (!tsRaw) continue;
+    const rmssd = parseFloat(row[rmssdCol]);
+    if (isNaN(rmssd) || rmssd <= 0) continue;
+
+    if (covCol !== -1) {
+      const cov = parseFloat(row[covCol]);
+      if (!isNaN(cov) && cov < 0.7) continue;
+    }
+
+    const dt = new Date(tsRaw);
+    if (isNaN(dt.getTime())) continue;
+    const hh = dt.getHours();
+    const mm = dt.getMinutes();
+    const timeMin = hh * 60 + mm;
+    if (!(timeMin >= 21 * 60 + 45 || timeMin <= 5 * 60 + 30)) continue;
+
+    let bucketDate: string;
+    if (timeMin >= 21 * 60 + 45) {
+      const next = new Date(dt);
+      next.setDate(next.getDate() + 1);
+      bucketDate = next.toISOString().slice(0, 10);
+    } else {
+      bucketDate = dt.toISOString().slice(0, 10);
+    }
+
+    if (isBeforeCutoff(bucketDate)) continue;
+
+    if (!dayReadings.has(bucketDate)) dayReadings.set(bucketDate, []);
+    dayReadings.get(bucketDate)!.push(rmssd);
+    totalRows++;
+  }
+
+  let daysSet = 0;
+  for (const [date, readings] of dayReadings) {
+    if (readings.length === 0) continue;
+    const mean = Math.round(readings.reduce((s, v) => s + v, 0) / readings.length * 10) / 10;
+    const b = ensureBucket(buckets, date);
+    b.hrv = mean;
+    const d = ensureDiag(diags, date);
+    if (!d.rawFiles.hrv.includes(filename)) d.rawFiles.hrv.push(filename);
+    d.rawRowCounts.hrv += readings.length;
+    d.source.hrv = "csv";
+    daysSet++;
+  }
+
+  return daysSet;
 }
 
 // CSV sleep parsing: uses row's sleep_end timestamp + end_utc_offset to compute local wake-date.
@@ -944,6 +1007,7 @@ export async function importFitbitTakeout(
   const csvZonesDays = new Set<string>();
   const csvRestingHrDays = new Set<string>();
   const csvSleepDays = new Set<string>();
+  const csvHrvDays = new Set<string>();
 
   const CUTOFF_YEAR = 2026;
   const CUTOFF_DATE = "2026-01-01";
@@ -1023,11 +1087,16 @@ export async function importFitbitTakeout(
       for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.sleepMinutes != null) csvSleepDays.add(d); }
       filesParsed++;
       if (!filePatterns.includes("UserSleeps_*.csv")) filePatterns.push("UserSleeps_*.csv");
+    } else if (fnLower.startsWith("heart rate variability details") && fnLower.endsWith(".csv")) {
+      parseDetails.hrvDetailsCSV = (parseDetails.hrvDetailsCSV || 0) + parseHrvDetailsCSV(buf, csvBuckets, diags, filename);
+      for (const d of csvBuckets.keys()) { if (csvBuckets.get(d)!.hrv != null) csvHrvDays.add(d); }
+      filesParsed++;
+      if (!filePatterns.includes("Heart Rate Variability Details - *.csv")) filePatterns.push("Heart Rate Variability Details - *.csv");
     }
   }
 
   console.log(`[takeout] CSV pass done: ${filesParsed} files, ${csvBuckets.size} days`);
-  console.log(`[takeout] CSV coverage: steps=${csvStepsDays.size}d, cal=${csvCaloriesDays.size}d, azm=${csvActiveMinDays.size}d, zones=${csvZonesDays.size}d, rhr=${csvRestingHrDays.size}d, sleep=${csvSleepDays.size}d`);
+  console.log(`[takeout] CSV coverage: steps=${csvStepsDays.size}d, cal=${csvCaloriesDays.size}d, azm=${csvActiveMinDays.size}d, zones=${csvZonesDays.size}d, rhr=${csvRestingHrDays.size}d, sleep=${csvSleepDays.size}d, hrv=${csvHrvDays.size}d`);
 
   for (const { filename, fnLower, buf } of jsonFiles) {
     if (fnLower.startsWith("steps-") && fnLower.endsWith(".json")) {
@@ -1170,7 +1239,7 @@ export async function importFitbitTakeout(
     }
 
     const hasData = b.steps != null || b.energyBurnedKcal != null || b.activeZoneMinutes != null ||
-      b.restingHr != null || b.sleepMinutes != null || b.zone1Min != null || b.cardioMin != null;
+      b.restingHr != null || b.sleepMinutes != null || b.zone1Min != null || b.cardioMin != null || b.hrv != null;
 
     if (!hasData) {
       rowsSkipped++;
@@ -1277,10 +1346,10 @@ async function persistDiagnosticsToDB(
   diags: Map<string, DiagnosticDay>,
   conflicts: ConflictEntry[],
 ): Promise<void> {
-  const metrics: Metric[] = ["steps", "calories", "activeMinutes", "zones", "restingHr", "sleep"];
+  const metrics: Metric[] = ["steps", "calories", "activeMinutes", "zones", "restingHr", "sleep", "hrv"];
   const metricValueKey: Record<Metric, keyof DayBucket> = {
     steps: "steps", calories: "energyBurnedKcal", activeMinutes: "activeZoneMinutes",
-    zones: "zone1Min", restingHr: "restingHr", sleep: "sleepMinutes",
+    zones: "zone1Min", restingHr: "restingHr", sleep: "sleepMinutes", hrv: "hrv",
   };
 
   const fileContribs = new Map<string, { metric: string; source: string; rows: number; days: Set<string> }>();

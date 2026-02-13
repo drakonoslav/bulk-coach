@@ -40,7 +40,7 @@ export async function initDb(): Promise<void> {
 
       energy_burned_kcal INTEGER,
       resting_hr INTEGER,
-      hrv INTEGER,
+      hrv REAL,
 
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -76,7 +76,8 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS active_zone_minutes INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS energy_burned_kcal INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS resting_hr INTEGER`);
-  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS hrv INTEGER`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS hrv REAL`);
+  await pool.query(`ALTER TABLE daily_log ALTER COLUMN hrv TYPE REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone1_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone2_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone3_min REAL`);
