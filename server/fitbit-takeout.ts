@@ -563,9 +563,9 @@ function parseHrvDetailsCSV(
   buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
   filename: string,
 ): number {
-  const SLEEP_START_MIN = 21 * 60 + 45;
-  const SLEEP_END_MIN = 5 * 60 + 30;
-  const COVERAGE_MIN = 0.7;
+  const SLEEP_START_MIN = 20 * 60;
+  const SLEEP_END_MIN = 8 * 60;
+  const COVERAGE_MIN = 0.5;
 
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date", "datetime");
