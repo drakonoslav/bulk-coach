@@ -288,6 +288,18 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fitbit_oauth_tokens (
+      user_id INTEGER PRIMARY KEY DEFAULT 1,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      scope TEXT,
+      token_type TEXT DEFAULT 'Bearer',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
   const defaultStart = new Date();
   defaultStart.setUTCDate(defaultStart.getUTCDate() - 60);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
