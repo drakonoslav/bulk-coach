@@ -133,6 +133,7 @@ export default function ChecklistScreen() {
     signals: { hrv: number; rhr: number; sleep: number; steps: number; proxy: number };
   } | null>(null);
   const [rebaselining, setRebaselining] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [templates, setTemplates] = useState<Array<{
     id: number;
     templateType: string;
@@ -219,6 +220,8 @@ export default function ChecklistScreen() {
   );
 
   const handleImport = async () => {
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"],
@@ -278,10 +281,13 @@ export default function ChecklistScreen() {
       Alert.alert("Import Error", `Upload failed: ${msg}`);
     } finally {
       setUploading(false);
+      setPicking(false);
     }
   };
 
   const handleTakeoutImport = async () => {
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/zip", "application/x-zip-compressed", "application/x-zip", "*/*"],
@@ -447,6 +453,7 @@ export default function ChecklistScreen() {
     } finally {
       setUploadingTakeout(false);
       setTakeoutProgress("");
+      setPicking(false);
     }
   };
 

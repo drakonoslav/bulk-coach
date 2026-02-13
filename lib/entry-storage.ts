@@ -135,5 +135,17 @@ function rowToEntry(row: any): DailyEntry {
     performanceNote: row.performanceNote ?? undefined,
     adherence: row.adherence != null ? Number(row.adherence) : 1,
     notes: row.notes ?? undefined,
+    sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : undefined,
+    activeZoneMinutes: row.activeZoneMinutes != null ? Number(row.activeZoneMinutes) : undefined,
+    energyBurnedKcal: row.energyBurnedKcal != null ? Number(row.energyBurnedKcal) : undefined,
+    restingHr: row.restingHr != null ? Number(row.restingHr) : undefined,
+    hrv: row.hrv != null ? Number(row.hrv) : undefined,
+    zone1Min: row.zone1Min != null ? Number(row.zone1Min) : undefined,
+    zone2Min: row.zone2Min != null ? Number(row.zone2Min) : undefined,
+    zone3Min: row.zone3Min != null ? Number(row.zone3Min) : undefined,
+    belowZone1Min: row.belowZone1Min != null ? Number(row.belowZone1Min) : undefined,
+    sleepEfficiency: row.sleepEfficiency != null ? Number(row.sleepEfficiency) : undefined,
+    sleepStartLocal: row.sleepStartLocal ?? undefined,
+    sleepEndLocal: row.sleepEndLocal ?? undefined,
   };
 }

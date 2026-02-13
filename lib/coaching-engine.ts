@@ -32,6 +32,18 @@ export interface DailyEntry {
   performanceNote?: string;
   adherence: number;
   notes?: string;
+  sleepMinutes?: number;
+  activeZoneMinutes?: number;
+  energyBurnedKcal?: number;
+  restingHr?: number;
+  hrv?: number;
+  zone1Min?: number;
+  zone2Min?: number;
+  zone3Min?: number;
+  belowZone1Min?: number;
+  sleepEfficiency?: number;
+  sleepStartLocal?: string;
+  sleepEndLocal?: string;
 }
 
 export interface CardioFuel {

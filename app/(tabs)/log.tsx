@@ -217,6 +217,21 @@ export default function LogScreen() {
   const [sessionForDate, setSessionForDate] = useState<{ erections: number; durSec: number; isImputed: boolean } | null>(null);
   const [readinessBadge, setReadinessBadge] = useState<{ score: number; tier: string; confidence: string } | null>(null);
   const [sleepPlan, setSleepPlan] = useState<{ bedtime: string; wake: string } | null>(null);
+  const [fitbitData, setFitbitData] = useState<{
+    sleepMinutes?: number;
+    activeZoneMinutes?: number;
+    energyBurnedKcal?: number;
+    restingHr?: number;
+    hrv?: number;
+    zone1Min?: number;
+    zone2Min?: number;
+    zone3Min?: number;
+    belowZone1Min?: number;
+    sleepEfficiency?: number;
+    sleepStartLocal?: string;
+    sleepEndLocal?: string;
+  } | null>(null);
+  const [picking, setPicking] = useState(false);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -250,6 +265,20 @@ export default function LogScreen() {
       setPerfNote(existing.performanceNote || "");
       setAdherence(existing.adherence ?? 1);
       setNotes(existing.notes || "");
+      setFitbitData({
+        sleepMinutes: existing.sleepMinutes,
+        activeZoneMinutes: existing.activeZoneMinutes,
+        energyBurnedKcal: existing.energyBurnedKcal,
+        restingHr: existing.restingHr,
+        hrv: existing.hrv,
+        zone1Min: existing.zone1Min,
+        zone2Min: existing.zone2Min,
+        zone3Min: existing.zone3Min,
+        belowZone1Min: existing.belowZone1Min,
+        sleepEfficiency: existing.sleepEfficiency,
+        sleepStartLocal: existing.sleepStartLocal,
+        sleepEndLocal: existing.sleepEndLocal,
+      });
     } else {
       setHasExisting(false);
       resetForm();
@@ -342,6 +371,8 @@ export default function LogScreen() {
   }
 
   const handleSnapshotUpload = async () => {
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["text/csv", "text/comma-separated-values", "application/octet-stream", "*/*"],
@@ -402,6 +433,7 @@ export default function LogScreen() {
       setUploadResult("Upload failed: " + (err.message || "Unknown error"));
     } finally {
       setUploading(false);
+      setPicking(false);
     }
   };
 
@@ -453,6 +485,7 @@ export default function LogScreen() {
     setAdherence(1.0);
     setNotes("");
     setSaved(false);
+    setFitbitData(null);
   };
 
   const handleSave = async () => {
@@ -905,6 +938,108 @@ export default function LogScreen() {
           />
         </View>
 
+        {fitbitData && (fitbitData.sleepMinutes != null || fitbitData.restingHr != null || fitbitData.hrv != null || fitbitData.energyBurnedKcal != null || fitbitData.zone1Min != null) && (
+          <View style={styles.sectionCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <MaterialCommunityIcons name="watch" size={16} color={Colors.primary} />
+              <Text style={[styles.sectionLabel, { marginBottom: 0, color: Colors.primary }]}>Fitbit Data</Text>
+            </View>
+            <View style={{ gap: 8 }}>
+              {fitbitData.hrv != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="pulse-outline" size={14} color="#8B5CF6" />
+                    <Text style={fStyles.label}>HRV (RMSSD)</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: "#8B5CF6" }]}>{fitbitData.hrv.toFixed(1)} ms</Text>
+                </View>
+              )}
+              {fitbitData.restingHr != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="heart-outline" size={14} color="#EF4444" />
+                    <Text style={fStyles.label}>Resting HR</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: "#EF4444" }]}>{fitbitData.restingHr} bpm</Text>
+                </View>
+              )}
+              {fitbitData.sleepMinutes != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="moon-outline" size={14} color="#60A5FA" />
+                    <Text style={fStyles.label}>Sleep</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: "#60A5FA" }]}>{Math.floor(fitbitData.sleepMinutes / 60)}h {fitbitData.sleepMinutes % 60}m</Text>
+                </View>
+              )}
+              {fitbitData.sleepEfficiency != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="analytics-outline" size={14} color="#60A5FA" />
+                    <Text style={fStyles.label}>Sleep Efficiency</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: "#60A5FA" }]}>{fitbitData.sleepEfficiency.toFixed(0)}%</Text>
+                </View>
+              )}
+              {(fitbitData.sleepStartLocal || fitbitData.sleepEndLocal) && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="time-outline" size={14} color="#60A5FA" />
+                    <Text style={fStyles.label}>Fitbit Sleep Window</Text>
+                  </View>
+                  <Text style={fStyles.value}>{fitbitData.sleepStartLocal ?? "--"} - {fitbitData.sleepEndLocal ?? "--"}</Text>
+                </View>
+              )}
+              {fitbitData.energyBurnedKcal != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="flame-outline" size={14} color="#F59E0B" />
+                    <Text style={fStyles.label}>Energy Burned</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: "#F59E0B" }]}>{fitbitData.energyBurnedKcal.toLocaleString()} kcal</Text>
+                </View>
+              )}
+              {fitbitData.activeZoneMinutes != null && (
+                <View style={fStyles.row}>
+                  <View style={fStyles.labelWrap}>
+                    <Ionicons name="fitness-outline" size={14} color={Colors.success} />
+                    <Text style={fStyles.label}>Active Zone Min</Text>
+                  </View>
+                  <Text style={[fStyles.value, { color: Colors.success }]}>{fitbitData.activeZoneMinutes} min</Text>
+                </View>
+              )}
+              {(fitbitData.zone1Min != null || fitbitData.zone2Min != null || fitbitData.zone3Min != null) && (
+                <View style={{ flexDirection: "row", gap: 12, paddingVertical: 6, paddingHorizontal: 4 }}>
+                  {fitbitData.belowZone1Min != null && (
+                    <View style={{ alignItems: "center" }}>
+                      <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#9CA3AF" }}>{fitbitData.belowZone1Min}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Below</Text>
+                    </View>
+                  )}
+                  {fitbitData.zone1Min != null && (
+                    <View style={{ alignItems: "center" }}>
+                      <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#FBBF24" }}>{fitbitData.zone1Min}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Fat Burn</Text>
+                    </View>
+                  )}
+                  {fitbitData.zone2Min != null && (
+                    <View style={{ alignItems: "center" }}>
+                      <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#F97316" }}>{fitbitData.zone2Min}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Cardio</Text>
+                    </View>
+                  )}
+                  {fitbitData.zone3Min != null && (
+                    <View style={{ alignItems: "center" }}>
+                      <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#EF4444" }}>{fitbitData.zone3Min}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Peak</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Nutrition</Text>
           <InputField
@@ -1316,5 +1451,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Rubik_600SemiBold",
     color: "#fff",
+  },
+});
+
+const fStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 8,
+  },
+  labelWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: "#9CA3AF",
+  },
+  value: {
+    fontSize: 14,
+    fontFamily: "Rubik_600SemiBold",
+    color: "#E5E7EB",
   },
 });
