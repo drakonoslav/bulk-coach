@@ -48,6 +48,97 @@ function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
 export async function registerRoutes(app: Express): Promise<Server> {
   await initDb();
 
+  app.get("/privacy", (_req: Request, res: Response) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Privacy Policy — BulkCoach-Drakonoslav</title>
+<style>
+  body { margin:0; padding:40px 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#0f1117; color:#e5e7eb; line-height:1.7; }
+  .container { max-width:640px; margin:0 auto; }
+  h1 { color:#00D4AA; font-size:28px; margin-bottom:8px; }
+  h2 { color:#9CA3AF; font-size:14px; font-weight:400; margin-top:0; margin-bottom:32px; }
+  h3 { color:#00D4AA; font-size:18px; margin-top:28px; }
+  ul { padding-left:20px; }
+  li { margin-bottom:6px; }
+  .contact { margin-top:40px; padding-top:20px; border-top:1px solid #1f2937; color:#9CA3AF; font-size:14px; }
+  a { color:#00D4AA; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Privacy Policy</h1>
+  <h2>BulkCoach-Drakonoslav</h2>
+  <p>BulkCoach-Drakonoslav is a personal fitness analytics application.</p>
+  <h3>Data We Access</h3>
+  <p>This application may access Fitbit data including:</p>
+  <ul>
+    <li>Heart rate</li>
+    <li>HRV (RMSSD)</li>
+    <li>Sleep metrics</li>
+    <li>Steps</li>
+    <li>Calories</li>
+    <li>Activity minutes</li>
+  </ul>
+  <h3>How Data Is Used</h3>
+  <p>Data is used solely to:</p>
+  <ul>
+    <li>Generate readiness scores</li>
+    <li>Track health trends</li>
+    <li>Provide coaching recommendations</li>
+  </ul>
+  <h3>Data Storage</h3>
+  <ul>
+    <li>Data is stored securely in a private database.</li>
+    <li>No data is sold.</li>
+    <li>No data is shared with third parties.</li>
+  </ul>
+  <p>Users may disconnect Fitbit at any time to revoke access.</p>
+  <div class="contact">Contact: Conrad — <a href="mailto:keeton.conrad@gmail.com">keeton.conrad@gmail.com</a></div>
+</div>
+</body>
+</html>`);
+  });
+
+  app.get("/terms", (_req: Request, res: Response) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Terms of Service — BulkCoach-Drakonoslav</title>
+<style>
+  body { margin:0; padding:40px 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#0f1117; color:#e5e7eb; line-height:1.7; }
+  .container { max-width:640px; margin:0 auto; }
+  h1 { color:#00D4AA; font-size:28px; margin-bottom:8px; }
+  h2 { color:#9CA3AF; font-size:14px; font-weight:400; margin-top:0; margin-bottom:32px; }
+  ul { padding-left:20px; }
+  li { margin-bottom:6px; }
+  .contact { margin-top:40px; padding-top:20px; border-top:1px solid #1f2937; color:#9CA3AF; font-size:14px; }
+  a { color:#00D4AA; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Terms of Service</h1>
+  <h2>BulkCoach-Drakonoslav</h2>
+  <p>BulkCoach-Drakonoslav is a personal fitness tracking and analytics application.</p>
+  <p>By using this application, you agree:</p>
+  <ul>
+    <li>The app provides informational health insights only.</li>
+    <li>It is not medical advice.</li>
+    <li>You are responsible for decisions regarding training and nutrition.</li>
+  </ul>
+  <p>The application may change features at any time.</p>
+  <p>Use at your own discretion.</p>
+  <div class="contact">Contact: Conrad — <a href="mailto:keeton.conrad@gmail.com">keeton.conrad@gmail.com</a></div>
+</div>
+</body>
+</html>`);
+  });
+
   app.post("/api/logs/upsert", async (req: Request, res: Response) => {
     try {
       const b = req.body;
