@@ -1035,6 +1035,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Fitbit OAuth 2.0 ───────────────────────────────────────────
+  const FITBIT_AUTH_URL = "https://www.fitbit.com/oauth2/authorize";
+  const FITBIT_TOKEN_URL = "https://api.fitbit.com/oauth2/token";
+  const FITBIT_SCOPES = "activity heartrate sleep profile";
+  const oauthStates = new Map<string, number>();
+
+  function fitbitBasicAuth(): string {
+    const id = process.env.FITBIT_CLIENT_ID ?? "";
+    const secret = process.env.FITBIT_CLIENT_SECRET ?? "";
+    return Buffer.from(`${id}:${secret}`).toString("base64");
+  }
+
+  async function refreshFitbitTokenIfNeeded(userId = 1): Promise<string | null> {
+    const row = (await pool.query(
+      `SELECT access_token, refresh_token, expires_at FROM fitbit_oauth_tokens WHERE user_id = $1`,
+      [userId]
+    )).rows[0];
+    if (!row) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (row.expires_at > now + 60) return row.access_token;
+    try {
+      const resp = await fetch(FITBIT_TOKEN_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${fitbitBasicAuth()}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: row.refresh_token,
+        }),
+      });
+      if (!resp.ok) {
+        console.error("Fitbit token refresh failed:", await resp.text());
+        return null;
+      }
+      const data = await resp.json() as {
+        access_token: string; refresh_token: string;
+        expires_in: number; scope: string; token_type: string;
+      };
+      const expiresAt = now + data.expires_in;
+      await pool.query(
+        `UPDATE fitbit_oauth_tokens
+         SET access_token = $1, refresh_token = $2, expires_at = $3,
+             scope = $4, token_type = $5, updated_at = NOW()
+         WHERE user_id = $6`,
+        [data.access_token, data.refresh_token, expiresAt, data.scope, data.token_type, userId]
+      );
+      return data.access_token;
+    } catch (err) {
+      console.error("Fitbit token refresh error:", err);
+      return null;
+    }
+  }
+
+  app.get("/api/auth/fitbit/start", (_req: Request, res: Response) => {
+    const clientId = process.env.FITBIT_CLIENT_ID;
+    const redirectUri = process.env.FITBIT_REDIRECT_URI;
+    if (!clientId || !redirectUri) {
+      return res.status(500).json({ error: "Fitbit OAuth not configured" });
+    }
+    const state = crypto.randomBytes(16).toString("hex");
+    oauthStates.set(state, Date.now());
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: FITBIT_SCOPES,
+      state,
+    });
+    res.redirect(`${FITBIT_AUTH_URL}?${params.toString()}`);
+  });
+
+  app.get("/api/auth/fitbit/callback", async (req: Request, res: Response) => {
+    try {
+      const { code, state } = req.query as { code?: string; state?: string };
+      if (!state || !oauthStates.has(state)) {
+        return res.status(400).send("Invalid or missing state parameter");
+      }
+      oauthStates.delete(state);
+      if (!code) {
+        return res.status(400).send("Missing authorization code");
+      }
+      const redirectUri = process.env.FITBIT_REDIRECT_URI ?? "";
+      const resp = await fetch(FITBIT_TOKEN_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${fitbitBasicAuth()}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        console.error("Fitbit token exchange failed:", body);
+        return res.status(502).send("Failed to exchange code for tokens");
+      }
+      const data = await resp.json() as {
+        access_token: string; refresh_token: string;
+        expires_in: number; scope: string; token_type: string; user_id: string;
+      };
+      const expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
+      await pool.query(
+        `INSERT INTO fitbit_oauth_tokens (user_id, access_token, refresh_token, expires_at, scope, token_type, updated_at)
+         VALUES (1, $1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+           access_token = $1, refresh_token = $2, expires_at = $3,
+           scope = $4, token_type = $5, updated_at = NOW()`,
+        [data.access_token, data.refresh_token, expiresAt, data.scope, data.token_type]
+      );
+      res.redirect("/?fitbit=connected");
+    } catch (err) {
+      console.error("Fitbit callback error:", err);
+      res.status(500).send("Internal server error during OAuth callback");
+    }
+  });
+
+  app.get("/api/auth/fitbit/status", async (_req: Request, res: Response) => {
+    try {
+      const row = (await pool.query(
+        `SELECT expires_at, scope, updated_at FROM fitbit_oauth_tokens WHERE user_id = 1`
+      )).rows[0];
+      if (!row) {
+        return res.json({ connected: false });
+      }
+      const now = Math.floor(Date.now() / 1000);
+      res.json({
+        connected: true,
+        expired: row.expires_at <= now,
+        lastRefresh: row.updated_at,
+        scope: row.scope,
+      });
+    } catch (err) {
+      console.error("Fitbit status error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/fitbit/disconnect", async (_req: Request, res: Response) => {
+    try {
+      await pool.query(`DELETE FROM fitbit_oauth_tokens WHERE user_id = 1`);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Fitbit disconnect error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
