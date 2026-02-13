@@ -563,6 +563,10 @@ function parseHrvDetailsCSV(
   buf: Buffer, buckets: Map<string, DayBucket>, diags: Map<string, DiagnosticDay>,
   filename: string,
 ): number {
+  const SLEEP_START_MIN = 21 * 60 + 45;
+  const SLEEP_END_MIN = 5 * 60 + 30;
+  const COVERAGE_MIN = 0.7;
+
   const { headers, rows } = parseCSVRows(buf);
   const tsCol = colIdx(headers, "timestamp", "date", "datetime");
   const rmssdCol = colIdx(headers, "rmssd");
@@ -580,23 +584,26 @@ function parseHrvDetailsCSV(
 
     if (covCol !== -1) {
       const cov = parseFloat(row[covCol]);
-      if (!isNaN(cov) && cov < 0.7) continue;
+      if (isNaN(cov) || cov < COVERAGE_MIN) continue;
     }
 
-    const dt = new Date(tsRaw);
-    if (isNaN(dt.getTime())) continue;
-    const hh = dt.getHours();
-    const mm = dt.getMinutes();
+    const dateStr = tsRaw.replace("T", " ").slice(0, 19);
+    const parts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+    if (!parts) continue;
+    const [, yr, mo, dy, hhStr, mmStr] = parts;
+    const hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
     const timeMin = hh * 60 + mm;
-    if (!(timeMin >= 21 * 60 + 45 || timeMin <= 5 * 60 + 30)) continue;
+
+    if (!(timeMin >= SLEEP_START_MIN || timeMin <= SLEEP_END_MIN)) continue;
 
     let bucketDate: string;
-    if (timeMin >= 21 * 60 + 45) {
-      const next = new Date(dt);
-      next.setDate(next.getDate() + 1);
-      bucketDate = next.toISOString().slice(0, 10);
+    if (timeMin >= SLEEP_START_MIN) {
+      const d = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(dy));
+      d.setDate(d.getDate() + 1);
+      bucketDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     } else {
-      bucketDate = dt.toISOString().slice(0, 10);
+      bucketDate = `${yr}-${mo}-${dy}`;
     }
 
     if (isBeforeCutoff(bucketDate)) continue;
