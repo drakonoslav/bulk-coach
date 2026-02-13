@@ -9,6 +9,26 @@ import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import {
+  getSleepSummaryRange,
+  getVitalsDailyRange,
+  getWorkoutSessions,
+  getHrSamplesForSession,
+  getRrIntervalsForSession,
+  getHrvBaselineRange,
+  upsertSleepSummary,
+  upsertVitalsDaily,
+  upsertWorkoutSession,
+  batchUpsertHrSamples,
+  batchUpsertRrIntervals,
+  recomputeHrvBaselines,
+  computeSessionStrain,
+  type SleepSummary,
+  type VitalsDaily,
+  type WorkoutSession,
+  type WorkoutHrSample,
+  type WorkoutRrInterval,
+} from "./canonical-health";
+import {
   parseSnapshotFile,
   importSnapshotAndDerive,
   getSnapshots,
@@ -1195,6 +1215,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err) {
       console.error("Fitbit disconnect error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Canonical Health API ──
+
+  app.get("/api/canonical/vitals", async (req: Request, res: Response) => {
+    try {
+      const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
+      const rows = await getVitalsDailyRange(start, end);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical vitals error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/vitals", async (req: Request, res: Response) => {
+    try {
+      const v = req.body as VitalsDaily;
+      if (!v.date || !v.source) {
+        return res.status(400).json({ error: "date and source required" });
+      }
+      await upsertVitalsDaily(v);
+      res.json({ ok: true, date: v.date });
+    } catch (err) {
+      console.error("canonical vitals upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/sleep", async (req: Request, res: Response) => {
+    try {
+      const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
+      const rows = await getSleepSummaryRange(start, end);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical sleep error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/sleep", async (req: Request, res: Response) => {
+    try {
+      const s = req.body as SleepSummary;
+      if (!s.date || s.total_sleep_minutes == null || !s.source) {
+        return res.status(400).json({ error: "date, total_sleep_minutes, and source required" });
+      }
+      await upsertSleepSummary(s);
+      res.json({ ok: true, date: s.date });
+    } catch (err) {
+      console.error("canonical sleep upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/workouts", async (req: Request, res: Response) => {
+    try {
+      const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
+      const rows = await getWorkoutSessions(start, end);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical workouts error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts", async (req: Request, res: Response) => {
+    try {
+      const w = req.body as WorkoutSession;
+      if (!w.session_id || !w.date || !w.start_ts || !w.source) {
+        return res.status(400).json({ error: "session_id, date, start_ts, and source required" });
+      }
+      const { strainScore, typeTag } = computeSessionStrain(
+        w.avg_hr, w.max_hr, w.duration_minutes, w.workout_type || "other"
+      );
+      w.session_strain_score = w.session_strain_score ?? strainScore;
+      w.session_type_tag = w.session_type_tag ?? typeTag;
+      await upsertWorkoutSession(w);
+      res.json({ ok: true, session_id: w.session_id, strain: strainScore, typeTag });
+    } catch (err) {
+      console.error("canonical workout upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/workouts/:sessionId/hr", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const rows = await getHrSamplesForSession(sessionId);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical hr samples error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/:sessionId/hr", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const samples = req.body as WorkoutHrSample[];
+      if (!Array.isArray(samples)) {
+        return res.status(400).json({ error: "expected array of hr samples" });
+      }
+      const tagged = samples.map(s => ({ ...s, session_id: sessionId }));
+      const count = await batchUpsertHrSamples(tagged);
+      res.json({ ok: true, count });
+    } catch (err) {
+      console.error("canonical hr samples upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/workouts/:sessionId/rr", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const rows = await getRrIntervalsForSession(sessionId);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical rr intervals error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/:sessionId/rr", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const intervals = req.body as WorkoutRrInterval[];
+      if (!Array.isArray(intervals)) {
+        return res.status(400).json({ error: "expected array of rr intervals" });
+      }
+      const tagged = intervals.map(r => ({ ...r, session_id: sessionId }));
+      const count = await batchUpsertRrIntervals(tagged);
+      res.json({ ok: true, count });
+    } catch (err) {
+      console.error("canonical rr intervals upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/hrv-baseline", async (req: Request, res: Response) => {
+    try {
+      const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
+      const rows = await getHrvBaselineRange(start, end);
+      res.json(rows);
+    } catch (err) {
+      console.error("canonical hrv baseline error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/hrv-baseline/recompute", async (req: Request, res: Response) => {
+    try {
+      const start = (req.body.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const end = (req.body.end as string) || new Date().toISOString().slice(0, 10);
+      const count = await recomputeHrvBaselines(start, end);
+      res.json({ ok: true, daysComputed: count });
+    } catch (err) {
+      console.error("canonical hrv recompute error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/canonical/summary", async (req: Request, res: Response) => {
+    try {
+      const { rows: vitalsCount } = await pool.query(`SELECT COUNT(*) as count FROM vitals_daily`);
+      const { rows: sleepCount } = await pool.query(`SELECT COUNT(*) as count FROM sleep_summary_daily`);
+      const { rows: workoutCount } = await pool.query(`SELECT COUNT(*) as count FROM workout_session`);
+      const { rows: hrvCount } = await pool.query(`SELECT COUNT(*) as count FROM hrv_baseline_daily`);
+      const { rows: sources } = await pool.query(
+        `SELECT DISTINCT source FROM vitals_daily UNION SELECT DISTINCT source FROM sleep_summary_daily`
+      );
+      res.json({
+        vitals_days: Number(vitalsCount[0].count),
+        sleep_days: Number(sleepCount[0].count),
+        workout_sessions: Number(workoutCount[0].count),
+        hrv_baseline_days: Number(hrvCount[0].count),
+        sources: sources.map((s: any) => s.source).filter(Boolean),
+      });
+    } catch (err) {
+      console.error("canonical summary error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

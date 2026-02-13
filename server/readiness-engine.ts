@@ -103,12 +103,16 @@ export async function getDataSufficiency(): Promise<DataSufficiency> {
 
   const { rows } = await pool.query(
     `SELECT
-       COUNT(*) FILTER (WHERE morning_weight_lb IS NOT NULL OR steps IS NOT NULL OR sleep_minutes IS NOT NULL OR resting_hr IS NOT NULL OR hrv IS NOT NULL) AS days_with_data,
-       COUNT(*) FILTER (WHERE hrv IS NOT NULL) AS hrv_days,
-       COUNT(*) FILTER (WHERE resting_hr IS NOT NULL) AS rhr_days,
-       COUNT(*) FILTER (WHERE sleep_minutes IS NOT NULL) AS sleep_days,
+       COUNT(*) AS days_with_data,
+       COUNT(*) FILTER (WHERE hrv_rmssd_ms IS NOT NULL) AS hrv_days,
+       COUNT(*) FILTER (WHERE resting_hr_bpm IS NOT NULL) AS rhr_days,
        COUNT(*) FILTER (WHERE steps IS NOT NULL) AS steps_days
-     FROM daily_log WHERE day >= $1 AND day <= $2`,
+     FROM vitals_daily WHERE date >= $1::date AND date <= $2::date`,
+    [startDate, today],
+  );
+  const { rows: sleepRows } = await pool.query(
+    `SELECT COUNT(*) AS sleep_days FROM sleep_summary_daily
+     WHERE date >= $1::date AND date <= $2::date`,
     [startDate, today],
   );
 
@@ -139,7 +143,7 @@ export async function getDataSufficiency(): Promise<DataSufficiency> {
     signals: {
       hrv: Number(rows[0]?.hrv_days ?? 0),
       rhr: Number(rows[0]?.rhr_days ?? 0),
-      sleep: Number(rows[0]?.sleep_days ?? 0),
+      sleep: Number(sleepRows[0]?.sleep_days ?? 0),
       steps: Number(rows[0]?.steps_days ?? 0),
       proxy: Number(proxyRows[0]?.proxy_days ?? 0),
     },
@@ -151,11 +155,19 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   const effectiveStart = date < analysisStart ? date : analysisStart;
   const pullFrom = effectiveStart > addDays(date, -34) ? effectiveStart : addDays(date, -34);
 
-  const { rows: logRows } = await pool.query(
-    `SELECT day, hrv, resting_hr, sleep_minutes
-     FROM daily_log
-     WHERE day BETWEEN $1 AND $2
-     ORDER BY day ASC`,
+  const { rows: vitalsRows } = await pool.query(
+    `SELECT date::text as date, hrv_rmssd_ms, resting_hr_bpm
+     FROM vitals_daily
+     WHERE date BETWEEN $1::date AND $2::date
+     ORDER BY date ASC`,
+    [pullFrom, date],
+  );
+
+  const { rows: sleepRows } = await pool.query(
+    `SELECT date::text as date, total_sleep_minutes
+     FROM sleep_summary_daily
+     WHERE date BETWEEN $1::date AND $2::date
+     ORDER BY date ASC`,
     [pullFrom, date],
   );
 
@@ -169,12 +181,20 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   );
 
   const logMap = new Map<string, { hrv: number | null; rhr: number | null; sleep: number | null }>();
-  for (const r of logRows) {
-    logMap.set(r.day, {
-      hrv: r.hrv != null ? Number(r.hrv) : null,
-      rhr: r.resting_hr != null ? Number(r.resting_hr) : null,
-      sleep: r.sleep_minutes != null ? Number(r.sleep_minutes) : null,
+  for (const r of vitalsRows) {
+    logMap.set(r.date, {
+      hrv: r.hrv_rmssd_ms != null ? Number(r.hrv_rmssd_ms) : null,
+      rhr: r.resting_hr_bpm != null ? Number(r.resting_hr_bpm) : null,
+      sleep: null,
     });
+  }
+  for (const r of sleepRows) {
+    const existing = logMap.get(r.date);
+    if (existing) {
+      existing.sleep = r.total_sleep_minutes != null ? Number(r.total_sleep_minutes) : null;
+    } else {
+      logMap.set(r.date, { hrv: null, rhr: null, sleep: r.total_sleep_minutes != null ? Number(r.total_sleep_minutes) : null });
+    }
   }
 
   const proxyMap = new Map<string, number>();

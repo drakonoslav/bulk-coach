@@ -2,6 +2,8 @@ import { pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { recomputeReadinessRange, computeReadiness, persistReadiness, getAnalysisStartDate } from "./readiness-engine";
 import { computeSleepBlock } from "./sleep-alignment";
+import { upsertVitalsDaily, upsertSleepSummary, recomputeHrvBaselines } from "./canonical-health";
+import { fitbitDayBucketToVitals, fitbitDayBucketToSleep } from "./adapters/fitbit";
 import crypto from "crypto";
 import unzipper from "unzipper";
 import { Readable } from "stream";
@@ -1306,6 +1308,17 @@ export async function importFitbitTakeout(
 
     if (isExisting) daysUpdated++;
     else daysInserted++;
+
+    try {
+      const vitals = fitbitDayBucketToVitals(date, b);
+      await upsertVitalsDaily(vitals);
+      const sleepCanonical = fitbitDayBucketToSleep(date, b);
+      if (sleepCanonical) {
+        await upsertSleepSummary(sleepCanonical);
+      }
+    } catch (err) {
+      console.error(`[takeout] canonical upsert failed for ${date}:`, err);
+    }
   }
 
   for (const [date] of csvBuckets.entries()) {
@@ -1315,6 +1328,12 @@ export async function importFitbitTakeout(
   let recomputeRan = false;
   if (minDate && maxDate) {
     await recomputeRangeSpan(minDate, maxDate);
+    try {
+      await recomputeHrvBaselines(minDate, maxDate);
+      console.log(`[takeout] HRV baselines recomputed for ${minDate} to ${maxDate}`);
+    } catch (err) {
+      console.error(`[takeout] HRV baseline recompute failed:`, err);
+    }
     recomputeRan = true;
   }
 

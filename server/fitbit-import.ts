@@ -1,5 +1,7 @@
 import { pool } from "./db";
 import { recomputeRange } from "./recompute";
+import { upsertVitalsDaily, upsertSleepSummary, recomputeHrvBaselines } from "./canonical-health";
+import { fitbitDayBucketToVitals, fitbitDayBucketToSleep } from "./adapters/fitbit";
 import crypto from "crypto";
 
 const HEADER_ALIASES: Record<string, string> = {
@@ -180,6 +182,24 @@ export async function importFitbitCSV(
     rowsUpserted++;
     rowsImported++;
 
+    try {
+      const vitals = fitbitDayBucketToVitals(dateVal, {
+        steps, energyBurnedKcal: energyBurned, zone1Min: null, zone2Min: null,
+        zone3Min: null, belowZone1Min: null, activeZoneMinutes: activeZoneMin,
+        restingHr, hrv,
+      });
+      await upsertVitalsDaily(vitals);
+      if (sleepMin != null) {
+        const sleepCanonical = fitbitDayBucketToSleep(dateVal, {
+          sleepMinutes: sleepMin, sleepStartTime: null, sleepEndTime: null,
+          sleepLatencyMin: null, sleepWasoMin: null, tossedMinutes: null,
+        });
+        if (sleepCanonical) await upsertSleepSummary(sleepCanonical);
+      }
+    } catch (err) {
+      console.error(`[fitbit-csv] canonical upsert failed for ${dateVal}:`, err);
+    }
+
     if (!minDate || dateVal < minDate) minDate = dateVal;
     if (!maxDate || dateVal > maxDate) maxDate = dateVal;
   }
@@ -187,6 +207,11 @@ export async function importFitbitCSV(
   let recomputeRan = false;
   if (minDate && maxDate) {
     await recomputeRangeSpan(minDate, maxDate);
+    try {
+      await recomputeHrvBaselines(minDate, maxDate);
+    } catch (err) {
+      console.error(`[fitbit-csv] HRV baseline recompute failed:`, err);
+    }
     recomputeRan = true;
   }
 

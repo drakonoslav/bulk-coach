@@ -300,6 +300,104 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // ── Canonical health schema (vendor-agnostic) ──
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sleep_summary_daily (
+      date DATE PRIMARY KEY,
+      sleep_start TEXT,
+      sleep_end TEXT,
+      total_sleep_minutes INTEGER NOT NULL,
+      time_in_bed_minutes INTEGER,
+      awake_minutes INTEGER,
+      rem_minutes INTEGER,
+      deep_minutes INTEGER,
+      light_or_core_minutes INTEGER,
+      sleep_efficiency REAL,
+      sleep_latency_min INTEGER,
+      waso_min INTEGER,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vitals_daily (
+      date DATE PRIMARY KEY,
+      resting_hr_bpm REAL,
+      hrv_rmssd_ms REAL,
+      hrv_sdnn_ms REAL,
+      respiratory_rate_bpm REAL,
+      spo2_pct REAL,
+      skin_temp_delta_c REAL,
+      steps INTEGER,
+      active_zone_minutes INTEGER,
+      energy_burned_kcal INTEGER,
+      zone1_min INTEGER,
+      zone2_min INTEGER,
+      zone3_min INTEGER,
+      below_zone1_min INTEGER,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workout_session (
+      session_id TEXT PRIMARY KEY,
+      date DATE NOT NULL,
+      start_ts TIMESTAMPTZ NOT NULL,
+      end_ts TIMESTAMPTZ,
+      workout_type TEXT NOT NULL DEFAULT 'other',
+      duration_minutes REAL,
+      avg_hr REAL,
+      max_hr REAL,
+      calories_burned INTEGER,
+      session_strain_score REAL,
+      session_type_tag TEXT,
+      recovery_slope REAL,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workout_session_date ON workout_session(date)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workout_hr_samples (
+      session_id TEXT NOT NULL REFERENCES workout_session(session_id) ON DELETE CASCADE,
+      ts TIMESTAMPTZ NOT NULL,
+      hr_bpm INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      PRIMARY KEY (session_id, ts)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workout_rr_intervals (
+      session_id TEXT NOT NULL REFERENCES workout_session(session_id) ON DELETE CASCADE,
+      ts TIMESTAMPTZ NOT NULL,
+      rr_ms REAL NOT NULL,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      PRIMARY KEY (session_id, ts)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hrv_baseline_daily (
+      date DATE PRIMARY KEY,
+      night_hrv_rmssd_ms REAL,
+      night_hrv_sdnn_ms REAL,
+      baseline_hrv_rmssd_7d_median REAL,
+      baseline_hrv_sdnn_7d_median REAL,
+      deviation_rmssd_pct REAL,
+      deviation_sdnn_pct REAL,
+      morning_hrv_sdnn_ms REAL,
+      morning_deviation_pct REAL,
+      source TEXT NOT NULL DEFAULT 'unknown',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
   const defaultStart = new Date();
   defaultStart.setUTCDate(defaultStart.getUTCDate() - 60);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
