@@ -4,7 +4,30 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+export async function runMigration(name: string, sql: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT id FROM schema_migrations WHERE name = $1`,
+    [name]
+  );
+  if (rows.length > 0) return;
+  console.log(`[migration] applying: ${name}`);
+  await pool.query(sql);
+  await pool.query(
+    `INSERT INTO schema_migrations (name) VALUES ($1)`,
+    [name]
+  );
+  console.log(`[migration] applied: ${name}`);
+}
+
 export async function initDb(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS daily_log (
       day TEXT PRIMARY KEY,
@@ -423,6 +446,45 @@ export async function initDb(): Promise<void> {
     INSERT INTO app_settings (key, value) VALUES ('analysis_start_date', $1)
     ON CONFLICT (key) DO NOTHING
   `, [defaultStartStr]);
+
+  await runMigrations();
+}
+
+async function runMigrations(): Promise<void> {
+  await runMigration('001_add_timezone_to_canonical', `
+    ALTER TABLE sleep_summary_daily ADD COLUMN IF NOT EXISTS timezone TEXT;
+    ALTER TABLE vitals_daily ADD COLUMN IF NOT EXISTS timezone TEXT;
+    ALTER TABLE workout_session ADD COLUMN IF NOT EXISTS timezone TEXT;
+  `);
+
+  await runMigration('002_add_workout_events_table', `
+    CREATE TABLE IF NOT EXISTS workout_events (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES workout_session(session_id) ON DELETE CASCADE,
+      t TIMESTAMPTZ NOT NULL,
+      event_type TEXT NOT NULL,
+      phase TEXT,
+      muscle TEXT,
+      rpe REAL,
+      is_compound BOOLEAN,
+      cbp_before REAL,
+      cbp_after REAL,
+      drain REAL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_workout_events_session ON workout_events(session_id);
+  `);
+
+  await runMigration('003_add_muscle_weekly_load_table', `
+    CREATE TABLE IF NOT EXISTS muscle_weekly_load (
+      muscle TEXT NOT NULL,
+      week_start DATE NOT NULL,
+      hard_sets INTEGER NOT NULL DEFAULT 0,
+      total_sets INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (muscle, week_start)
+    );
+  `);
 }
 
 export { pool };

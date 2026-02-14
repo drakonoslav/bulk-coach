@@ -1447,6 +1447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleep_latency_min: p.sleep_latency_min ?? null,
         waso_min: p.waso_min ?? null,
         source: p.source,
+        timezone: p.timezone ?? null,
       };
       await upsertSleepSummary(s);
       res.json({ ok: true, date: s.date, updated_at: new Date().toISOString() });
@@ -1478,6 +1479,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         zone3_min: null,
         below_zone1_min: null,
         source: p.source,
+        timezone: p.timezone ?? null,
       };
       await upsertVitalsDaily(v);
       if (v.hrv_sdnn_ms != null || v.hrv_rmssd_ms != null) {
@@ -1524,6 +1526,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         baseline_window_seconds: 120,
         time_to_recovery_sec: null,
         source: p.source,
+        timezone: p.timezone ?? null,
       };
       if (p.end_ts) {
         const { strainScore, typeTag } = computeSessionStrain(null, null, w.duration_minutes, wt);
@@ -1640,6 +1643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         baseline_window_seconds: null,
         time_to_recovery_sec: null,
         source: "app",
+        timezone: null,
       });
       const state = initWorkoutState(sessionId, readinessScore);
       await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0);

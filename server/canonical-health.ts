@@ -14,6 +14,7 @@ export interface SleepSummary {
   sleep_latency_min: number | null;
   waso_min: number | null;
   source: string;
+  timezone?: string | null;
 }
 
 export interface VitalsDaily {
@@ -32,6 +33,7 @@ export interface VitalsDaily {
   zone3_min: number | null;
   below_zone1_min: number | null;
   source: string;
+  timezone?: string | null;
 }
 
 export interface WorkoutSession {
@@ -59,6 +61,7 @@ export interface WorkoutSession {
   baseline_window_seconds: number | null;
   time_to_recovery_sec: number | null;
   source: string;
+  timezone?: string | null;
 }
 
 export interface WorkoutHrSample {
@@ -89,12 +92,13 @@ export interface HrvBaselineDaily {
 }
 
 export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
+  console.log('[sleep-upsert]', { date: s.date, sleep_start: s.sleep_start, sleep_end: s.sleep_end, tz: s.timezone, interpreted_day: s.date });
   await pool.query(
     `INSERT INTO sleep_summary_daily
        (date, sleep_start, sleep_end, total_sleep_minutes, time_in_bed_minutes,
         awake_minutes, rem_minutes, deep_minutes, light_or_core_minutes,
-        sleep_efficiency, sleep_latency_min, waso_min, source, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        sleep_efficiency, sleep_latency_min, waso_min, source, timezone, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
      ON CONFLICT (date) DO UPDATE SET
        sleep_start = COALESCE(EXCLUDED.sleep_start, sleep_summary_daily.sleep_start),
        sleep_end = COALESCE(EXCLUDED.sleep_end, sleep_summary_daily.sleep_end),
@@ -108,10 +112,11 @@ export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
        sleep_latency_min = COALESCE(EXCLUDED.sleep_latency_min, sleep_summary_daily.sleep_latency_min),
        waso_min = COALESCE(EXCLUDED.waso_min, sleep_summary_daily.waso_min),
        source = EXCLUDED.source,
+       timezone = COALESCE(EXCLUDED.timezone, sleep_summary_daily.timezone),
        updated_at = NOW()`,
     [s.date, s.sleep_start, s.sleep_end, s.total_sleep_minutes, s.time_in_bed_minutes,
      s.awake_minutes, s.rem_minutes, s.deep_minutes, s.light_or_core_minutes,
-     s.sleep_efficiency, s.sleep_latency_min, s.waso_min, s.source]
+     s.sleep_efficiency, s.sleep_latency_min, s.waso_min, s.source, s.timezone ?? null]
   );
 }
 
@@ -120,8 +125,8 @@ export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
     `INSERT INTO vitals_daily
        (date, resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, respiratory_rate_bpm,
         spo2_pct, skin_temp_delta_c, steps, active_zone_minutes, energy_burned_kcal,
-        zone1_min, zone2_min, zone3_min, below_zone1_min, source, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
+        zone1_min, zone2_min, zone3_min, below_zone1_min, source, timezone, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
      ON CONFLICT (date) DO UPDATE SET
        resting_hr_bpm = COALESCE(EXCLUDED.resting_hr_bpm, vitals_daily.resting_hr_bpm),
        hrv_rmssd_ms = COALESCE(EXCLUDED.hrv_rmssd_ms, vitals_daily.hrv_rmssd_ms),
@@ -137,14 +142,16 @@ export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
        zone3_min = COALESCE(EXCLUDED.zone3_min, vitals_daily.zone3_min),
        below_zone1_min = COALESCE(EXCLUDED.below_zone1_min, vitals_daily.below_zone1_min),
        source = EXCLUDED.source,
+       timezone = COALESCE(EXCLUDED.timezone, vitals_daily.timezone),
        updated_at = NOW()`,
     [v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
      v.spo2_pct, v.skin_temp_delta_c, v.steps, v.active_zone_minutes, v.energy_burned_kcal,
-     v.zone1_min, v.zone2_min, v.zone3_min, v.below_zone1_min, v.source]
+     v.zone1_min, v.zone2_min, v.zone3_min, v.below_zone1_min, v.source, v.timezone ?? null]
   );
 }
 
 export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
+  console.log('[workout-upsert]', { session_id: w.session_id, date: w.date, start_ts: w.start_ts, end_ts: w.end_ts, tz: w.timezone, interpreted_day: w.date });
   await pool.query(
     `INSERT INTO workout_session
        (session_id, date, start_ts, end_ts, workout_type, duration_minutes,
@@ -153,8 +160,8 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
         pre_session_rmssd, min_session_rmssd, post_session_rmssd,
         hrv_suppression_pct, hrv_rebound_pct,
         suppression_depth_pct, rebound_bpm_per_min,
-        baseline_window_seconds, time_to_recovery_sec, source, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW())
+        baseline_window_seconds, time_to_recovery_sec, source, timezone, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW())
      ON CONFLICT (session_id) DO UPDATE SET
        date = EXCLUDED.date,
        start_ts = EXCLUDED.start_ts,
@@ -179,6 +186,7 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
        baseline_window_seconds = COALESCE(EXCLUDED.baseline_window_seconds, workout_session.baseline_window_seconds),
        time_to_recovery_sec = COALESCE(EXCLUDED.time_to_recovery_sec, workout_session.time_to_recovery_sec),
        source = EXCLUDED.source,
+       timezone = COALESCE(EXCLUDED.timezone, workout_session.timezone),
        updated_at = NOW()`,
     [w.session_id, w.date, w.start_ts, w.end_ts, w.workout_type, w.duration_minutes,
      w.avg_hr, w.max_hr, w.calories_burned, w.session_strain_score, w.session_type_tag,
@@ -186,7 +194,7 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
      w.pre_session_rmssd, w.min_session_rmssd, w.post_session_rmssd,
      w.hrv_suppression_pct, w.hrv_rebound_pct,
      w.suppression_depth_pct, w.rebound_bpm_per_min,
-     w.baseline_window_seconds, w.time_to_recovery_sec, w.source]
+     w.baseline_window_seconds, w.time_to_recovery_sec, w.source, w.timezone ?? null]
   );
 }
 

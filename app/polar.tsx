@@ -170,6 +170,14 @@ export default function PolarScreen() {
     const sidParam = params.sessionId;
     const sidHook = polar.sessionId;
 
+    console.log('[polar:endAndAnalyze]', {
+      paramAction: params.action,
+      paramSessionId: params.sessionId,
+      hookSessionId: polar.sessionId,
+      status: polar.status,
+      alreadyHandled: endAndAnalyzeHandled.current,
+    });
+
     if (
       cmd &&
       sidParam &&
@@ -177,6 +185,10 @@ export default function PolarScreen() {
       !endAndAnalyzeHandled.current &&
       (polar.status === "connected" || polar.status === "streaming" || polar.status === "baseline")
     ) {
+      console.log('[polar:endAndAnalyze] ending session now', {
+        sessionId: sidParam,
+        status: polar.status,
+      });
       endAndAnalyzeHandled.current = true;
       polar.endSession();
     }

@@ -176,6 +176,27 @@ included in Expo Go. The dev client build bundles this module into the app.
 A free account works for installing on your own device. A paid account ($99/yr)
 is needed to distribute to other people or publish to the App Store.
 
+**Q: The debug panel shows "Dev Client" but "HealthKit module loaded: no"**
+The native module didn't link correctly. Try:
+1. Make sure `react-native-health` is in `package.json` dependencies
+2. Verify the config plugin is in `app.json` → `plugins` array:
+   ```json
+   ["react-native-health", { "isClinicalDataEnabled": false }]
+   ```
+3. Rebuild: `eas build --profile development --platform ios`
+4. Reinstall the new build on your device
+
+**Q: Bundle identifier mismatch**
+If the build fails with a bundle ID mismatch, make sure `app.json` → `expo.ios.bundleIdentifier`
+matches what's registered in your Apple Developer account. The current value is `com.bulkcoach.app`.
+If you previously used a different ID, either:
+- Update `app.json` to match the old one, OR
+- Create a new App ID in Apple Developer portal matching `com.bulkcoach.app`
+
+**Q: Provisioning profile issues**
+Run `eas device:create` again to re-register your device. Then rebuild.
+If issues persist, try `eas credentials` to manage your provisioning profiles.
+
 **Q: How long does the build take?**
 First build: ~10-15 minutes. Subsequent builds are faster with EAS caching.
 
