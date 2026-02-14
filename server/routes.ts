@@ -1425,6 +1425,164 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Phase 2 spec-exact endpoints ───
+
+  app.post("/api/canonical/sleep/upsert", async (req: Request, res: Response) => {
+    try {
+      const p = req.body;
+      if (!p.date || p.total_sleep_minutes == null || !p.source) {
+        return res.status(400).json({ error: "date, total_sleep_minutes, and source required" });
+      }
+      const s: SleepSummary = {
+        date: p.date,
+        sleep_start: p.sleep_start ?? null,
+        sleep_end: p.sleep_end ?? null,
+        total_sleep_minutes: p.total_sleep_minutes,
+        time_in_bed_minutes: p.time_in_bed_minutes ?? null,
+        awake_minutes: p.awake_minutes ?? null,
+        rem_minutes: p.rem_minutes ?? null,
+        deep_minutes: p.deep_minutes ?? null,
+        light_or_core_minutes: p.light_or_core_minutes ?? null,
+        sleep_efficiency: p.sleep_efficiency ?? null,
+        sleep_latency_min: p.sleep_latency_min ?? null,
+        waso_min: p.waso_min ?? null,
+        source: p.source,
+      };
+      await upsertSleepSummary(s);
+      res.json({ ok: true, date: s.date, updated_at: new Date().toISOString() });
+    } catch (err) {
+      console.error("sleep upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/vitals/upsert", async (req: Request, res: Response) => {
+    try {
+      const p = req.body;
+      if (!p.date || !p.source) {
+        return res.status(400).json({ error: "date and source required" });
+      }
+      const v: VitalsDaily = {
+        date: p.date,
+        resting_hr_bpm: p.resting_hr ?? null,
+        hrv_rmssd_ms: p.hrv_rmssd_ms ?? null,
+        hrv_sdnn_ms: p.hrv_sdnn_ms ?? null,
+        respiratory_rate_bpm: p.respiratory_rate ?? null,
+        spo2_pct: p.spo2 ?? null,
+        skin_temp_delta_c: null,
+        steps: p.steps ?? null,
+        active_zone_minutes: null,
+        energy_burned_kcal: p.active_energy_kcal ?? null,
+        zone1_min: null,
+        zone2_min: null,
+        zone3_min: null,
+        below_zone1_min: null,
+        source: p.source,
+      };
+      await upsertVitalsDaily(v);
+      if (v.hrv_sdnn_ms != null || v.hrv_rmssd_ms != null) {
+        try { await recomputeHrvBaselines(v.date, v.date); } catch {}
+      }
+      res.json({ ok: true, date: v.date, updated_at: new Date().toISOString() });
+    } catch (err) {
+      console.error("vitals upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/upsert-session", async (req: Request, res: Response) => {
+    try {
+      const p = req.body;
+      if (!p.session_id || !p.date || !p.start_ts || !p.source) {
+        return res.status(400).json({ error: "session_id, date, start_ts, and source required" });
+      }
+      const wt = p.workout_type || "other";
+      const w: WorkoutSession = {
+        session_id: p.session_id,
+        date: p.date,
+        start_ts: p.start_ts,
+        end_ts: p.end_ts ?? null,
+        workout_type: wt,
+        duration_minutes: p.end_ts && p.start_ts
+          ? Math.round((new Date(p.end_ts).getTime() - new Date(p.start_ts).getTime()) / 60000 * 10) / 10
+          : null,
+        avg_hr: null,
+        max_hr: null,
+        calories_burned: p.calories_burned ?? null,
+        session_strain_score: null,
+        session_type_tag: null,
+        recovery_slope: null,
+        strength_bias: null,
+        cardio_bias: null,
+        pre_session_rmssd: null,
+        min_session_rmssd: null,
+        post_session_rmssd: null,
+        hrv_suppression_pct: null,
+        hrv_rebound_pct: null,
+        suppression_depth_pct: null,
+        rebound_bpm_per_min: null,
+        baseline_window_seconds: 120,
+        time_to_recovery_sec: null,
+        source: p.source,
+      };
+      if (p.end_ts) {
+        const { strainScore, typeTag } = computeSessionStrain(null, null, w.duration_minutes, wt);
+        w.session_strain_score = strainScore;
+        w.session_type_tag = typeTag;
+        const biases = computeSessionBiases(wt, null, null, w.duration_minutes);
+        w.strength_bias = biases.strength_bias;
+        w.cardio_bias = biases.cardio_bias;
+      }
+      await upsertWorkoutSession(w);
+      res.json({ ok: true, session_id: w.session_id } as { ok: true; session_id: string });
+    } catch (err) {
+      console.error("workout session upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/hr-samples/upsert-bulk", async (req: Request, res: Response) => {
+    try {
+      const p = req.body;
+      if (!p.session_id || !p.source || !Array.isArray(p.samples)) {
+        return res.status(400).json({ error: "session_id, source, and samples[] required" });
+      }
+      const tagged: WorkoutHrSample[] = p.samples.map((s: any) => ({
+        session_id: p.session_id,
+        ts: s.ts,
+        hr_bpm: s.hr_bpm,
+        source: p.source,
+      }));
+      const count = await batchUpsertHrSamples(tagged);
+      res.json({ ok: true, session_id: p.session_id, inserted_or_updated: count });
+    } catch (err) {
+      console.error("hr samples bulk upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/canonical/workouts/rr-intervals/upsert-bulk", async (req: Request, res: Response) => {
+    try {
+      const p = req.body;
+      if (!p.session_id || !p.source || !Array.isArray(p.intervals)) {
+        return res.status(400).json({ error: "session_id, source, and intervals[] required" });
+      }
+      const tagged: WorkoutRrInterval[] = p.intervals.map((r: any) => ({
+        session_id: p.session_id,
+        ts: r.ts,
+        rr_ms: r.rr_ms,
+        source: p.source,
+      }));
+      const count = await batchUpsertRrIntervals(tagged);
+      res.json({ ok: true, session_id: p.session_id, inserted_or_updated: count });
+    } catch (err) {
+      console.error("rr intervals bulk upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ─── End Phase 2 endpoints ───
+
   app.get("/api/canonical/summary", async (req: Request, res: Response) => {
     try {
       const { rows: vitalsCount } = await pool.query(`SELECT COUNT(*) as count FROM vitals_daily`);

@@ -5,6 +5,20 @@ import type {
   WorkoutHrSample,
   WorkoutRrInterval,
 } from "../canonical-health";
+import type {
+  DataSource,
+  IsoDate,
+  IsoDateTime,
+  SleepSummaryUpsertPayload,
+  VitalsDailyUpsertPayload,
+  WorkoutSessionUpsertPayload,
+  HrSamplesUpsertBulkPayload,
+  HealthKitPermissions,
+  HealthKitSyncOptions,
+  HealthKitSyncResult,
+  IHealthKitAdapter,
+} from "../phase2-types";
+import { HK_READ_TYPES } from "../phase2-types";
 
 export interface HKQuantitySample {
   uuid: string;
@@ -68,6 +82,8 @@ const HK_SLEEP_VALUE_MAP: Record<number, string> = {
   5: "asleepREM",
 };
 
+const SOURCE: DataSource = "apple_health";
+
 export function healthkitWorkoutToCanonical(
   workout: HKWorkoutSample,
   hrSamples?: HKQuantitySample[],
@@ -109,7 +125,7 @@ export function healthkitWorkoutToCanonical(
     rebound_bpm_per_min: null,
     baseline_window_seconds: null,
     time_to_recovery_sec: null,
-    source: "healthkit",
+    source: SOURCE,
   };
 }
 
@@ -123,7 +139,7 @@ export function healthkitHrSamplesToCanonical(
       session_id: sessionId,
       ts: s.startDate,
       hr_bpm: Math.round(s.value),
-      source: "healthkit",
+      source: SOURCE,
     }));
 }
 
@@ -143,7 +159,7 @@ export function healthkitHeartbeatSeriesToRr(
     const rrMs = (beat.timeSinceStart - prevTime) * 1000;
     if (rrMs >= 300 && rrMs <= 2000) {
       const ts = new Date(baseMs + beat.timeSinceStart * 1000).toISOString();
-      intervals.push({ session_id: sessionId, ts, rr_ms: Math.round(rrMs * 10) / 10, source: "healthkit" });
+      intervals.push({ session_id: sessionId, ts, rr_ms: Math.round(rrMs * 10) / 10, source: SOURCE });
     }
     prevTime = beat.timeSinceStart;
   }
@@ -183,7 +199,7 @@ export function healthkitVitalsToCanonical(
     zone2_min: null,
     zone3_min: null,
     below_zone1_min: null,
-    source: "healthkit",
+    source: SOURCE,
   };
 }
 
@@ -256,6 +272,151 @@ export function healthkitSleepToCanonical(
     sleep_efficiency: efficiency,
     sleep_latency_min: null,
     waso_min: awakeMin > 0 ? Math.round(awakeMin) : null,
-    source: "healthkit",
+    source: SOURCE,
+  };
+}
+
+export function buildSleepPayload(
+  date: IsoDate,
+  samples: HKCategorySample[],
+  timezone: string,
+  deviceName?: string,
+): SleepSummaryUpsertPayload | null {
+  const canonical = healthkitSleepToCanonical(date, samples);
+  if (!canonical) return null;
+  return {
+    date: canonical.date,
+    sleep_start: canonical.sleep_start ?? "",
+    sleep_end: canonical.sleep_end ?? "",
+    total_sleep_minutes: canonical.total_sleep_minutes,
+    time_in_bed_minutes: canonical.time_in_bed_minutes ?? undefined,
+    awake_minutes: canonical.awake_minutes ?? undefined,
+    rem_minutes: canonical.rem_minutes ?? undefined,
+    deep_minutes: canonical.deep_minutes ?? undefined,
+    light_or_core_minutes: canonical.light_or_core_minutes ?? undefined,
+    sleep_efficiency: canonical.sleep_efficiency ?? undefined,
+    sleep_latency_min: canonical.sleep_latency_min ?? undefined,
+    waso_min: canonical.waso_min ?? undefined,
+    source: SOURCE,
+    timezone,
+    raw: deviceName ? { hk_device_name: deviceName, hk_source_bundle_id: "com.apple.health" } : undefined,
+  };
+}
+
+export function buildVitalsPayload(
+  date: IsoDate,
+  data: {
+    restingHr?: HKQuantitySample;
+    hrv?: HKQuantitySample;
+    respiratoryRate?: HKQuantitySample;
+    oxygenSaturation?: HKQuantitySample;
+    stepCount?: number;
+    activeEnergy?: number;
+  },
+  timezone: string,
+  deviceName?: string,
+): VitalsDailyUpsertPayload {
+  return {
+    date,
+    resting_hr: data.restingHr?.value,
+    hrv_sdnn_ms: data.hrv?.value != null
+      ? Math.round(data.hrv.value * 100) / 100
+      : undefined,
+    spo2: data.oxygenSaturation?.value != null
+      ? Math.round(data.oxygenSaturation.value * 1000) / 10
+      : undefined,
+    respiratory_rate: data.respiratoryRate?.value,
+    steps: data.stepCount,
+    active_energy_kcal: data.activeEnergy != null
+      ? Math.round(data.activeEnergy)
+      : undefined,
+    source: SOURCE,
+    timezone,
+    raw: deviceName ? { hk_device_name: deviceName, hk_source_bundle_id: "com.apple.health" } : undefined,
+  };
+}
+
+export function buildWorkoutPayload(
+  workout: HKWorkoutSample,
+  timezone: string,
+): WorkoutSessionUpsertPayload {
+  const workoutType = HK_WORKOUT_TYPE_MAP[workout.workoutActivityType] ?? "other";
+  return {
+    session_id: `hk_${workout.uuid}`,
+    date: workout.startDate.slice(0, 10),
+    start_ts: workout.startDate,
+    end_ts: workout.endDate,
+    workout_type: workoutType,
+    calories_burned: workout.totalEnergyBurned != null
+      ? Math.round(workout.totalEnergyBurned)
+      : undefined,
+    source: SOURCE,
+    timezone,
+    hk_workout_uuid: workout.uuid,
+  };
+}
+
+export function buildHrSamplesPayload(
+  sessionId: string,
+  hrSamples: HKQuantitySample[],
+): HrSamplesUpsertBulkPayload {
+  return {
+    session_id: sessionId,
+    source: SOURCE,
+    samples: hrSamples
+      .filter(s => s.value >= 30 && s.value <= 250)
+      .map(s => ({
+        ts: s.startDate,
+        hr_bpm: Math.round(s.value),
+      })),
+  };
+}
+
+export function buildSyncPayloads(
+  opts: HealthKitSyncOptions,
+  rawData: {
+    sleepByDate: Record<string, HKCategorySample[]>;
+    vitalsByDate: Record<string, {
+      restingHr?: HKQuantitySample;
+      hrv?: HKQuantitySample;
+      respiratoryRate?: HKQuantitySample;
+      oxygenSaturation?: HKQuantitySample;
+      stepCount?: number;
+      activeEnergy?: number;
+    }>;
+    workouts: HKWorkoutSample[];
+    hrByWorkoutUuid: Record<string, HKQuantitySample[]>;
+  },
+  deviceName?: string,
+): HealthKitSyncResult {
+  const sleepPayloads: SleepSummaryUpsertPayload[] = [];
+  for (const [date, samples] of Object.entries(rawData.sleepByDate)) {
+    const p = buildSleepPayload(date, samples, opts.timezone, deviceName);
+    if (p) sleepPayloads.push(p);
+  }
+
+  const vitalsPayloads: VitalsDailyUpsertPayload[] = [];
+  for (const [date, data] of Object.entries(rawData.vitalsByDate)) {
+    vitalsPayloads.push(buildVitalsPayload(date, data, opts.timezone, deviceName));
+  }
+
+  const sessions: WorkoutSessionUpsertPayload[] = [];
+  const hrSamplesBySessionId: Record<string, HrSamplesUpsertBulkPayload> = {};
+  for (const workout of rawData.workouts) {
+    const sessionPayload = buildWorkoutPayload(workout, opts.timezone);
+    sessions.push(sessionPayload);
+    const hrSamples = rawData.hrByWorkoutUuid[workout.uuid];
+    if (hrSamples && hrSamples.length > 0) {
+      hrSamplesBySessionId[sessionPayload.session_id] = buildHrSamplesPayload(
+        sessionPayload.session_id,
+        hrSamples,
+      );
+    }
+  }
+
+  return {
+    sleep: sleepPayloads,
+    vitals: vitalsPayloads,
+    workouts: { sessions, hrSamplesBySessionId },
   };
 }

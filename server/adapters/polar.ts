@@ -5,6 +5,20 @@ import type {
   WorkoutHrSample,
   WorkoutRrInterval,
 } from "../canonical-health";
+import type {
+  DataSource,
+  IsoDateTime,
+  WorkoutSessionUpsertPayload,
+  HrSamplesUpsertBulkPayload,
+  RrIntervalsUpsertBulkPayload,
+  PolarScanResult,
+  PolarSessionConfig,
+  PolarLiveSample,
+  PolarSessionStats,
+  IPolarBleAdapter,
+  PolarUploader,
+  SessionHrvAnalysisResponse,
+} from "../phase2-types";
 
 export interface PolarExercise {
   id: string;
@@ -82,6 +96,8 @@ const POLAR_SPORT_MAP: Record<string, WorkoutSession["workout_type"]> = {
   STRETCHING: "flexibility",
 };
 
+const SOURCE: DataSource = "polar";
+
 function parsePolarDuration(duration: string): number {
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 0;
@@ -122,7 +138,7 @@ export function polarExerciseToCanonical(exercise: PolarExercise): WorkoutSessio
     rebound_bpm_per_min: null,
     baseline_window_seconds: null,
     time_to_recovery_sec: null,
-    source: "polar",
+    source: SOURCE,
   };
 }
 
@@ -136,7 +152,7 @@ export function polarHrSamplesToCanonical(
       session_id: sessionId,
       ts: s.dateTime,
       hr_bpm: Math.round(s.value),
-      source: "polar",
+      source: SOURCE,
     }));
 }
 
@@ -150,7 +166,7 @@ export function polarRrIntervalsToCanonical(
       session_id: sessionId,
       ts: r.dateTime,
       rr_ms: Math.round(r.rrMs * 10) / 10,
-      source: "polar",
+      source: SOURCE,
     }));
 }
 
@@ -174,7 +190,7 @@ export function polarBleRrToCanonical(
       session_id: sessionId,
       ts,
       rr_ms: Math.round(rr * 10) / 10,
-      source: "polar_ble",
+      source: "polar" as DataSource,
     });
   }
   return intervals;
@@ -202,7 +218,7 @@ export function polarNightlyRechargeToVitals(
     zone2_min: null,
     zone3_min: null,
     below_zone1_min: null,
-    source: "polar",
+    source: SOURCE,
   };
 }
 
@@ -230,7 +246,7 @@ export function polarDailyActivityToVitals(
     zone2_min: null,
     zone3_min: null,
     below_zone1_min: null,
-    source: "polar",
+    source: SOURCE,
   };
 }
 
@@ -272,6 +288,93 @@ export function polarSleepToCanonical(data: PolarSleepData): SleepSummary | null
     sleep_efficiency: efficiency,
     sleep_latency_min: null,
     waso_min: interruptionMin,
-    source: "polar",
+    source: SOURCE,
+  };
+}
+
+export function createBufferingUploader(
+  baseUrl: string,
+  bufferSize: number = 100,
+): PolarUploader & {
+  flushHr(sessionId: string): Promise<void>;
+  flushRr(sessionId: string): Promise<void>;
+  bufferLiveSample(sessionId: string, sample: PolarLiveSample): void;
+} {
+  const hrBuffers: Record<string, { ts: IsoDateTime; hr_bpm: number }[]> = {};
+  const rrBuffers: Record<string, { ts: IsoDateTime; rr_ms: number }[]> = {};
+
+  async function post(path: string, body: any): Promise<any> {
+    const resp = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`POST ${path} failed (${resp.status}): ${text}`);
+    }
+    return resp.json();
+  }
+
+  async function flushHr(sessionId: string): Promise<void> {
+    const buf = hrBuffers[sessionId];
+    if (!buf || buf.length === 0) return;
+    const payload: HrSamplesUpsertBulkPayload = {
+      session_id: sessionId,
+      source: SOURCE,
+      samples: buf.splice(0),
+    };
+    await post("/api/canonical/workouts/hr-samples/upsert-bulk", payload);
+  }
+
+  async function flushRr(sessionId: string): Promise<void> {
+    const buf = rrBuffers[sessionId];
+    if (!buf || buf.length === 0) return;
+    const payload: RrIntervalsUpsertBulkPayload = {
+      session_id: sessionId,
+      source: SOURCE,
+      intervals: buf.splice(0),
+    };
+    await post("/api/canonical/workouts/rr-intervals/upsert-bulk", payload);
+  }
+
+  function bufferLiveSample(sessionId: string, sample: PolarLiveSample): void {
+    if (!hrBuffers[sessionId]) hrBuffers[sessionId] = [];
+    if (!rrBuffers[sessionId]) rrBuffers[sessionId] = [];
+
+    hrBuffers[sessionId].push({ ts: sample.ts, hr_bpm: sample.hr_bpm });
+
+    if (sample.rr_ms) {
+      for (const rr of sample.rr_ms) {
+        if (rr >= 300 && rr <= 2000) {
+          rrBuffers[sessionId].push({ ts: sample.ts, rr_ms: rr });
+        }
+      }
+    }
+
+    if (hrBuffers[sessionId].length >= bufferSize) {
+      flushHr(sessionId).catch(console.error);
+    }
+    if (rrBuffers[sessionId].length >= bufferSize) {
+      flushRr(sessionId).catch(console.error);
+    }
+  }
+
+  return {
+    async upsertSession(payload: WorkoutSessionUpsertPayload): Promise<void> {
+      await post("/api/canonical/workouts/upsert-session", payload);
+    },
+    async upsertHrSamples(payload: HrSamplesUpsertBulkPayload): Promise<void> {
+      await post("/api/canonical/workouts/hr-samples/upsert-bulk", payload);
+    },
+    async upsertRrIntervals(payload: RrIntervalsUpsertBulkPayload): Promise<void> {
+      await post("/api/canonical/workouts/rr-intervals/upsert-bulk", payload);
+    },
+    async analyzeSession(sessionId: string): Promise<SessionHrvAnalysisResponse> {
+      return post(`/api/canonical/workouts/${encodeURIComponent(sessionId)}/analyze-hrv`, {});
+    },
+    flushHr,
+    flushRr,
+    bufferLiveSample,
   };
 }
