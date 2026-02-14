@@ -2,16 +2,16 @@ import { useState, useCallback, useRef } from "react";
 import { Platform } from "react-native";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 
-export type HealthKitStatus = "unavailable" | "idle" | "requesting" | "syncing" | "done" | "error";
+export type HealthKitStatus = "unavailable" | "idle" | "requesting_permissions" | "syncing" | "done" | "error";
 
 export interface SyncCounts {
-  sleep: number;
-  vitals: number;
-  workouts: number;
-  hrSamples: number;
+  sleep_upserts: number;
+  vitals_upserts: number;
+  sessions_upserts: number;
+  hr_samples_points: number;
 }
 
-const EMPTY_COUNTS: SyncCounts = { sleep: 0, vitals: 0, workouts: 0, hrSamples: 0 };
+const EMPTY_COUNTS: SyncCounts = { sleep_upserts: 0, vitals_upserts: 0, sessions_upserts: 0, hr_samples_points: 0 };
 
 let AppleHealthKit: any = null;
 
@@ -65,7 +65,7 @@ export function useHealthKit() {
 
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (!AppleHealthKit) return false;
-    setStatus("requesting");
+    setStatus("requesting_permissions");
     setError(null);
     return new Promise((resolve) => {
       AppleHealthKit.initHealthKit(HK_PERMISSIONS, (err: any) => {
@@ -91,7 +91,7 @@ export function useHealthKit() {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const startDate = dateNDaysAgo(daysBack);
     const opts = { startDate: startDate.toISOString() };
-    const running: SyncCounts = { sleep: 0, vitals: 0, workouts: 0, hrSamples: 0 };
+    const running: SyncCounts = { sleep_upserts: 0, vitals_upserts: 0, sessions_upserts: 0, hr_samples_points: 0 };
 
     try {
       setProgress("Fetching sleep data...");
@@ -141,7 +141,7 @@ export function useHealthKit() {
             source: "apple_health",
             timezone: tz,
           });
-          running.sleep++;
+          running.sleep_upserts++;
           setCounts({ ...running });
         }
       }
@@ -212,7 +212,7 @@ export function useHealthKit() {
             source: "apple_health",
             timezone: tz,
           });
-          running.vitals++;
+          running.vitals_upserts++;
           setCounts({ ...running });
         }
       }
@@ -253,7 +253,7 @@ export function useHealthKit() {
           source: "apple_health",
           timezone: tz,
         });
-        running.workouts++;
+        running.sessions_upserts++;
         setCounts({ ...running });
 
         try {
@@ -275,7 +275,7 @@ export function useHealthKit() {
                 hr_bpm: Math.round(s.value),
               })),
             });
-            running.hrSamples += hrDuring.length;
+            running.hr_samples_points += hrDuring.length;
             setCounts({ ...running });
           }
         } catch {}

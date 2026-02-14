@@ -149,9 +149,12 @@ export default function WorkoutScreen() {
 
   const displayMuscles = currentPhase === "COMPOUND" ? COMPOUND_MUSCLES : ISOLATION_MUSCLES;
 
+  const polarSessionId = params.sessionId || undefined;
+  const isPolarAttached = params.polarConnected === "true" && !!polarSessionId;
+
   const handleStartWorkout = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await engine.startWorkout(readinessInput);
+    await engine.startWorkout(readinessInput, "strength", polarSessionId);
     engine.fetchIsolationTargets(readinessInput);
   };
 
@@ -229,10 +232,10 @@ export default function WorkoutScreen() {
               <Text style={styles.startButtonText}>Begin Workout</Text>
             </Pressable>
 
-            {params.polarConnected === "true" && (
+            {isPolarAttached && (
               <View style={styles.polarNote}>
                 <MaterialCommunityIcons name="heart-flash" size={16} color="#D32027" />
-                <Text style={styles.polarNoteText}>Polar H10 streaming active</Text>
+                <Text style={styles.polarNoteText}>Attaching to Polar H10 session</Text>
               </View>
             )}
           </View>

@@ -65,11 +65,15 @@ export function useWorkoutEngine() {
   const [isolationTargets, setIsolationTargets] = useState<MuscleGroup[]>([]);
   const [weeklyLoads, setWeeklyLoads] = useState<Record<string, number>>({});
 
-  const startWorkout = useCallback(async (readinessScore: number, workoutType: string = "strength") => {
+  const startWorkout = useCallback(async (
+    readinessScore: number,
+    workoutType: string = "strength",
+    sessionIdOverride?: string,
+  ) => {
     setStatus("starting");
     setError(null);
 
-    const sessionId = `wk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const sessionId = sessionIdOverride || `wk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
     try {
       const result = await postJson("/api/workout/start", {

@@ -21,7 +21,7 @@ function StatusBadge({ status }: { status: HealthKitStatus }) {
   const map: Record<HealthKitStatus, { label: string; color: string }> = {
     unavailable: { label: "Not Available", color: Colors.textTertiary },
     idle: { label: "Ready", color: Colors.primary },
-    requesting: { label: "Requesting...", color: Colors.warning },
+    requesting_permissions: { label: "Requesting...", color: Colors.warning },
     syncing: { label: "Syncing...", color: Colors.warning },
     done: { label: "Sync Complete", color: Colors.success },
     error: { label: "Error", color: Colors.danger },
@@ -58,7 +58,7 @@ export default function HealthKitScreen() {
   };
 
   const isUnavailable = status === "unavailable";
-  const isBusy = status === "requesting" || status === "syncing";
+  const isBusy = status === "requesting_permissions" || status === "syncing";
 
   return (
     <>
@@ -130,17 +130,17 @@ export default function HealthKitScreen() {
           </View>
         )}
 
-        {(status === "done" || counts.sleep > 0 || counts.vitals > 0 || counts.workouts > 0) && (
+        {(status === "done" || counts.sleep_upserts > 0 || counts.vitals_upserts > 0 || counts.sessions_upserts > 0) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Import Results</Text>
             <View style={styles.countsRow}>
-              <CountCard label="Sleep" value={counts.sleep} icon="sleep" />
-              <CountCard label="Vitals" value={counts.vitals} icon="heart-pulse" />
-              <CountCard label="Workouts" value={counts.workouts} icon="dumbbell" />
+              <CountCard label="Sleep" value={counts.sleep_upserts} icon="sleep" />
+              <CountCard label="Vitals" value={counts.vitals_upserts} icon="heart-pulse" />
+              <CountCard label="Workouts" value={counts.sessions_upserts} icon="dumbbell" />
             </View>
-            {counts.hrSamples > 0 && (
+            {counts.hr_samples_points > 0 && (
               <Text style={styles.hrNote}>
-                {counts.hrSamples} HR samples imported across workouts
+                {counts.hr_samples_points} HR samples imported across workouts
               </Text>
             )}
           </View>

@@ -45,6 +45,7 @@ let BleManager: any = null;
 const POLAR_HR_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb";
 const POLAR_HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb";
 const BUFFER_SIZE = 100;
+const BASELINE_SEC = 120;
 
 function parseHrMeasurement(data: number[]): { hr: number; rrIntervals: number[] } {
   const flags = data[0];
@@ -65,9 +66,7 @@ function parseHrMeasurement(data: number[]): { hr: number; rrIntervals: number[]
   if (hasRR) {
     while (offset + 1 < data.length) {
       const rr = (data[offset] | (data[offset + 1] << 8)) * 1000 / 1024;
-      if (rr >= 300 && rr <= 2000) {
-        rrIntervals.push(Math.round(rr * 10) / 10);
-      }
+      if (rr >= 300 && rr <= 2000) rrIntervals.push(Math.round(rr * 10) / 10);
       offset += 2;
     }
   }
@@ -80,16 +79,47 @@ async function postJson(path: string, body: any): Promise<any> {
   return res.json();
 }
 
+function decodeBase64ToBytes(b64: string): number[] {
+  const bin = atob(b64);
+  const bytes = new Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function pushRrWithBeatTimes(
+  rrIntervals: number[],
+  packetTimeMs: number,
+  rrBuffer: { ts: string; rr_ms: number }[],
+) {
+  let t = packetTimeMs;
+  for (let i = rrIntervals.length - 1; i >= 0; i--) {
+    const rr = rrIntervals[i];
+    rrBuffer.push({ ts: new Date(t).toISOString(), rr_ms: rr });
+    t -= rr;
+  }
+}
+
 export function usePolarH10() {
   const [status, setStatus] = useState<PolarStatus>(
-    Platform.OS === "web" ? "unavailable" : "idle"
+    Platform.OS === "web" ? "unavailable" : "idle",
   );
+  const statusRef = useRef<PolarStatus>(Platform.OS === "web" ? "unavailable" : "idle");
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
   const [devices, setDevices] = useState<PolarDevice[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<PolarDevice | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const [liveStats, setLiveStats] = useState<LiveStats>({
-    hr: 0, rrCount: 0, hrCount: 0, baselineSecondsLeft: 0, elapsedSec: 0,
+    hr: 0,
+    rrCount: 0,
+    hrCount: 0,
+    baselineSecondsLeft: 0,
+    elapsedSec: 0,
   });
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null);
 
@@ -98,9 +128,10 @@ export function usePolarH10() {
   const hrBufferRef = useRef<{ ts: string; hr_bpm: number }[]>([]);
   const rrBufferRef = useRef<{ ts: string; rr_ms: number }[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const startTimeRef = useRef<number>(0);
   const baselineEndRef = useRef<number>(0);
-  const statsRef = useRef({ hrCount: 0, rrCount: 0 });
+  const statsRef = useRef({ hrCount: 0, rrCount: 0, lastHr: 0 });
 
   const cleanup = useCallback(() => {
     if (subscriptionRef.current) {
@@ -130,59 +161,65 @@ export function usePolarH10() {
     return bleRef.current;
   }, []);
 
-  const scan = useCallback(async (timeoutMs: number = 8000) => {
-    const ble = getBle();
-    if (!ble) {
-      setStatus("unavailable");
-      return;
-    }
-
-    setStatus("scanning");
-    setDevices([]);
-    setError(null);
-
-    const found: PolarDevice[] = [];
-
-    ble.startDeviceScan(null, null, (err: any, device: any) => {
-      if (err) return;
-      if (!device?.name) return;
-      const name = device.name.toLowerCase();
-      if (name.includes("polar") || name.includes("h10") || name.includes("h9")) {
-        if (!found.find(d => d.id === device.id)) {
-          found.push({ id: device.id, name: device.name, rssi: device.rssi ?? -100 });
-          setDevices([...found]);
-        }
+  const scan = useCallback(
+    async (timeoutMs: number = 8000) => {
+      const ble = getBle();
+      if (!ble) {
+        setStatus("unavailable");
+        return;
       }
-    });
 
-    await new Promise(resolve => setTimeout(resolve, timeoutMs));
-    ble.stopDeviceScan();
+      setStatus("scanning");
+      setDevices([]);
+      setError(null);
 
-    if (found.length === 0) {
-      setError("No Polar devices found. Ensure strap is worn and Bluetooth is enabled.");
-    }
-    setStatus("idle");
-  }, [getBle]);
+      const found: PolarDevice[] = [];
 
-  const connect = useCallback(async (deviceId: string) => {
-    const ble = getBle();
-    if (!ble) return;
+      ble.startDeviceScan(null, null, (err: any, device: any) => {
+        if (err) return;
+        if (!device?.name) return;
+        const name = device.name.toLowerCase();
+        if (name.includes("polar") || name.includes("h10") || name.includes("h9")) {
+          if (!found.find((d) => d.id === device.id)) {
+            found.push({ id: device.id, name: device.name, rssi: device.rssi ?? -100 });
+            setDevices([...found]);
+          }
+        }
+      });
 
-    setStatus("connecting");
-    setError(null);
+      await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+      ble.stopDeviceScan();
 
-    try {
-      const device = await ble.connectToDevice(deviceId);
-      await device.discoverAllServicesAndCharacteristics();
+      if (found.length === 0) {
+        setError("No Polar devices found. Ensure strap is worn and Bluetooth is enabled.");
+      }
+      setStatus("idle");
+    },
+    [getBle],
+  );
 
-      const dev = devices.find(d => d.id === deviceId);
-      setConnectedDevice(dev || { id: deviceId, name: "Polar H10", rssi: -50 });
-      setStatus("connected");
-    } catch (err: any) {
-      setError(err.message || "Connection failed");
-      setStatus("error");
-    }
-  }, [getBle, devices]);
+  const connect = useCallback(
+    async (deviceId: string) => {
+      const ble = getBle();
+      if (!ble) return;
+
+      setStatus("connecting");
+      setError(null);
+
+      try {
+        const device = await ble.connectToDevice(deviceId);
+        await device.discoverAllServicesAndCharacteristics();
+
+        const dev = devices.find((d) => d.id === deviceId);
+        setConnectedDevice(dev || { id: deviceId, name: "Polar H10", rssi: -50 });
+        setStatus("connected");
+      } catch (err: any) {
+        setError(err.message || "Connection failed");
+        setStatus("error");
+      }
+    },
+    [getBle, devices],
+  );
 
   const disconnect = useCallback(async () => {
     cleanup();
@@ -226,91 +263,97 @@ export function usePolarH10() {
     }
   }, []);
 
-  const startSession = useCallback(async (readinessScore: number) => {
-    if (!connectedDevice) return;
-    const ble = getBle();
-    if (!ble) return;
+  const startSession = useCallback(
+    async (readinessScore: number) => {
+      if (!connectedDevice) return;
+      const ble = getBle();
+      if (!ble) return;
 
-    const sid = `polar_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    setSessionId(sid);
-    setAnalysis(null);
-    hrBufferRef.current = [];
-    rrBufferRef.current = [];
-    statsRef.current = { hrCount: 0, rrCount: 0 };
+      const start = new Date();
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const sid = `polar_${start.toISOString()}`;
+      setSessionId(sid);
 
-    const now = new Date();
-    startTimeRef.current = now.getTime();
-    baselineEndRef.current = now.getTime() + 120_000;
+      setAnalysis(null);
+      hrBufferRef.current = [];
+      rrBufferRef.current = [];
+      statsRef.current = { hrCount: 0, rrCount: 0, lastHr: 0 };
 
-    try {
-      await postJson("/api/canonical/workouts/upsert-session", {
-        session_id: sid,
-        date: now.toISOString().slice(0, 10),
-        start_ts: now.toISOString(),
-        workout_type: "strength",
-        source: "polar",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        cbp_start: Math.round(Math.pow(readinessScore / 100, 1.4) * 100),
-      });
-    } catch (err: any) {
-      setError("Failed to create session: " + err.message);
-      setStatus("error");
-      return;
-    }
+      startTimeRef.current = start.getTime();
+      baselineEndRef.current = start.getTime() + BASELINE_SEC * 1000;
 
-    setStatus("baseline");
-
-    const subscription = ble.monitorCharacteristicForDevice(
-      connectedDevice.id,
-      POLAR_HR_SERVICE,
-      POLAR_HR_CHAR,
-      (err: any, char: any) => {
-        if (err || !char?.value) return;
-        const bytes = Array.from(
-          Uint8Array.from(atob(char.value), (c: string) => c.charCodeAt(0))
-        ) as number[];
-        const { hr, rrIntervals } = parseHrMeasurement(bytes);
-        const ts = new Date().toISOString();
-
-        hrBufferRef.current.push({ ts, hr_bpm: hr });
-        statsRef.current.hrCount++;
-
-        for (const rr of rrIntervals) {
-          rrBufferRef.current.push({ ts, rr_ms: rr });
-          statsRef.current.rrCount++;
-        }
-
-        if (hrBufferRef.current.length >= BUFFER_SIZE) {
-          flushHrBuffer(sid);
-        }
-        if (rrBufferRef.current.length >= BUFFER_SIZE) {
-          flushRrBuffer(sid);
-        }
+      try {
+        await postJson("/api/canonical/workouts/upsert-session", {
+          session_id: sid,
+          date: start.toISOString().slice(0, 10),
+          start_ts: start.toISOString(),
+          workout_type: "strength",
+          source: "polar",
+          timezone: tz,
+          cbp_start: Math.round(Math.pow(readinessScore / 100, 1.4) * 100),
+          cbp_current: Math.round(Math.pow(readinessScore / 100, 1.4) * 100),
+          phase: "COMPOUND",
+        });
+      } catch (err: any) {
+        setError("Failed to create session: " + (err.message || String(err)));
+        setStatus("error");
+        return;
       }
-    );
 
-    subscriptionRef.current = subscription;
+      setStatus("baseline");
 
-    timerRef.current = setInterval(() => {
-      const nowMs = Date.now();
-      const elapsed = Math.round((nowMs - startTimeRef.current) / 1000);
-      const baselineLeft = Math.max(0, Math.round((baselineEndRef.current - nowMs) / 1000));
+      const subscription = ble.monitorCharacteristicForDevice(
+        connectedDevice.id,
+        POLAR_HR_SERVICE,
+        POLAR_HR_CHAR,
+        (err: any, char: any) => {
+          if (err || !char?.value) return;
 
-      setLiveStats({
-        hr: hrBufferRef.current.length > 0
-          ? hrBufferRef.current[hrBufferRef.current.length - 1].hr_bpm
-          : 0,
-        hrCount: statsRef.current.hrCount,
-        rrCount: statsRef.current.rrCount,
-        baselineSecondsLeft: baselineLeft,
-        elapsedSec: elapsed,
-      });
+          const bytes = decodeBase64ToBytes(char.value);
+          const { hr, rrIntervals } = parseHrMeasurement(bytes);
 
-      if (baselineLeft === 0 && status === "baseline") {
-        setStatus("streaming");
-      }
-    }, 1000);
-  }, [connectedDevice, getBle, flushHrBuffer, flushRrBuffer, status]);
+          const packetTimeMs = Date.now();
+          const ts = new Date(packetTimeMs).toISOString();
+
+          hrBufferRef.current.push({ ts, hr_bpm: hr });
+          statsRef.current.hrCount++;
+          statsRef.current.lastHr = hr;
+
+          if (rrIntervals.length) {
+            pushRrWithBeatTimes(rrIntervals, packetTimeMs, rrBufferRef.current);
+            statsRef.current.rrCount += rrIntervals.length;
+          }
+
+          if (hrBufferRef.current.length >= BUFFER_SIZE) void flushHrBuffer(sid);
+          if (rrBufferRef.current.length >= BUFFER_SIZE) void flushRrBuffer(sid);
+        },
+      );
+
+      subscriptionRef.current = subscription;
+
+      timerRef.current = setInterval(() => {
+        const nowMs = Date.now();
+        const elapsed = Math.round((nowMs - startTimeRef.current) / 1000);
+        const baselineLeft = Math.max(
+          0,
+          Math.round((baselineEndRef.current - nowMs) / 1000),
+        );
+
+        setLiveStats({
+          hr: statsRef.current.lastHr || 0,
+          hrCount: statsRef.current.hrCount,
+          rrCount: statsRef.current.rrCount,
+          baselineSecondsLeft: baselineLeft,
+          elapsedSec: elapsed,
+        });
+
+        if (baselineLeft === 0 && statusRef.current === "baseline") {
+          setStatus("streaming");
+        }
+      }, 1000);
+    },
+    [connectedDevice, getBle, flushHrBuffer, flushRrBuffer],
+  );
 
   const endSession = useCallback(async () => {
     if (!sessionId) return;
@@ -321,36 +364,39 @@ export function usePolarH10() {
       await flushHrBuffer(sessionId);
       await flushRrBuffer(sessionId);
 
-      const endTs = new Date().toISOString();
+      const endTs = new Date();
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
       await postJson("/api/canonical/workouts/upsert-session", {
         session_id: sessionId,
         date: new Date(startTimeRef.current).toISOString().slice(0, 10),
         start_ts: new Date(startTimeRef.current).toISOString(),
-        end_ts: endTs,
+        end_ts: endTs.toISOString(),
         workout_type: "strength",
         source: "polar",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: tz,
       });
 
       const result = await postJson(
         `/api/canonical/workouts/${encodeURIComponent(sessionId)}/analyze-hrv`,
-        {}
+        {},
       );
 
       setAnalysis({
-        pre_session_rmssd: result.pre_session_rmssd,
-        min_session_rmssd: result.min_session_rmssd,
-        post_session_rmssd: result.post_session_rmssd,
-        hrv_suppression_pct: result.hrv_suppression_pct,
-        hrv_rebound_pct: result.hrv_rebound_pct,
-        hrv_response_flag: result.hrv_response_flag,
-        strength_bias: result.strength_bias,
-        cardio_bias: result.cardio_bias,
-        time_to_recovery_sec: result.time_to_recovery_sec,
+        pre_session_rmssd: result.pre_session_rmssd ?? null,
+        min_session_rmssd: result.min_session_rmssd ?? null,
+        post_session_rmssd: result.post_session_rmssd ?? null,
+        hrv_suppression_pct: result.hrv_suppression_pct ?? null,
+        hrv_rebound_pct: result.hrv_rebound_pct ?? null,
+        hrv_response_flag: result.hrv_response_flag ?? "insufficient",
+        strength_bias: result.strength_bias ?? 0.5,
+        cardio_bias: result.cardio_bias ?? 0.5,
+        time_to_recovery_sec: result.time_to_recovery_sec ?? null,
       });
+
       setStatus("done");
     } catch (err: any) {
-      setError("Analysis failed: " + err.message);
+      setError("Analysis failed: " + (err.message || String(err)));
       setStatus("error");
     }
   }, [sessionId, cleanup, flushHrBuffer, flushRrBuffer]);
