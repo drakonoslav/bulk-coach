@@ -564,6 +564,16 @@ async function runMigrations(): Promise<void> {
       PRIMARY KEY (user_id, id)
     );
   `);
+
+  await runMigration('005_readiness_confidence_breakdown', `
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS type_lean REAL;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS exercise_bias REAL;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS cortisol_flag BOOLEAN DEFAULT FALSE;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS conf_measured_7d INTEGER DEFAULT 0;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS conf_imputed_7d INTEGER DEFAULT 0;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS conf_combined_7d INTEGER DEFAULT 0;
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS gate TEXT DEFAULT 'NONE';
+  `);
 }
 
 export { pool };

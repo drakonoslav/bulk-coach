@@ -252,11 +252,16 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
   const Sleep_score = scoreFromDelta(sleepDelta, 0.10, false);
   const Proxy_score = scoreFromDelta(proxyDelta, 0.10, false);
 
+  const W_HRV = 0.30;
+  const W_RHR = 0.20;
+  const W_SLEEP = 0.25;
+  const W_PROXY = 0.25;
+
   const readiness_raw =
-    0.30 * HRV_score +
-    0.20 * RHR_score +
-    0.20 * Sleep_score +
-    0.20 * Proxy_score;
+    W_HRV * HRV_score +
+    W_RHR * RHR_score +
+    W_SLEEP * Sleep_score +
+    W_PROXY * Proxy_score;
 
   const measuredNightsLast7 = last7(proxyAll).filter((v): v is number => v != null).length;
   const { rows: confRows } = await pool.query(
@@ -333,6 +338,16 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
     drivers.push("All signals near baseline");
   }
 
+  const sufficiency = await getDataSufficiency(userId);
+  const gate: "NONE" | "LOW" | "MED" | "HIGH" =
+    sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
+
+  if (gate === "NONE") {
+    readiness = Math.min(readiness, 59);
+  } else if (gate === "LOW") {
+    readiness = Math.min(readiness, 74);
+  }
+
   let tier: "GREEN" | "YELLOW" | "BLUE";
   if (readiness >= 75) {
     tier = "GREEN";
@@ -351,8 +366,6 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
 
   typeLean = Math.round(typeLean * 100) / 100;
   exerciseBias = Math.round(exerciseBias * 100) / 100;
-
-  const sufficiency = await getDataSufficiency(userId);
 
   const r_hrv7d = hrv7d != null ? Math.round(hrv7d * 100) / 100 : null;
   const r_hrv28d = hrv28d != null ? Math.round(hrv28d * 100) / 100 : null;
@@ -398,7 +411,7 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
     drivers,
     analysisStartDate: sufficiency.analysisStartDate,
     daysInWindow: sufficiency.daysWithData,
-    gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
+    gate,
     deltas,
     confidenceBreakdown: {
       grade: confidenceGrade,
@@ -415,8 +428,9 @@ export async function persistReadiness(r: ReadinessResult, userId: string = DEFA
        hrv_delta, rhr_delta, sleep_delta, proxy_delta,
        hrv_7d, hrv_28d, rhr_7d, rhr_28d, sleep_7d, sleep_28d, proxy_7d, proxy_28d,
        type_lean, exercise_bias, cortisol_flag,
+       conf_measured_7d, conf_imputed_7d, conf_combined_7d, gate,
        drivers, computed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,NOW())
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,NOW())
      ON CONFLICT (user_id, date) DO UPDATE SET
        readiness_score = EXCLUDED.readiness_score,
        readiness_tier = EXCLUDED.readiness_tier,
@@ -436,6 +450,10 @@ export async function persistReadiness(r: ReadinessResult, userId: string = DEFA
        type_lean = EXCLUDED.type_lean,
        exercise_bias = EXCLUDED.exercise_bias,
        cortisol_flag = EXCLUDED.cortisol_flag,
+       conf_measured_7d = EXCLUDED.conf_measured_7d,
+       conf_imputed_7d = EXCLUDED.conf_imputed_7d,
+       conf_combined_7d = EXCLUDED.conf_combined_7d,
+       gate = EXCLUDED.gate,
        drivers = EXCLUDED.drivers,
        computed_at = NOW()`,
     [
@@ -444,6 +462,8 @@ export async function persistReadiness(r: ReadinessResult, userId: string = DEFA
       r.hrvDelta, r.rhrDelta, r.sleepDelta, r.proxyDelta,
       r.hrv7d, r.hrv28d, r.rhr7d, r.rhr28d, r.sleep7d, r.sleep28d, r.proxy7d, r.proxy28d,
       r.typeLean, r.exerciseBias, r.cortisolFlag,
+      r.confidenceBreakdown.measured_7d, r.confidenceBreakdown.imputed_7d, r.confidenceBreakdown.combined_7d,
+      r.gate,
       JSON.stringify(r.drivers),
     ],
   );
@@ -477,13 +497,6 @@ function buildDeltasFromRow(r: Record<string, unknown>) {
   });
 }
 
-const defaultConfBreakdown = (grade: string) => ({
-  grade: grade as "High" | "Med" | "Low" | "None",
-  measured_7d: 0,
-  imputed_7d: 0,
-  combined_7d: 0,
-});
-
 export async function getReadiness(date: string, userId: string = DEFAULT_USER_ID): Promise<ReadinessResult | null> {
   const { rows } = await pool.query(
     `SELECT * FROM readiness_daily WHERE date = $1::date AND user_id = $2`,
@@ -493,6 +506,7 @@ export async function getReadiness(date: string, userId: string = DEFAULT_USER_I
   const r = rows[0];
   const sufficiency = await getDataSufficiency(userId);
   const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
+  const storedGate = (r.gate as string) || (sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE");
   return {
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
@@ -517,9 +531,14 @@ export async function getReadiness(date: string, userId: string = DEFAULT_USER_I
     drivers: Array.isArray(r.drivers) ? r.drivers : [],
     analysisStartDate: sufficiency.analysisStartDate,
     daysInWindow: sufficiency.daysWithData,
-    gate: sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE",
+    gate: storedGate as "NONE" | "LOW" | "MED" | "HIGH",
     deltas: buildDeltasFromRow(r),
-    confidenceBreakdown: defaultConfBreakdown(grade),
+    confidenceBreakdown: {
+      grade,
+      measured_7d: r.conf_measured_7d != null ? Number(r.conf_measured_7d) : 0,
+      imputed_7d: r.conf_imputed_7d != null ? Number(r.conf_imputed_7d) : 0,
+      combined_7d: r.conf_combined_7d != null ? Number(r.conf_combined_7d) : 0,
+    },
   };
 }
 
@@ -532,6 +551,7 @@ export async function getReadinessRange(from: string, to: string, userId: string
   const gateValue: "NONE" | "LOW" | "MED" | "HIGH" = sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
   return rows.map((r: Record<string, unknown>) => {
     const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
+    const rowGate = (r.gate as string) || gateValue;
     return {
       date: (r.date as Date).toISOString().slice(0, 10),
       readinessScore: Number(r.readiness_score),
@@ -556,9 +576,14 @@ export async function getReadinessRange(from: string, to: string, userId: string
       drivers: Array.isArray(r.drivers) ? r.drivers : [],
       analysisStartDate: sufficiency.analysisStartDate,
       daysInWindow: sufficiency.daysWithData,
-      gate: gateValue,
+      gate: rowGate as "NONE" | "LOW" | "MED" | "HIGH",
       deltas: buildDeltasFromRow(r),
-      confidenceBreakdown: defaultConfBreakdown(grade),
+      confidenceBreakdown: {
+        grade,
+        measured_7d: r.conf_measured_7d != null ? Number(r.conf_measured_7d) : 0,
+        imputed_7d: r.conf_imputed_7d != null ? Number(r.conf_imputed_7d) : 0,
+        combined_7d: r.conf_combined_7d != null ? Number(r.conf_combined_7d) : 0,
+      },
     };
   });
 }
