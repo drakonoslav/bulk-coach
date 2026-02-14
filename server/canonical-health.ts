@@ -746,8 +746,18 @@ function computeSessionBiasesFromPhysiology(
     }
   }
 
-  strength = Math.round(Math.max(0, Math.min(1, strength)) * 100) / 100;
-  cardio = Math.round(Math.max(0, Math.min(1, cardio)) * 100) / 100;
+  strength = Math.max(0, Math.min(1, strength));
+  cardio = Math.max(0, Math.min(1, cardio));
+  const total = strength + cardio;
+  if (total > 0) {
+    strength = strength / total;
+    cardio = cardio / total;
+  } else {
+    strength = 0.5;
+    cardio = 0.5;
+  }
+  strength = Math.round(strength * 100) / 100;
+  cardio = Math.round(cardio * 100) / 100;
 
   return { strength_bias: strength, cardio_bias: cardio };
 }
