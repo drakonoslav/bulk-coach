@@ -1600,6 +1600,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(DEFAULT_WEEKLY_TARGETS);
   });
 
+  app.get("/api/data-sources", async (_req: Request, res: Response) => {
+    try {
+      const sourceCounts = await pool.query(`
+        SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
+        FROM workout_session
+        GROUP BY source
+      `);
+      const vitalsCounts = await pool.query(`
+        SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
+        FROM vitals_daily
+        GROUP BY source
+      `);
+      const sleepCounts = await pool.query(`
+        SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
+        FROM sleep_summary_daily
+        GROUP BY source
+      `);
+
+      const sources: Record<string, { workouts: number; vitals: number; sleep: number; lastSync: string | null }> = {};
+      for (const row of sourceCounts.rows) {
+        if (!sources[row.source]) sources[row.source] = { workouts: 0, vitals: 0, sleep: 0, lastSync: null };
+        sources[row.source].workouts = parseInt(row.count);
+        if (row.last_sync) sources[row.source].lastSync = row.last_sync;
+      }
+      for (const row of vitalsCounts.rows) {
+        if (!sources[row.source]) sources[row.source] = { workouts: 0, vitals: 0, sleep: 0, lastSync: null };
+        const vs = sources[row.source]!;
+        vs.vitals = parseInt(row.count);
+        if (row.last_sync && (!vs.lastSync || row.last_sync > vs.lastSync))
+          vs.lastSync = row.last_sync;
+      }
+      for (const row of sleepCounts.rows) {
+        if (!sources[row.source]) sources[row.source] = { workouts: 0, vitals: 0, sleep: 0, lastSync: null };
+        const ss = sources[row.source]!;
+        ss.sleep = parseInt(row.count);
+        if (row.last_sync && (!ss.lastSync || row.last_sync > ss.lastSync))
+          ss.lastSync = row.last_sync;
+      }
+
+      const adapters = [
+        { id: "fitbit", name: "Fitbit", status: sources["fitbit"] ? "connected" : "available", ...sources["fitbit"] },
+        { id: "healthkit", name: "Apple Health", status: sources["healthkit"] ? "connected" : "requires_build", ...sources["healthkit"] },
+        { id: "polar", name: "Polar", status: sources["polar"] || sources["polar_ble"] ? "connected" : "requires_build",
+          workouts: (sources["polar"]?.workouts ?? 0) + (sources["polar_ble"]?.workouts ?? 0),
+          vitals: (sources["polar"]?.vitals ?? 0) + (sources["polar_ble"]?.vitals ?? 0),
+          sleep: (sources["polar"]?.sleep ?? 0) + (sources["polar_ble"]?.sleep ?? 0),
+          lastSync: sources["polar"]?.lastSync ?? sources["polar_ble"]?.lastSync ?? null,
+        },
+        { id: "manual", name: "Manual Entry", status: "connected",
+          workouts: sources["manual"]?.workouts ?? sources["smoke_test"]?.workouts ?? sources["unknown"]?.workouts ?? 0,
+          vitals: sources["manual"]?.vitals ?? sources["unknown"]?.vitals ?? 0,
+          sleep: sources["manual"]?.sleep ?? sources["unknown"]?.sleep ?? 0,
+          lastSync: sources["manual"]?.lastSync ?? sources["unknown"]?.lastSync ?? null,
+        },
+      ];
+
+      res.json({ ok: true, sources: adapters });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

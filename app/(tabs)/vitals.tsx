@@ -169,16 +169,21 @@ export default function VitalsScreen() {
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [dataSources, setDataSources] = useState<Array<{
+    id: string; name: string; status: string;
+    workouts?: number; vitals?: number; sleep?: number; lastSync?: string | null;
+  }>>([]);
 
   const loadData = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
 
-      const [sessRes, proxyRes, snapRes, confRes] = await Promise.all([
+      const [sessRes, proxyRes, snapRes, confRes, srcRes] = await Promise.all([
         expoFetch(new URL("/api/erection/sessions", baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL(`/api/erection/proxy?include_imputed=${includeImputed}`, baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/erection/snapshots", baseUrl).toString(), { credentials: "include" }),
         expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
+        expoFetch(new URL("/api/data-sources", baseUrl).toString(), { credentials: "include" }),
       ]);
 
       if (sessRes.ok) {
@@ -216,6 +221,11 @@ export default function VitalsScreen() {
       if (confRes.ok) {
         const rows = await confRes.json();
         setConfidence(rows);
+      }
+
+      if (srcRes.ok) {
+        const json = await srcRes.json();
+        if (json.sources) setDataSources(json.sources);
       }
     } catch (err) {
       console.error("vitals load error:", err);
@@ -640,6 +650,52 @@ export default function VitalsScreen() {
           )}
         </View>
 
+        {dataSources.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="link-outline" size={18} color={ACCENT} />
+              <Text style={styles.cardTitle}>Data Sources</Text>
+            </View>
+            {dataSources.map((src, idx) => {
+              const isConnected = src.status === "connected";
+              const needsBuild = src.status === "requires_build";
+              const statusColor = isConnected ? MEASURED_COLOR : needsBuild ? Colors.textTertiary : Colors.warning;
+              const statusLabel = isConnected ? "Active" : needsBuild ? "Dev Build" : "Setup";
+              const totalRecords = (src.workouts ?? 0) + (src.vitals ?? 0) + (src.sleep ?? 0);
+              const iconName = src.id === "fitbit" ? "watch-outline" as const
+                : src.id === "healthkit" ? "heart-outline" as const
+                : src.id === "polar" ? "bluetooth-outline" as const
+                : "create-outline" as const;
+              return (
+                <View key={src.id} style={[srcStyles.sourceRow, idx > 0 && srcStyles.sourceRowBorder]}>
+                  <View style={[srcStyles.sourceIcon, { backgroundColor: statusColor + "18" }]}>
+                    <Ionicons name={iconName} size={20} color={statusColor} />
+                  </View>
+                  <View style={srcStyles.sourceInfo}>
+                    <Text style={srcStyles.sourceName}>{src.name}</Text>
+                    {isConnected && totalRecords > 0 ? (
+                      <Text style={srcStyles.sourceDetail}>
+                        {[
+                          src.workouts ? `${src.workouts} workouts` : null,
+                          src.vitals ? `${src.vitals} vitals` : null,
+                          src.sleep ? `${src.sleep} sleep` : null,
+                        ].filter(Boolean).join(" / ")}
+                      </Text>
+                    ) : needsBuild ? (
+                      <Text style={srcStyles.sourceDetail}>Requires native dev build</Text>
+                    ) : (
+                      <Text style={srcStyles.sourceDetail}>No data yet</Text>
+                    )}
+                  </View>
+                  <View style={[srcStyles.statusBadge, { backgroundColor: statusColor + "20", borderColor: statusColor + "40" }]}>
+                    <Text style={[srcStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         <View style={[styles.card, { borderColor: "#374151" }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="cloud-download-outline" size={18} color="#60A5FA" />
@@ -1001,5 +1057,48 @@ const styles = StyleSheet.create({
     textAlign: "center" as const,
     marginTop: 6,
     lineHeight: 16,
+  },
+});
+
+const srcStyles = StyleSheet.create({
+  sourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    gap: 12,
+  },
+  sourceRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  sourceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sourceInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  sourceName: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.text,
+  },
+  sourceDetail: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
 });

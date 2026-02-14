@@ -16,7 +16,9 @@ Core logic is modularized:
 - `server/canonical-health.ts`: Vendor-agnostic health data layer with idempotent upserts for all canonical tables, HRV baseline computation (7d rolling median, RMSSD+SDNN deviation %), session strain scoring, recovery slope calculation, 3-window RR processing (baseline/active/recovery RMSSD, suppression %, rebound %), HR oscillation-based bias detection (strength_bias, cardio_bias), and time-to-recovery computation.
 - `server/workout-engine.ts`: Workout game engine with CBP (Compound Budget Points) drain model, phase state machine (COMPOUND→ISOLATION), set logging with RPE-adjusted drain, and automatic phase transitions based on budget depletion rules.
 - `server/muscle-planner.ts`: 17-muscle-group taxonomy with weekly volume tracking (hard_sets/total_sets), deficit-based isolation target picker respecting readiness-gated systemic load, and day-type-aware muscle selection (PPL/Upper-Lower/Full Body).
-- `server/adapters/fitbit.ts`: Translates Fitbit data into the canonical format. Fitbit is just one adapter; future adapters for HealthKit and Polar BLE will use the same canonical schema.
+- `server/adapters/fitbit.ts`: Translates Fitbit data into the canonical format.
+- `server/adapters/healthkit.ts`: Translates Apple HealthKit data (workouts, HR, heartbeat series, sleep categories, vitals) into canonical format. Handles HKHeartbeatSeries → RR interval conversion. Ready for react-native-health integration in Phase 2.
+- `server/adapters/polar.ts`: Translates Polar API + BLE data into canonical format. Supports exercise sessions, nightly recharge HRV/SDNN, daily activity, sleep, and real-time BLE RR intervals. Ready for react-native-ble-plx integration in Phase 2.
 - `server/backup.ts`: Provides versioned export/import functionality with merge/replace modes and schema migration safety.
 - `server/fitbit-takeout.ts`: Parses Google Takeout ZIP files for Fitbit data, handling various CSV and JSON formats, and performing dual-writes to both `daily_log` and canonical tables via Fitbit adapter.
 - `server/sleep-alignment.ts`: Implements a 3-layer sleep model for deviation classification and trending.
@@ -32,7 +34,10 @@ UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purp
 - **Workout Engine**: CBP formula = Math.pow(readinessScore/100, 1.4) * 100. Compound drain = 8 + RPE adjustment, isolation drain = 3 + RPE adjustment. Phase switches to ISOLATION when CBP ≤ 25 or after 8+ compounds with CBP ≤ 40.
 - **Muscle Planner**: 17 granular muscle groups with weekly targets. Low-systemic muscles (delts, biceps, triceps, calves, abs, neck) used when readiness < 60. Isolation targets picked by volume deficit + priority boost.
 - **API**: `/api/canonical/workouts/:sessionId/analyze-hrv` (POST), `/api/workout/start` (POST), `/api/workout/:sessionId/set` (POST), `/api/workout/:sessionId/events` (GET), `/api/workout/cbp` (POST), `/api/muscle/weekly-load` (GET), `/api/muscle/isolation-targets` (POST), `/api/muscle/targets` (GET)
-- **Phase 2**: HealthKit adapter (react-native-health), Polar BLE adapter (react-native-ble-plx) — both require native dev build, will use same canonical schema.
+- **HRV Response Flag**: `hrv_response_flag` TEXT column on workout_session: "suppressed"|"increased"|"flat"|"insufficient". Ratio = (pre-min)/pre; >0.05 = suppressed, <-0.05 = increased, else flat.
+- **Bias Normalization**: strength_bias rounded to 4 decimals, cardio_bias = 1 - strength_bias (ensures exact 1.0 sum).
+- **Data Sources API**: `/api/data-sources` (GET) returns per-source record counts (workouts/vitals/sleep) and last sync timestamp.
+- **Phase 2**: HealthKit adapter (react-native-health), Polar BLE adapter (react-native-ble-plx) — both require native dev build, will use same canonical schema. Adapters are built (`server/adapters/healthkit.ts`, `server/adapters/polar.ts`); sync UI in Vitals tab shows connection status.
 
 ## External Dependencies
 - **Postgres (Neon)**: Primary database for all persistent application data.
