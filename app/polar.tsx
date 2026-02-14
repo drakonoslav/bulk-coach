@@ -166,16 +166,21 @@ export default function PolarScreen() {
 
   const endAndAnalyzeHandled = useRef(false);
   useEffect(() => {
+    const cmd = params.action === "endAndAnalyze";
+    const sidParam = params.sessionId;
+    const sidHook = polar.sessionId;
+
     if (
-      params.action === "endAndAnalyze" &&
+      cmd &&
+      sidParam &&
+      sidHook === sidParam &&
       !endAndAnalyzeHandled.current &&
-      polar.sessionId &&
-      (polar.status === "streaming" || polar.status === "baseline")
+      (polar.status === "connected" || polar.status === "streaming" || polar.status === "baseline")
     ) {
       endAndAnalyzeHandled.current = true;
       polar.endSession();
     }
-  }, [params.action, polar.sessionId, polar.status]);
+  }, [params.action, params.sessionId, polar.sessionId, polar.status]);
 
   const handleScan = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

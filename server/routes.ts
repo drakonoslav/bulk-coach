@@ -1643,7 +1643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       const state = initWorkoutState(sessionId, readinessScore);
       await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0);
-      res.json(state);
+      res.json({ ...state, start_ts: now.toISOString() });
     } catch (err) {
       console.error("workout start error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -1688,6 +1688,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedState);
     } catch (err) {
       console.error("workout set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/workout/:sessionId/next-prompt", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const events = await getWorkoutEvents(sessionId);
+
+      let phase: "COMPOUND" | "ISOLATION" = "COMPOUND";
+      let cbpCurrent = 100;
+      let cbpStart = 100;
+      let compoundSets = 0;
+      let isolationSets = 0;
+      let readinessScore = 75;
+
+      for (const ev of events) {
+        if (ev.cbp_after != null) cbpCurrent = ev.cbp_after;
+        if (ev.cbp_before != null && ev.event_type === "SESSION_START") {
+          cbpStart = ev.cbp_before;
+          readinessScore = Math.round(100 * Math.pow(ev.cbp_before / 100, 1 / 1.4));
+        }
+      }
+
+      const setEvents = events.filter((e: any) => e.event_type === "SET_COMPLETE");
+      compoundSets = setEvents.filter((e: any) => {
+        try { return JSON.parse(e.event_data || "{}").isCompound; } catch { return false; }
+      }).length;
+      isolationSets = setEvents.length - compoundSets;
+
+      if (cbpCurrent <= 25 || (compoundSets >= 8 && cbpCurrent <= 40)) {
+        phase = "ISOLATION";
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const weekStart = getWeekStart(today);
+      const loads = await getWeeklyLoads(weekStart);
+
+      const ctx: ProgramContext = {
+        dayType: "FULL_BODY",
+        priority: [],
+        weeklyTargetSets: DEFAULT_WEEKLY_TARGETS,
+      };
+      const targets = pickIsolationTargets(readinessScore, loads, ctx, 3);
+
+      let promptTitle: string;
+      let promptBody: string;
+      let recommendedMuscles: string[];
+      let stopRule: string | undefined;
+
+      if (phase === "COMPOUND") {
+        const setsLeft = Math.max(1, Math.floor(cbpCurrent / 10));
+        promptTitle = "Compounds available";
+        promptBody = `You have budget for ~${setsLeft} more compound sets. Focus on large muscle groups for maximum stimulus.`;
+        const compoundOptions: MuscleGroup[] = ["chest_upper", "chest_mid", "back_lats", "back_upper", "quads", "hamstrings", "glutes"];
+        const deficits = compoundOptions
+          .map(m => ({ m, deficit: (DEFAULT_WEEKLY_TARGETS[m] || 10) - (loads[m] || 0) }))
+          .sort((a, b) => b.deficit - a.deficit);
+        recommendedMuscles = deficits.slice(0, 3).map(d => d.m);
+        if (cbpCurrent <= 40) {
+          stopRule = `CBP is low (${Math.round(cbpCurrent)}). Switch to isolation after next set if RPE >= 8.`;
+        }
+      } else {
+        promptTitle = "Isolation phase";
+        promptBody = `Compound budget depleted. Focus on isolation movements to fill weekly volume gaps.`;
+        recommendedMuscles = targets.length > 0 ? targets : ["biceps", "triceps", "delts_side"];
+        stopRule = `End session if total strain feels excessive or RPE consistently >= 9.`;
+      }
+
+      res.json({
+        phase,
+        prompt_title: promptTitle,
+        prompt_body: promptBody,
+        recommended_muscles: recommendedMuscles,
+        stop_rule: stopRule,
+        cbp_current: Math.round(cbpCurrent),
+        cbp_start: cbpStart,
+        compound_sets: compoundSets,
+        isolation_sets: isolationSets,
+      });
+    } catch (err) {
+      console.error("next-prompt error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

@@ -131,9 +131,12 @@ export function useWorkoutEngine() {
           setIsolationTargets(targets.targets || []);
         } catch {}
       }
+
+      return result;
     } catch (err: any) {
       setError(err.message || "Failed to log set");
       setStatus("active");
+      return null;
     }
   }, [state]);
 

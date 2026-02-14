@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -11,10 +11,23 @@ import {
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Animated, { useAnimatedStyle, withTiming, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase } from "@/hooks/useWorkoutEngine";
+import { apiRequest } from "@/lib/query-client";
+
+interface CoachPrompt {
+  phase: "COMPOUND" | "ISOLATION";
+  prompt_title: string;
+  prompt_body: string;
+  recommended_muscles: MuscleGroup[];
+  stop_rule?: string;
+}
+
+async function getNextPrompt(sessionId: string): Promise<CoachPrompt> {
+  const res = await apiRequest("GET", `/api/workout/${encodeURIComponent(sessionId)}/next-prompt`);
+  return res.json();
+}
 
 const COMPOUND_MUSCLES: MuscleGroup[] = [
   "chest_upper", "chest_mid", "chest_lower",
@@ -144,6 +157,7 @@ export default function WorkoutScreen() {
   const [readinessInput, setReadinessInput] = useState(
     params.readiness ? parseInt(params.readiness, 10) : 75
   );
+  const [nextPrompt, setNextPrompt] = useState<CoachPrompt | null>(null);
 
   const isActive = engine.status === "active" || engine.status === "logging";
   const currentPhase = engine.state?.phase || "COMPOUND";
@@ -155,10 +169,19 @@ export default function WorkoutScreen() {
   const polarBaselineDone = params.polarBaselineDone === "true";
   const canLogSets = !isPolarAttached || polarBaselineDone;
 
+  const fetchPrompt = useCallback(async (sid: string) => {
+    try {
+      const prompt = await getNextPrompt(sid);
+      setNextPrompt(prompt);
+    } catch {}
+  }, []);
+
   const handleStartWorkout = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await engine.startWorkout(readinessInput, "strength", polarSessionId);
     engine.fetchIsolationTargets(readinessInput);
+    const sid = polarSessionId || engine.state?.session_id;
+    if (sid) fetchPrompt(sid);
   };
 
   const handleLogSet = async () => {
@@ -169,7 +192,10 @@ export default function WorkoutScreen() {
     }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const isCompound = currentPhase === "COMPOUND";
-    await engine.logSet(selectedMuscle, rpe, isCompound);
+    const result = await engine.logSet(selectedMuscle, rpe, isCompound);
+    if (result?.session_id) {
+      fetchPrompt(result.session_id);
+    }
     setSelectedMuscle(null);
   };
 
@@ -184,7 +210,7 @@ export default function WorkoutScreen() {
         });
         return;
       }
-      engine.endWorkout();
+      await engine.endWorkout();
     };
     if (Platform.OS === "web") {
       doEnd();
@@ -290,6 +316,60 @@ export default function WorkoutScreen() {
                   ? "Select a compound movement muscle group"
                   : "Focus on isolation targets below"}
               </Text>
+
+              {nextPrompt && (
+                <View style={styles.coachCard}>
+                  <View style={styles.coachHeaderRow}>
+                    <View style={styles.coachBadge}>
+                      <MaterialCommunityIcons name="controller-classic" size={14} color={Colors.primary} />
+                      <Text style={styles.coachBadgeText}>COACH</Text>
+                    </View>
+                    {nextPrompt.stop_rule ? (
+                      <View style={styles.coachStopPill}>
+                        <Ionicons name="alert-circle" size={14} color={Colors.warning} />
+                        <Text style={styles.coachStopText}>Rule</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.coachTitle}>{nextPrompt.prompt_title}</Text>
+                  <Text style={styles.coachBody}>{nextPrompt.prompt_body}</Text>
+                  {nextPrompt.recommended_muscles?.length ? (
+                    <View style={styles.coachChipsRow}>
+                      {nextPrompt.recommended_muscles.map((m) => (
+                        <Pressable
+                          key={m}
+                          style={[
+                            styles.coachChip,
+                            selectedMuscle === m && styles.coachChipActive,
+                          ]}
+                          onPress={() => setSelectedMuscle(m)}
+                          disabled={engine.status === "logging"}
+                        >
+                          <Ionicons
+                            name="flash"
+                            size={12}
+                            color={selectedMuscle === m ? "#fff" : Colors.primary}
+                          />
+                          <Text
+                            style={[
+                              styles.coachChipText,
+                              selectedMuscle === m && styles.coachChipTextActive,
+                            ]}
+                          >
+                            {MUSCLE_LABELS[m]}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                  {nextPrompt.stop_rule ? (
+                    <View style={styles.coachRuleBox}>
+                      <Text style={styles.coachRuleLabel}>Stop / Switch Rule</Text>
+                      <Text style={styles.coachRuleText}>{nextPrompt.stop_rule}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              )}
 
               {currentPhase === "ISOLATION" && engine.isolationTargets.length > 0 && (
                 <View style={styles.targetsBox}>
@@ -562,4 +642,115 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dangerMuted, borderRadius: 12,
   },
   errorText: { flex: 1, fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.danger },
+
+  coachCard: {
+    backgroundColor: Colors.cardBg,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  coachHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  coachBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  coachBadgeText: {
+    fontSize: 12,
+    fontFamily: "Rubik_700Bold",
+    color: Colors.primary,
+    letterSpacing: 1,
+  },
+  coachStopPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 171, 64, 0.12)",
+    borderWidth: 1,
+    borderColor: Colors.warning,
+  },
+  coachStopText: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.warning,
+  },
+  coachTitle: {
+    fontSize: 16,
+    fontFamily: "Rubik_700Bold",
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  coachBody: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  coachChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  coachChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: Colors.cardBgElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  coachChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  coachChipText: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.primary,
+  },
+  coachChipTextActive: {
+    color: "#fff",
+  },
+  coachRuleBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  coachRuleLabel: {
+    fontSize: 12,
+    fontFamily: "Rubik_700Bold",
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  coachRuleText: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
 });
