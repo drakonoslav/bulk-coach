@@ -687,6 +687,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/import/healthkit/batch", async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const userId = getUserId(req);
+      const timezone: string | null = body.timezone || null;
+
+      const vitals = Array.isArray(body.vitals_daily) ? body.vitals_daily : [];
+      const sleep = Array.isArray(body.sleep_summary_daily) ? body.sleep_summary_daily : [];
+      const sessions = Array.isArray(body.workout_sessions) ? body.workout_sessions : [];
+      const hrSamples = Array.isArray(body.workout_hr_samples) ? body.workout_hr_samples : [];
+
+      const options = body.options || {};
+      const recomputeHrv = options.recompute_hrv_baselines !== false;
+      const recomputeReadinessOpt = options.recompute_readiness !== false;
+      const analyzeSessionHrvOpt = options.analyze_session_hrv === true;
+
+      const isDate = (d: unknown) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+      const isIso = (s: unknown) => typeof s === "string" && !isNaN(new Date(s).getTime());
+
+      const errors: string[] = [];
+
+      let vitalsCount = 0;
+      for (const v of vitals) {
+        if (!isDate(v.date)) {
+          errors.push(`vitals: invalid date "${v.date}"`);
+          continue;
+        }
+        await upsertVitalsDaily({
+          date: v.date,
+          user_id: userId,
+          resting_hr_bpm: v.resting_hr_bpm ?? null,
+          hrv_rmssd_ms: v.hrv_rmssd_ms ?? null,
+          hrv_sdnn_ms: v.hrv_sdnn_ms ?? null,
+          respiratory_rate_bpm: v.respiratory_rate_bpm ?? null,
+          spo2_pct: v.spo2_pct ?? null,
+          skin_temp_delta_c: v.skin_temp_delta_c ?? null,
+          steps: v.steps ?? null,
+          active_zone_minutes: v.active_zone_minutes ?? null,
+          energy_burned_kcal: v.energy_burned_kcal ?? null,
+          zone1_min: v.zone1_min ?? null,
+          zone2_min: v.zone2_min ?? null,
+          zone3_min: v.zone3_min ?? null,
+          below_zone1_min: v.below_zone1_min ?? null,
+          source: "healthkit",
+          timezone,
+        });
+        vitalsCount++;
+      }
+
+      let sleepCount = 0;
+      for (const s of sleep) {
+        if (!isDate(s.date)) {
+          errors.push(`sleep: invalid date "${s.date}"`);
+          continue;
+        }
+        if (s.total_sleep_minutes == null) {
+          errors.push(`sleep: missing total_sleep_minutes for ${s.date}`);
+          continue;
+        }
+        await upsertSleepSummary({
+          date: s.date,
+          user_id: userId,
+          sleep_start: s.sleep_start ?? null,
+          sleep_end: s.sleep_end ?? null,
+          total_sleep_minutes: s.total_sleep_minutes,
+          time_in_bed_minutes: s.time_in_bed_minutes ?? null,
+          awake_minutes: s.awake_minutes ?? null,
+          rem_minutes: s.rem_minutes ?? null,
+          deep_minutes: s.deep_minutes ?? null,
+          light_or_core_minutes: s.light_or_core_minutes ?? null,
+          sleep_efficiency: s.sleep_efficiency ?? null,
+          sleep_latency_min: s.sleep_latency_min ?? null,
+          waso_min: s.waso_min ?? null,
+          source: "healthkit",
+          timezone,
+        });
+        sleepCount++;
+      }
+
+      let sessionCount = 0;
+      for (const w of sessions) {
+        if (!w.session_id || !isDate(w.date) || !isIso(w.start_ts)) {
+          errors.push(`workout: invalid session (id=${w.session_id}, date=${w.date})`);
+          continue;
+        }
+        const wt = (w.workout_type || "other") as "strength" | "cardio" | "hiit" | "flexibility" | "other";
+        const { strainScore, typeTag } = computeSessionStrain(
+          w.avg_hr ?? null, w.max_hr ?? null, w.duration_minutes ?? null, wt
+        );
+        const biases = computeSessionBiases(wt, w.avg_hr ?? null, w.max_hr ?? null, w.duration_minutes ?? null);
+
+        await upsertWorkoutSession({
+          session_id: w.session_id,
+          user_id: userId,
+          date: w.date,
+          start_ts: w.start_ts,
+          end_ts: w.end_ts ?? null,
+          workout_type: wt,
+          duration_minutes: w.duration_minutes ?? null,
+          avg_hr: w.avg_hr ?? null,
+          max_hr: w.max_hr ?? null,
+          calories_burned: w.calories_burned ?? null,
+          session_strain_score: w.session_strain_score ?? strainScore,
+          session_type_tag: w.session_type_tag ?? typeTag,
+          recovery_slope: null,
+          strength_bias: w.strength_bias ?? biases.strength_bias,
+          cardio_bias: w.cardio_bias ?? biases.cardio_bias,
+          pre_session_rmssd: null,
+          min_session_rmssd: null,
+          post_session_rmssd: null,
+          hrv_suppression_pct: null,
+          hrv_rebound_pct: null,
+          suppression_depth_pct: null,
+          rebound_bpm_per_min: null,
+          baseline_window_seconds: w.baseline_window_seconds ?? 120,
+          time_to_recovery_sec: null,
+          source: "healthkit",
+          timezone,
+        });
+        sessionCount++;
+      }
+
+      let hrSampleCount = 0;
+      if (hrSamples.length > 0) {
+        const tagged = hrSamples
+          .filter((s: any) => s.session_id && isIso(s.ts) && Number.isFinite(Number(s.hr_bpm)))
+          .map((s: any) => ({
+            session_id: s.session_id,
+            user_id: userId,
+            ts: s.ts,
+            hr_bpm: Math.round(Number(s.hr_bpm)),
+            source: "healthkit",
+          }));
+        hrSampleCount = await batchUpsertHrSamples(tagged, userId);
+      }
+
+      if (analyzeSessionHrvOpt) {
+        for (const w of sessions) {
+          if (w?.session_id) {
+            analyzeSessionHrv(w.session_id, userId).catch(() => {});
+          }
+        }
+      }
+
+      const start = body.range?.start;
+      const end = body.range?.end;
+
+      if (recomputeHrv && start && end) {
+        const hasHrv = vitals.some((v: any) => v.hrv_sdnn_ms != null || v.hrv_rmssd_ms != null);
+        if (hasHrv) {
+          try { await recomputeHrvBaselines(start, end, userId); } catch {}
+        }
+      }
+
+      if (recomputeReadinessOpt && (start || sleep[0]?.date || vitals[0]?.date)) {
+        const triggerStart = start || sleep[0]?.date || vitals[0]?.date;
+        recomputeReadinessRange(triggerStart, userId, end).catch(() => {});
+      }
+
+      res.json({
+        ok: true,
+        counts: {
+          vitals_daily: vitalsCount,
+          sleep_summary_daily: sleepCount,
+          workout_sessions: sessionCount,
+          workout_hr_samples: hrSampleCount,
+        },
+        user_id: userId,
+        timezone,
+        ...(errors.length > 0 ? { warnings: errors } : {}),
+      });
+    } catch (err: any) {
+      console.error("healthkit batch import error:", err);
+      res.status(500).json({ error: err?.message || "Import failed" });
+    }
+  });
+
   const shiftDateStr = (d: string, offset: number): string => {
     const dt = new Date(d + "T12:00:00Z");
     dt.setUTCDate(dt.getUTCDate() + offset);
