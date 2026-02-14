@@ -12,6 +12,7 @@ export type MuscleGroup =
 
 export interface WorkoutState {
   session_id: string;
+  start_ts: string;
   phase: WorkoutPhase;
   cbpStart: number;
   cbpCurrent: number;
@@ -73,6 +74,7 @@ export function useWorkoutEngine() {
     setStatus("starting");
     setError(null);
 
+    const startTs = new Date().toISOString();
     const sessionId = sessionIdOverride || `wk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
     try {
@@ -82,7 +84,7 @@ export function useWorkoutEngine() {
         workoutType,
       });
 
-      setState(result);
+      setState({ ...result, start_ts: result.start_ts ?? startTs });
       setStatus("active");
 
       try {
@@ -146,16 +148,21 @@ export function useWorkoutEngine() {
     } catch {}
   }, []);
 
-  const endWorkout = useCallback(async () => {
+  const endWorkout = useCallback(async (opts?: { polarOwned?: boolean }) => {
     if (!state) return;
     setStatus("ending");
+
+    if (opts?.polarOwned) {
+      setStatus("finished");
+      return;
+    }
 
     try {
       const endTs = new Date().toISOString();
       await postJson("/api/canonical/workouts/upsert-session", {
         session_id: state.session_id,
-        date: new Date().toISOString().slice(0, 10),
-        start_ts: new Date().toISOString(),
+        date: state.start_ts.slice(0, 10),
+        start_ts: state.start_ts,
         end_ts: endTs,
         workout_type: "strength",
         source: "app",

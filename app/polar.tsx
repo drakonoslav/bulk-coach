@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,7 @@ import {
   ScrollView,
   FlatList,
 } from "react-native";
-import { Stack, router } from "expo-router";
+import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -157,8 +157,25 @@ function AnalysisDisplay({ analysis }: { analysis: any }) {
 
 export default function PolarScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    action?: string;
+    sessionId?: string;
+  }>();
   const [readinessInput, setReadinessInput] = useState(75);
   const polar = usePolarH10();
+
+  const endAndAnalyzeHandled = useRef(false);
+  useEffect(() => {
+    if (
+      params.action === "endAndAnalyze" &&
+      !endAndAnalyzeHandled.current &&
+      polar.sessionId &&
+      (polar.status === "streaming" || polar.status === "baseline")
+    ) {
+      endAndAnalyzeHandled.current = true;
+      polar.endSession();
+    }
+  }, [params.action, polar.sessionId, polar.status]);
 
   const handleScan = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -323,6 +340,7 @@ export default function PolarScreen() {
                       sessionId: polar.sessionId,
                       readiness: readinessInput.toString(),
                       polarConnected: "true",
+                      polarBaselineDone: "true",
                     },
                   });
                 }

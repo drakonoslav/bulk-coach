@@ -135,6 +135,7 @@ export default function WorkoutScreen() {
     sessionId?: string;
     readiness?: string;
     polarConnected?: string;
+    polarBaselineDone?: string;
   }>();
 
   const engine = useWorkoutEngine();
@@ -151,6 +152,8 @@ export default function WorkoutScreen() {
 
   const polarSessionId = params.sessionId || undefined;
   const isPolarAttached = params.polarConnected === "true" && !!polarSessionId;
+  const polarBaselineDone = params.polarBaselineDone === "true";
+  const canLogSets = !isPolarAttached || polarBaselineDone;
 
   const handleStartWorkout = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -160,6 +163,10 @@ export default function WorkoutScreen() {
 
   const handleLogSet = async () => {
     if (!selectedMuscle) return;
+    if (!canLogSets) {
+      Alert.alert("Baseline still running", "Wait for the 2-minute baseline to finish before logging sets.");
+      return;
+    }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const isCompound = currentPhase === "COMPOUND";
     await engine.logSet(selectedMuscle, rpe, isCompound);
@@ -168,7 +175,15 @@ export default function WorkoutScreen() {
 
   const handleEndWorkout = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    const doEnd = () => {
+    const doEnd = async () => {
+      if (isPolarAttached && polarSessionId) {
+        await engine.endWorkout({ polarOwned: true });
+        router.push({
+          pathname: "/polar",
+          params: { action: "endAndAnalyze", sessionId: polarSessionId },
+        });
+        return;
+      }
       engine.endWorkout();
     };
     if (Platform.OS === "web") {
