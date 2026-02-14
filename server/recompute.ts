@@ -1,5 +1,7 @@
 import { pool } from "./db";
 
+const DEFAULT_USER_ID = 'local_default';
+
 interface LogRow {
   day: string;
   morning_weight_lb: number;
@@ -38,7 +40,7 @@ function cardioFuelNote(cardioMin: number | null): string | null {
   return null;
 }
 
-export async function recomputeRange(targetDay: string): Promise<void> {
+export async function recomputeRange(targetDay: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   const targetDate = new Date(targetDay + "T00:00:00Z");
   const recomputeStart = new Date(targetDate);
   recomputeStart.setUTCDate(recomputeStart.getUTCDate() - 20);
@@ -54,9 +56,9 @@ export async function recomputeRange(targetDay: string): Promise<void> {
   const { rows } = await pool.query<LogRow>(
     `SELECT day, morning_weight_lb, evening_weight_lb, waist_in, bf_morning_pct, cardio_min
      FROM daily_log
-     WHERE day >= $1 AND day <= $2
+     WHERE day >= $1 AND day <= $2 AND user_id = $3
      ORDER BY day ASC`,
-    [pullStartStr, recomputeEndStr],
+    [pullStartStr, recomputeEndStr, userId],
   );
 
   const enriched = rows.map((r) => ({
@@ -109,9 +111,9 @@ export async function recomputeRange(targetDay: string): Promise<void> {
     const fuelNote = cardioFuelNote(row.cardio_min);
 
     await pool.query(
-      `INSERT INTO dashboard_cache (day, lean_mass_lb, fat_mass_lb, weight_7d_avg, waist_7d_avg, lean_mass_7d_avg, lean_gain_ratio_14d_roll, cardio_fuel_note, recomputed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-       ON CONFLICT (day) DO UPDATE SET
+      `INSERT INTO dashboard_cache (user_id, day, lean_mass_lb, fat_mass_lb, weight_7d_avg, waist_7d_avg, lean_mass_7d_avg, lean_gain_ratio_14d_roll, cardio_fuel_note, recomputed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       ON CONFLICT (user_id, day) DO UPDATE SET
          lean_mass_lb = EXCLUDED.lean_mass_lb,
          fat_mass_lb = EXCLUDED.fat_mass_lb,
          weight_7d_avg = EXCLUDED.weight_7d_avg,
@@ -121,6 +123,7 @@ export async function recomputeRange(targetDay: string): Promise<void> {
          cardio_fuel_note = EXCLUDED.cardio_fuel_note,
          recomputed_at = NOW()`,
       [
+        userId,
         row.day,
         row.lean_mass_lb,
         row.fat_mass_lb,

@@ -8,6 +8,7 @@ import {
   type SleepClassification,
 } from "../lib/sleep-timing";
 
+const DEFAULT_USER_ID = 'local_default';
 const DEFAULT_PLAN_BED = "21:45";
 const DEFAULT_PLAN_WAKE = "05:30";
 
@@ -59,19 +60,19 @@ export interface SleepBlock {
   fitbitVsReportedDeltaMin: number | null;
 }
 
-export async function computeSleepBlock(date: string): Promise<SleepBlock | null> {
+export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
   const { rows } = await pool.query(
     `SELECT sleep_minutes,
             planned_bed_time, planned_wake_time,
             actual_bed_time, actual_wake_time,
             sleep_latency_min, sleep_waso_min, nap_minutes
-     FROM daily_log WHERE day = $1`,
-    [date]
+     FROM daily_log WHERE day = $1 AND user_id = $2`,
+    [date, userId]
   );
   if (!rows[0]) return null;
 
   const r = rows[0];
-  const schedule = await getSleepPlanSettings();
+  const schedule = await getSleepPlanSettings(userId);
   const plannedBed: string | null = r.planned_bed_time || schedule.bedtime;
   const plannedWake: string | null = r.planned_wake_time || schedule.wake;
   const actualBed: string | null = r.actual_bed_time || null;
@@ -166,12 +167,14 @@ export async function computeSleepBlock(date: string): Promise<SleepBlock | null
   };
 }
 
-export async function getSleepPlanSettings(): Promise<{ bedtime: string; wake: string }> {
+export async function getSleepPlanSettings(userId: string = DEFAULT_USER_ID): Promise<{ bedtime: string; wake: string }> {
   const { rows } = await pool.query(
-    `SELECT value FROM app_settings WHERE key = 'sleep_plan_bedtime'`
+    `SELECT value FROM app_settings WHERE key = 'sleep_plan_bedtime' AND user_id = $1`,
+    [userId]
   );
   const { rows: rows2 } = await pool.query(
-    `SELECT value FROM app_settings WHERE key = 'sleep_plan_wake'`
+    `SELECT value FROM app_settings WHERE key = 'sleep_plan_wake' AND user_id = $1`,
+    [userId]
   );
   return {
     bedtime: rows[0]?.value || DEFAULT_PLAN_BED,
@@ -190,7 +193,7 @@ export interface SleepTrending {
   daysWithAdequacy7d: number;
 }
 
-export async function computeSleepTrending(date: string): Promise<SleepTrending> {
+export async function computeSleepTrending(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepTrending> {
   const d = new Date(date + "T00:00:00Z");
   const d7 = new Date(d);
   d7.setUTCDate(d7.getUTCDate() - 6);
@@ -203,14 +206,14 @@ export async function computeSleepTrending(date: string): Promise<SleepTrending>
     `SELECT day, planned_bed_time, planned_wake_time,
             actual_bed_time, actual_wake_time, sleep_minutes
      FROM daily_log
-     WHERE day BETWEEN $1 AND $2
+     WHERE day BETWEEN $1 AND $2 AND user_id = $3
      ORDER BY day ASC`,
-    [from28, date]
+    [from28, date, userId]
   );
 
   const blocks: Array<{ day: string; alignment: number | null; adequacy: number | null; debt: number | null }> = [];
 
-  const schedule = await getSleepPlanSettings();
+  const schedule = await getSleepPlanSettings(userId);
 
   for (const r of rows) {
     const plannedBed = r.planned_bed_time || schedule.bedtime;
@@ -265,15 +268,15 @@ export async function computeSleepTrending(date: string): Promise<SleepTrending>
   };
 }
 
-export async function setSleepPlanSettings(bedtime: string, wake: string): Promise<void> {
+export async function setSleepPlanSettings(bedtime: string, wake: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   await pool.query(
-    `INSERT INTO app_settings (key, value) VALUES ('sleep_plan_bedtime', $1)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [bedtime]
+    `INSERT INTO app_settings (user_id, key, value) VALUES ($1, 'sleep_plan_bedtime', $2)
+     ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [userId, bedtime]
   );
   await pool.query(
-    `INSERT INTO app_settings (key, value) VALUES ('sleep_plan_wake', $1)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [wake]
+    `INSERT INTO app_settings (user_id, key, value) VALUES ($1, 'sleep_plan_wake', $2)
+     ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [userId, wake]
   );
 }

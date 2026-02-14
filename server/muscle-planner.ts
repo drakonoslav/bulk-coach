@@ -2,6 +2,8 @@ import { pool } from "./db";
 import type { MuscleGroup } from "./workout-engine";
 import { ALL_MUSCLE_GROUPS } from "./workout-engine";
 
+const DEFAULT_USER_ID = 'local_default';
+
 export type DayType = "PUSH" | "PULL" | "LEGS" | "FULL_BODY" | "UPPER" | "LOWER";
 
 export interface ProgramContext {
@@ -70,10 +72,10 @@ export function getWeekStart(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function getWeeklyLoads(weekStart: string): Promise<Partial<Record<MuscleGroup, number>>> {
+export async function getWeeklyLoads(weekStart: string, userId: string = DEFAULT_USER_ID): Promise<Partial<Record<MuscleGroup, number>>> {
   const { rows } = await pool.query(
-    `SELECT muscle, hard_sets FROM muscle_weekly_load WHERE week_start = $1`,
-    [weekStart]
+    `SELECT muscle, hard_sets FROM muscle_weekly_load WHERE week_start = $1 AND user_id = $2`,
+    [weekStart, userId]
   );
   const result: Partial<Record<MuscleGroup, number>> = {};
   for (const r of rows) {
@@ -87,27 +89,28 @@ export async function incrementMuscleLoad(
   weekStart: string,
   sets: number = 1,
   isHard: boolean = true,
+  userId: string = DEFAULT_USER_ID,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO muscle_weekly_load (muscle, week_start, hard_sets, total_sets, updated_at)
-     VALUES ($1, $2, $3, $4, NOW())
-     ON CONFLICT (muscle, week_start) DO UPDATE SET
-       hard_sets = muscle_weekly_load.hard_sets + $3,
-       total_sets = muscle_weekly_load.total_sets + $4,
+    `INSERT INTO muscle_weekly_load (user_id, muscle, week_start, hard_sets, total_sets, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (user_id, muscle, week_start) DO UPDATE SET
+       hard_sets = muscle_weekly_load.hard_sets + $4,
+       total_sets = muscle_weekly_load.total_sets + $5,
        updated_at = NOW()`,
-    [muscle, weekStart, isHard ? sets : 0, sets]
+    [userId, muscle, weekStart, isHard ? sets : 0, sets]
   );
 }
 
-export async function getWeeklyLoadSummary(weekStart: string): Promise<{
+export async function getWeeklyLoadSummary(weekStart: string, userId: string = DEFAULT_USER_ID): Promise<{
   loads: Partial<Record<MuscleGroup, { hard_sets: number; total_sets: number; target: number; deficit: number }>>;
   totalSets: number;
   musclesAtTarget: number;
   musclesBelowTarget: number;
 }> {
   const { rows } = await pool.query(
-    `SELECT muscle, hard_sets, total_sets FROM muscle_weekly_load WHERE week_start = $1`,
-    [weekStart]
+    `SELECT muscle, hard_sets, total_sets FROM muscle_weekly_load WHERE week_start = $1 AND user_id = $2`,
+    [weekStart, userId]
   );
 
   const loads: Partial<Record<MuscleGroup, { hard_sets: number; total_sets: number; target: number; deficit: number }>> = {};

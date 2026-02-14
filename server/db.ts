@@ -294,9 +294,9 @@ export async function initDb(): Promise<void> {
   `);
 
   await pool.query(`
-    INSERT INTO training_template (id, template_type, sessions)
-    VALUES (1, 'push_pull_legs', $1::jsonb)
-    ON CONFLICT (id) DO NOTHING
+    INSERT INTO training_template (id, user_id, template_type, sessions)
+    VALUES (1, 'local_default', 'push_pull_legs', $1::jsonb)
+    ON CONFLICT (user_id, id) DO NOTHING
   `, [JSON.stringify([
     { name: "Push", highLabel: "Heavy Bench / OHP", medLabel: "Normal Hypertrophy", lowLabel: "Machine Press / Flyes / Pump" },
     { name: "Pull", highLabel: "Heavy Rows / Deadlift", medLabel: "Normal Hypertrophy", lowLabel: "Cables / Light Rows / Technique" },
@@ -443,8 +443,8 @@ export async function initDb(): Promise<void> {
   defaultStart.setUTCDate(defaultStart.getUTCDate() - 60);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
   await pool.query(`
-    INSERT INTO app_settings (key, value) VALUES ('analysis_start_date', $1)
-    ON CONFLICT (key) DO NOTHING
+    INSERT INTO app_settings (user_id, key, value) VALUES ('local_default', 'analysis_start_date', $1)
+    ON CONFLICT (user_id, key) DO NOTHING
   `, [defaultStartStr]);
 
   await runMigrations();
@@ -483,6 +483,85 @@ async function runMigrations(): Promise<void> {
       total_sets INTEGER NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (muscle, week_start)
+    );
+  `);
+
+  await runMigration('004_add_user_id_multi_tenant', `
+    -- Add user_id to all core tables
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE dashboard_cache ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE sleep_summary_daily ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE vitals_daily ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE workout_session ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE hrv_baseline_daily ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE erection_sessions ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE erection_summary_snapshots ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE muscle_weekly_load ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE androgen_proxy_daily ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE workout_events ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE fitbit_imports ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE fitbit_takeout_imports ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+
+    -- Drop old PKs and create composite PKs with user_id
+    ALTER TABLE daily_log DROP CONSTRAINT daily_log_pkey;
+    ALTER TABLE daily_log ADD PRIMARY KEY (user_id, day);
+
+    ALTER TABLE dashboard_cache DROP CONSTRAINT dashboard_cache_pkey;
+    ALTER TABLE dashboard_cache ADD PRIMARY KEY (user_id, day);
+
+    ALTER TABLE sleep_summary_daily DROP CONSTRAINT sleep_summary_daily_pkey;
+    ALTER TABLE sleep_summary_daily ADD PRIMARY KEY (user_id, date);
+
+    ALTER TABLE vitals_daily DROP CONSTRAINT vitals_daily_pkey;
+    ALTER TABLE vitals_daily ADD PRIMARY KEY (user_id, date);
+
+    ALTER TABLE hrv_baseline_daily DROP CONSTRAINT hrv_baseline_daily_pkey;
+    ALTER TABLE hrv_baseline_daily ADD PRIMARY KEY (user_id, date);
+
+    ALTER TABLE readiness_daily DROP CONSTRAINT readiness_daily_pkey;
+    ALTER TABLE readiness_daily ADD PRIMARY KEY (user_id, date);
+
+    ALTER TABLE erection_sessions DROP CONSTRAINT erection_sessions_pkey;
+    ALTER TABLE erection_sessions ADD PRIMARY KEY (user_id, date);
+
+    ALTER TABLE muscle_weekly_load DROP CONSTRAINT muscle_weekly_load_pkey;
+    ALTER TABLE muscle_weekly_load ADD PRIMARY KEY (user_id, muscle, week_start);
+
+    ALTER TABLE androgen_proxy_daily DROP CONSTRAINT androgen_proxy_daily_pkey;
+    ALTER TABLE androgen_proxy_daily ADD PRIMARY KEY (user_id, date, computed_with_imputed);
+
+    ALTER TABLE app_settings DROP CONSTRAINT app_settings_pkey;
+    ALTER TABLE app_settings ADD PRIMARY KEY (user_id, key);
+
+    ALTER TABLE training_template DROP CONSTRAINT IF EXISTS single_row;
+    ALTER TABLE training_template ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE training_template DROP CONSTRAINT training_template_pkey;
+    ALTER TABLE training_template ADD PRIMARY KEY (user_id, id);
+
+    -- Indexes for user_id scoping
+    CREATE INDEX IF NOT EXISTS idx_workout_session_user ON workout_session(user_id);
+    CREATE INDEX IF NOT EXISTS idx_daily_log_user ON daily_log(user_id);
+
+    -- Macro presets table
+    CREATE TABLE IF NOT EXISTS macro_presets (
+      id TEXT NOT NULL,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      name TEXT NOT NULL,
+      locked BOOLEAN NOT NULL DEFAULT FALSE,
+      calories REAL NOT NULL,
+      protein_g REAL NOT NULL,
+      carbs_g REAL NOT NULL,
+      fat_g REAL NOT NULL,
+      items JSONB NOT NULL DEFAULT '{}'::jsonb,
+      adjust_priority JSONB NOT NULL DEFAULT '[]'::jsonb,
+      cardio_fuel JSONB NOT NULL DEFAULT '{}'::jsonb,
+      checklist JSONB NOT NULL DEFAULT '[]'::jsonb,
+      meal_slots JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, id)
     );
   `);
 }

@@ -1,7 +1,16 @@
 import { pool } from "./db";
 
+export const DEFAULT_USER_ID = 'local_default';
+
+export interface IngestionContext {
+  user_id: string;
+  source: string;
+  timezone?: string | null;
+}
+
 export interface SleepSummary {
   date: string;
+  user_id?: string;
   sleep_start: string | null;
   sleep_end: string | null;
   total_sleep_minutes: number;
@@ -19,6 +28,7 @@ export interface SleepSummary {
 
 export interface VitalsDaily {
   date: string;
+  user_id?: string;
   resting_hr_bpm: number | null;
   hrv_rmssd_ms: number | null;
   hrv_sdnn_ms: number | null;
@@ -39,6 +49,7 @@ export interface VitalsDaily {
 export interface WorkoutSession {
   session_id: string;
   date: string;
+  user_id?: string;
   start_ts: string;
   end_ts: string | null;
   workout_type: "strength" | "cardio" | "hiit" | "flexibility" | "other";
@@ -80,6 +91,7 @@ export interface WorkoutRrInterval {
 
 export interface HrvBaselineDaily {
   date: string;
+  user_id?: string;
   night_hrv_rmssd_ms: number | null;
   night_hrv_sdnn_ms: number | null;
   baseline_hrv_rmssd_7d_median: number | null;
@@ -92,14 +104,14 @@ export interface HrvBaselineDaily {
 }
 
 export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
-  console.log('[sleep-upsert]', { date: s.date, sleep_start: s.sleep_start, sleep_end: s.sleep_end, tz: s.timezone, interpreted_day: s.date });
+  console.log('[sleep-upsert]', { user_id: s.user_id ?? DEFAULT_USER_ID, date: s.date, sleep_start: s.sleep_start, sleep_end: s.sleep_end, tz: s.timezone, interpreted_day: s.date });
   await pool.query(
     `INSERT INTO sleep_summary_daily
-       (date, sleep_start, sleep_end, total_sleep_minutes, time_in_bed_minutes,
+       (user_id, date, sleep_start, sleep_end, total_sleep_minutes, time_in_bed_minutes,
         awake_minutes, rem_minutes, deep_minutes, light_or_core_minutes,
         sleep_efficiency, sleep_latency_min, waso_min, source, timezone, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
-     ON CONFLICT (date) DO UPDATE SET
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
+     ON CONFLICT (user_id, date) DO UPDATE SET
        sleep_start = COALESCE(EXCLUDED.sleep_start, sleep_summary_daily.sleep_start),
        sleep_end = COALESCE(EXCLUDED.sleep_end, sleep_summary_daily.sleep_end),
        total_sleep_minutes = EXCLUDED.total_sleep_minutes,
@@ -114,7 +126,7 @@ export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
        source = EXCLUDED.source,
        timezone = COALESCE(EXCLUDED.timezone, sleep_summary_daily.timezone),
        updated_at = NOW()`,
-    [s.date, s.sleep_start, s.sleep_end, s.total_sleep_minutes, s.time_in_bed_minutes,
+    [s.user_id ?? DEFAULT_USER_ID, s.date, s.sleep_start, s.sleep_end, s.total_sleep_minutes, s.time_in_bed_minutes,
      s.awake_minutes, s.rem_minutes, s.deep_minutes, s.light_or_core_minutes,
      s.sleep_efficiency, s.sleep_latency_min, s.waso_min, s.source, s.timezone ?? null]
   );
@@ -123,11 +135,11 @@ export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
 export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
   await pool.query(
     `INSERT INTO vitals_daily
-       (date, resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, respiratory_rate_bpm,
+       (user_id, date, resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, respiratory_rate_bpm,
         spo2_pct, skin_temp_delta_c, steps, active_zone_minutes, energy_burned_kcal,
         zone1_min, zone2_min, zone3_min, below_zone1_min, source, timezone, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
-     ON CONFLICT (date) DO UPDATE SET
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
+     ON CONFLICT (user_id, date) DO UPDATE SET
        resting_hr_bpm = COALESCE(EXCLUDED.resting_hr_bpm, vitals_daily.resting_hr_bpm),
        hrv_rmssd_ms = COALESCE(EXCLUDED.hrv_rmssd_ms, vitals_daily.hrv_rmssd_ms),
        hrv_sdnn_ms = COALESCE(EXCLUDED.hrv_sdnn_ms, vitals_daily.hrv_sdnn_ms),
@@ -144,7 +156,7 @@ export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
        source = EXCLUDED.source,
        timezone = COALESCE(EXCLUDED.timezone, vitals_daily.timezone),
        updated_at = NOW()`,
-    [v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
+    [v.user_id ?? DEFAULT_USER_ID, v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
      v.spo2_pct, v.skin_temp_delta_c, v.steps, v.active_zone_minutes, v.energy_burned_kcal,
      v.zone1_min, v.zone2_min, v.zone3_min, v.below_zone1_min, v.source, v.timezone ?? null]
   );
@@ -154,15 +166,16 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
   console.log('[workout-upsert]', { session_id: w.session_id, date: w.date, start_ts: w.start_ts, end_ts: w.end_ts, tz: w.timezone, interpreted_day: w.date });
   await pool.query(
     `INSERT INTO workout_session
-       (session_id, date, start_ts, end_ts, workout_type, duration_minutes,
+       (session_id, user_id, date, start_ts, end_ts, workout_type, duration_minutes,
         avg_hr, max_hr, calories_burned, session_strain_score, session_type_tag,
         recovery_slope, strength_bias, cardio_bias,
         pre_session_rmssd, min_session_rmssd, post_session_rmssd,
         hrv_suppression_pct, hrv_rebound_pct,
         suppression_depth_pct, rebound_bpm_per_min,
         baseline_window_seconds, time_to_recovery_sec, source, timezone, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW())
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW())
      ON CONFLICT (session_id) DO UPDATE SET
+       user_id = EXCLUDED.user_id,
        date = EXCLUDED.date,
        start_ts = EXCLUDED.start_ts,
        end_ts = COALESCE(EXCLUDED.end_ts, workout_session.end_ts),
@@ -188,7 +201,7 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
        source = EXCLUDED.source,
        timezone = COALESCE(EXCLUDED.timezone, workout_session.timezone),
        updated_at = NOW()`,
-    [w.session_id, w.date, w.start_ts, w.end_ts, w.workout_type, w.duration_minutes,
+    [w.session_id, w.user_id ?? DEFAULT_USER_ID, w.date, w.start_ts, w.end_ts, w.workout_type, w.duration_minutes,
      w.avg_hr, w.max_hr, w.calories_burned, w.session_strain_score, w.session_type_tag,
      w.recovery_slope, w.strength_bias, w.cardio_bias,
      w.pre_session_rmssd, w.min_session_rmssd, w.post_session_rmssd,
@@ -231,12 +244,12 @@ export async function batchUpsertRrIntervals(intervals: WorkoutRrInterval[]): Pr
 export async function upsertHrvBaseline(b: HrvBaselineDaily): Promise<void> {
   await pool.query(
     `INSERT INTO hrv_baseline_daily
-       (date, night_hrv_rmssd_ms, night_hrv_sdnn_ms,
+       (user_id, date, night_hrv_rmssd_ms, night_hrv_sdnn_ms,
         baseline_hrv_rmssd_7d_median, baseline_hrv_sdnn_7d_median,
         deviation_rmssd_pct, deviation_sdnn_pct,
         morning_hrv_sdnn_ms, morning_deviation_pct, source, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
-     ON CONFLICT (date) DO UPDATE SET
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+     ON CONFLICT (user_id, date) DO UPDATE SET
        night_hrv_rmssd_ms = COALESCE(EXCLUDED.night_hrv_rmssd_ms, hrv_baseline_daily.night_hrv_rmssd_ms),
        night_hrv_sdnn_ms = COALESCE(EXCLUDED.night_hrv_sdnn_ms, hrv_baseline_daily.night_hrv_sdnn_ms),
        baseline_hrv_rmssd_7d_median = EXCLUDED.baseline_hrv_rmssd_7d_median,
@@ -247,33 +260,33 @@ export async function upsertHrvBaseline(b: HrvBaselineDaily): Promise<void> {
        morning_deviation_pct = EXCLUDED.morning_deviation_pct,
        source = EXCLUDED.source,
        updated_at = NOW()`,
-    [b.date, b.night_hrv_rmssd_ms, b.night_hrv_sdnn_ms,
+    [b.user_id ?? DEFAULT_USER_ID, b.date, b.night_hrv_rmssd_ms, b.night_hrv_sdnn_ms,
      b.baseline_hrv_rmssd_7d_median, b.baseline_hrv_sdnn_7d_median,
      b.deviation_rmssd_pct, b.deviation_sdnn_pct,
      b.morning_hrv_sdnn_ms, b.morning_deviation_pct, b.source]
   );
 }
 
-export async function getSleepSummaryRange(startDate: string, endDate: string): Promise<SleepSummary[]> {
+export async function getSleepSummaryRange(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<SleepSummary[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM sleep_summary_daily WHERE date >= $1 AND date <= $2 ORDER BY date ASC`,
-    [startDate, endDate]
+    `SELECT * FROM sleep_summary_daily WHERE date >= $1 AND date <= $2 AND user_id = $3 ORDER BY date ASC`,
+    [startDate, endDate, userId]
   );
   return rows;
 }
 
-export async function getVitalsDailyRange(startDate: string, endDate: string): Promise<VitalsDaily[]> {
+export async function getVitalsDailyRange(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<VitalsDaily[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM vitals_daily WHERE date >= $1 AND date <= $2 ORDER BY date ASC`,
-    [startDate, endDate]
+    `SELECT * FROM vitals_daily WHERE date >= $1 AND date <= $2 AND user_id = $3 ORDER BY date ASC`,
+    [startDate, endDate, userId]
   );
   return rows;
 }
 
-export async function getWorkoutSessions(startDate: string, endDate: string): Promise<WorkoutSession[]> {
+export async function getWorkoutSessions(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<WorkoutSession[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM workout_session WHERE date >= $1 AND date <= $2 ORDER BY start_ts ASC`,
-    [startDate, endDate]
+    `SELECT * FROM workout_session WHERE date >= $1 AND date <= $2 AND user_id = $3 ORDER BY start_ts ASC`,
+    [startDate, endDate, userId]
   );
   return rows;
 }
@@ -294,10 +307,10 @@ export async function getRrIntervalsForSession(sessionId: string): Promise<Worko
   return rows;
 }
 
-export async function getHrvBaselineRange(startDate: string, endDate: string): Promise<HrvBaselineDaily[]> {
+export async function getHrvBaselineRange(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<HrvBaselineDaily[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM hrv_baseline_daily WHERE date >= $1 AND date <= $2 ORDER BY date ASC`,
-    [startDate, endDate]
+    `SELECT * FROM hrv_baseline_daily WHERE date >= $1 AND date <= $2 AND user_id = $3 ORDER BY date ASC`,
+    [startDate, endDate, userId]
   );
   return rows;
 }
@@ -309,12 +322,12 @@ function median(values: number[]): number {
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-export async function recomputeHrvBaselines(startDate: string, endDate: string): Promise<number> {
+export async function recomputeHrvBaselines(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<number> {
   const { rows: vitals } = await pool.query(
     `SELECT date::text as date, hrv_rmssd_ms, hrv_sdnn_ms, source FROM vitals_daily
-     WHERE date >= ($1::date - interval '14 days') AND date <= $2::date
+     WHERE date >= ($1::date - interval '14 days') AND date <= $2::date AND user_id = $3
      ORDER BY date ASC`,
-    [startDate, endDate]
+    [startDate, endDate, userId]
   );
 
   const rmssdMap = new Map<string, number>();
@@ -363,6 +376,7 @@ export async function recomputeHrvBaselines(startDate: string, endDate: string):
 
     await upsertHrvBaseline({
       date,
+      user_id: userId,
       night_hrv_rmssd_ms: nightRmssd,
       night_hrv_sdnn_ms: nightSdnn,
       baseline_hrv_rmssd_7d_median: baselineRmssd,

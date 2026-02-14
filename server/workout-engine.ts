@@ -1,5 +1,7 @@
 import { pool } from "./db";
 
+export const DEFAULT_USER_ID = 'local_default';
+
 export type MuscleGroup =
   | "chest_upper" | "chest_mid" | "chest_lower"
   | "back_lats" | "back_upper" | "back_mid"
@@ -136,21 +138,22 @@ export async function persistWorkoutEvent(
   cbpBefore: number,
   cbpAfter: number,
   drain: number,
+  userId: string = DEFAULT_USER_ID,
 ): Promise<void> {
   await pool.query(
     `INSERT INTO workout_events
-       (session_id, t, event_type, phase, muscle, rpe, is_compound, cbp_before, cbp_after, drain)
-     VALUES ($1, to_timestamp($2/1000.0), $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [sessionId, event.t, event.type, event.phase || null,
+       (session_id, user_id, t, event_type, phase, muscle, rpe, is_compound, cbp_before, cbp_after, drain)
+     VALUES ($1, $2, to_timestamp($3/1000.0), $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [sessionId, userId, event.t, event.type, event.phase || null,
      event.muscle || null, event.rpe || null, event.isCompound ?? null,
      cbpBefore, cbpAfter, drain]
   );
 }
 
-export async function getWorkoutEvents(sessionId: string): Promise<any[]> {
+export async function getWorkoutEvents(sessionId: string, userId: string = DEFAULT_USER_ID): Promise<any[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM workout_events WHERE session_id = $1 ORDER BY t ASC`,
-    [sessionId]
+    `SELECT * FROM workout_events WHERE session_id = $1 AND user_id = $2 ORDER BY t ASC`,
+    [sessionId, userId]
   );
   return rows;
 }

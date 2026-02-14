@@ -1,6 +1,8 @@
 import { pool } from "./db";
 import crypto from "crypto";
 
+const DEFAULT_USER_ID = 'local_default';
+
 interface Snapshot {
   id: string;
   sha256: string;
@@ -195,13 +197,14 @@ export async function importSnapshotAndDerive(
   parsed: ParsedSnapshot,
   sessionDate: string,
   originalFilename: string,
+  userId: string = DEFAULT_USER_ID,
 ): Promise<DeriveResult> {
   const { rows: existingSnap } = await pool.query(
-    `SELECT id FROM erection_summary_snapshots WHERE sha256 = $1`,
-    [parsed.sha256],
+    `SELECT id FROM erection_summary_snapshots WHERE sha256 = $1 AND user_id = $2`,
+    [parsed.sha256, userId],
   );
   if (existingSnap.length > 0) {
-    const snap = (await pool.query(`SELECT * FROM erection_summary_snapshots WHERE sha256 = $1`, [parsed.sha256])).rows[0];
+    const snap = (await pool.query(`SELECT * FROM erection_summary_snapshots WHERE sha256 = $1 AND user_id = $2`, [parsed.sha256, userId])).rows[0];
     return {
       snapshot: rowToSnapshot(snap),
       derived: null,
@@ -212,13 +215,14 @@ export async function importSnapshotAndDerive(
 
   const { rows: insertedRows } = await pool.query(
     `INSERT INTO erection_summary_snapshots (
-       sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds,
+       user_id, sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds,
        number_of_recordings, erectile_fitness_score, avg_firmness_nocturnal, avg_erections_per_night, avg_duration_per_night_sec,
        original_filename
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
+      userId,
       parsed.sha256, sessionDate, parsed.total_nights, parsed.total_erections, parsed.total_duration_sec,
       parsed.number_of_recordings, parsed.erectile_fitness_score, parsed.avg_firmness_nocturnal, parsed.avg_erections_per_night, parsed.avg_duration_per_night_sec,
       originalFilename,
@@ -228,10 +232,10 @@ export async function importSnapshotAndDerive(
 
   const { rows: prevRows } = await pool.query(
     `SELECT * FROM erection_summary_snapshots
-     WHERE total_nights < $1
+     WHERE total_nights < $1 AND user_id = $2
      ORDER BY total_nights DESC
      LIMIT 1`,
-    [sNew.total_nights],
+    [sNew.total_nights, userId],
   );
 
   if (prevRows.length === 0) {
@@ -242,13 +246,14 @@ export async function importSnapshotAndDerive(
         sNew.total_duration_sec,
         sNew.id,
         false,
+        userId,
       );
 
-      const chainResult = await chainRecomputeNext(sNew, sessionDate);
+      const chainResult = await chainRecomputeNext(sNew, sessionDate, userId);
       const maxDate = chainResult.nextSessionDate
         ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
         : sessionDate;
-      await recomputeGapsAndProxy(sessionDate, maxDate);
+      await recomputeGapsAndProxy(sessionDate, maxDate, userId);
 
       return {
         snapshot: sNew,
@@ -263,11 +268,11 @@ export async function importSnapshotAndDerive(
         gapsFilled: chainResult.gapsFilled,
       };
     } else {
-      const chainResult = await chainRecomputeNext(sNew, sessionDate);
+      const chainResult = await chainRecomputeNext(sNew, sessionDate, userId);
       const maxDate = chainResult.nextSessionDate
         ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
         : sessionDate;
-      await recomputeGapsAndProxy(sessionDate, maxDate);
+      await recomputeGapsAndProxy(sessionDate, maxDate, userId);
 
       return {
         snapshot: sNew,
@@ -284,7 +289,7 @@ export async function importSnapshotAndDerive(
   const dd = sNew.total_duration_sec - sPrev.total_duration_sec;
 
   if (dn <= 0 || de < 0 || dd < 0) {
-    await pool.query(`DELETE FROM erection_summary_snapshots WHERE id = $1`, [sNew.id]);
+    await pool.query(`DELETE FROM erection_summary_snapshots WHERE id = $1 AND user_id = $2`, [sNew.id, userId]);
     throw new Error(
       `Snapshot not cumulative / ordering invalid: dn=${dn}, de=${de}, dd=${dd}`
     );
@@ -298,15 +303,17 @@ export async function importSnapshotAndDerive(
     dd,
     sNew.id,
     multiNightCombined,
+    userId,
   );
 
   let gapsFilled = await detectAndFillGaps(
     addDays(sessionDate, -60),
     addDays(sessionDate, 60),
     sNew.id,
+    userId,
   );
 
-  const chainResult = await chainRecomputeNext(sNew, sessionDate);
+  const chainResult = await chainRecomputeNext(sNew, sessionDate, userId);
   gapsFilled += chainResult.gapsFilled;
 
   const minDate = chainResult.nextSessionDate
@@ -315,7 +322,7 @@ export async function importSnapshotAndDerive(
   const maxDate = chainResult.nextSessionDate
     ? (sessionDate > chainResult.nextSessionDate ? sessionDate : chainResult.nextSessionDate)
     : sessionDate;
-  await recomputeGapsAndProxy(minDate, maxDate);
+  await recomputeGapsAndProxy(minDate, maxDate, userId);
 
   return {
     snapshot: sNew,
@@ -337,11 +344,12 @@ async function upsertMeasuredSession(
   durationSec: number,
   snapshotId: string,
   multiNightCombined: boolean,
+  userId: string = DEFAULT_USER_ID,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO erection_sessions (date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
-     VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, $5, NOW())
-     ON CONFLICT (date) DO UPDATE SET
+    `INSERT INTO erection_sessions (user_id, date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
+     VALUES ($1, $2, $3, $4, $5, FALSE, NULL, NULL, NULL, $6, NOW())
+     ON CONFLICT (user_id, date) DO UPDATE SET
        nocturnal_erections = EXCLUDED.nocturnal_erections,
        nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
        snapshot_id = EXCLUDED.snapshot_id,
@@ -351,17 +359,17 @@ async function upsertMeasuredSession(
        imputed_source_date_end = NULL,
        multi_night_combined = EXCLUDED.multi_night_combined,
        updated_at = NOW()`,
-    [date, erections, durationSec, snapshotId, multiNightCombined],
+    [userId, date, erections, durationSec, snapshotId, multiNightCombined],
   );
 }
 
-async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: string | null): Promise<number> {
+async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: string | null, userId: string = DEFAULT_USER_ID): Promise<number> {
   const { rows: anchors } = await pool.query(
     `SELECT date::text as date, nocturnal_erections, nocturnal_duration_seconds
      FROM erection_sessions
-     WHERE date BETWEEN $1 AND $2 AND is_imputed = FALSE
+     WHERE date BETWEEN $1 AND $2 AND is_imputed = FALSE AND user_id = $3
      ORDER BY date ASC`,
-    [fromDate, toDate],
+    [fromDate, toDate, userId],
   );
 
   if (anchors.length < 2) return 0;
@@ -381,9 +389,9 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
       const interpDur = roundInt(lerp(a.nocturnal_duration_seconds ?? 0, b.nocturnal_duration_seconds ?? 0, t));
 
       await pool.query(
-        `INSERT INTO erection_sessions (date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
-         VALUES ($1, $2, $3, $4, TRUE, $5, $6, $7, FALSE, NOW())
-         ON CONFLICT (date) DO UPDATE SET
+        `INSERT INTO erection_sessions (user_id, date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end, multi_night_combined, updated_at)
+         VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, FALSE, NOW())
+         ON CONFLICT (user_id, date) DO UPDATE SET
            nocturnal_erections = EXCLUDED.nocturnal_erections,
            nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
            snapshot_id = EXCLUDED.snapshot_id,
@@ -394,7 +402,7 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
            multi_night_combined = FALSE,
            updated_at = NOW()
          WHERE erection_sessions.is_imputed = TRUE`,
-        [d, interpE, interpDur, snapshotId, "linear_interpolation", a.date, b.date],
+        [userId, d, interpE, interpDur, snapshotId, "linear_interpolation", a.date, b.date],
       );
       filled++;
     }
@@ -403,26 +411,27 @@ async function detectAndFillGaps(fromDate: string, toDate: string, snapshotId: s
   return filled;
 }
 
-async function recomputeGapsAndProxy(sessionDateOrMin: string, sessionDateMax?: string): Promise<void> {
+async function recomputeGapsAndProxy(sessionDateOrMin: string, sessionDateMax?: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   const minD = sessionDateOrMin;
   const maxD = sessionDateMax ?? sessionDateOrMin;
   const from = addDays(minD < maxD ? minD : maxD, -30);
   const to = addDays(minD > maxD ? minD : maxD, 1);
 
-  await recomputeAndrogenProxy(from, to, false);
-  await recomputeAndrogenProxy(from, to, true);
+  await recomputeAndrogenProxy(from, to, false, userId);
+  await recomputeAndrogenProxy(from, to, true, userId);
 }
 
 async function chainRecomputeNext(
   sNew: Snapshot,
   sessionDate: string,
+  userId: string = DEFAULT_USER_ID,
 ): Promise<{ gapsFilled: number; nextSessionDate: string | null }> {
   const { rows: nextRows } = await pool.query(
     `SELECT * FROM erection_summary_snapshots
-     WHERE total_nights > $1
+     WHERE total_nights > $1 AND user_id = $2
      ORDER BY total_nights ASC
      LIMIT 1`,
-    [sNew.total_nights],
+    [sNew.total_nights, userId],
   );
 
   if (nextRows.length === 0) {
@@ -446,6 +455,7 @@ async function chainRecomputeNext(
     dd2,
     sNext.id,
     multiNight2,
+    userId,
   );
 
   const rangeFrom = sessionDate < sNext.session_date ? sessionDate : sNext.session_date;
@@ -454,12 +464,13 @@ async function chainRecomputeNext(
     addDays(rangeFrom, -7),
     addDays(rangeTo, 7),
     sNext.id,
+    userId,
   );
 
   return { gapsFilled, nextSessionDate: sNext.session_date };
 }
 
-async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeImputed: boolean): Promise<void> {
+async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeImputed: boolean, userId: string = DEFAULT_USER_ID): Promise<void> {
   const pullFrom = addDays(fromDate, -7);
 
   const { rows } = await pool.query(
@@ -467,8 +478,9 @@ async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeI
      FROM erection_sessions
      WHERE date BETWEEN $1 AND $2
        AND ($3::boolean = TRUE OR is_imputed = FALSE)
+       AND user_id = $4
      ORDER BY date ASC`,
-    [pullFrom, toDate, includeImputed],
+    [pullFrom, toDate, includeImputed, userId],
   );
 
   interface DailyProxy {
@@ -494,29 +506,30 @@ async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeI
       : null;
 
     await pool.query(
-      `INSERT INTO androgen_proxy_daily (date, proxy_score, proxy_7d_avg, computed_with_imputed, computed_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (date, computed_with_imputed) DO UPDATE SET
+      `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, proxy_7d_avg, computed_with_imputed, computed_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (user_id, date, computed_with_imputed) DO UPDATE SET
          proxy_score = EXCLUDED.proxy_score,
          proxy_7d_avg = EXCLUDED.proxy_7d_avg,
          computed_at = NOW()`,
-      [row.date, row.proxy, avg7, includeImputed],
+      [userId, row.date, row.proxy, avg7, includeImputed],
     );
   }
 }
 
-export async function getSnapshots(): Promise<Snapshot[]> {
+export async function getSnapshots(userId: string = DEFAULT_USER_ID): Promise<Snapshot[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM erection_summary_snapshots ORDER BY total_nights ASC`,
+    `SELECT * FROM erection_summary_snapshots WHERE user_id = $1 ORDER BY total_nights ASC`,
+    [userId],
   );
   return rows.map(rowToSnapshot);
 }
 
-export async function getSessions(fromDate?: string, toDate?: string, includeImputed: boolean = true): Promise<Record<string, unknown>[]> {
+export async function getSessions(fromDate?: string, toDate?: string, includeImputed: boolean = true, userId: string = DEFAULT_USER_ID): Promise<Record<string, unknown>[]> {
   let query = `SELECT date::text as date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id, is_imputed, imputed_method, imputed_source_date_start::text, imputed_source_date_end::text, multi_night_combined, updated_at FROM erection_sessions`;
-  const params: (string | boolean)[] = [];
+  const params: (string | boolean)[] = [userId];
 
-  const conditions: string[] = [];
+  const conditions: string[] = [`user_id = $1`];
   if (fromDate) { params.push(fromDate); conditions.push(`date >= $${params.length}`); }
   if (toDate) { params.push(toDate); conditions.push(`date <= $${params.length}`); }
   if (!includeImputed) { conditions.push(`is_imputed = FALSE`); }
@@ -528,9 +541,9 @@ export async function getSessions(fromDate?: string, toDate?: string, includeImp
   return rows as Record<string, unknown>[];
 }
 
-export async function getProxyData(fromDate?: string, toDate?: string, includeImputed: boolean = false): Promise<Record<string, unknown>[]> {
-  let query = `SELECT date::text as date, proxy_score, proxy_7d_avg, computed_with_imputed FROM androgen_proxy_daily WHERE computed_with_imputed = $1`;
-  const params: (string | boolean)[] = [includeImputed];
+export async function getProxyData(fromDate?: string, toDate?: string, includeImputed: boolean = false, userId: string = DEFAULT_USER_ID): Promise<Record<string, unknown>[]> {
+  let query = `SELECT date::text as date, proxy_score, proxy_7d_avg, computed_with_imputed FROM androgen_proxy_daily WHERE computed_with_imputed = $1 AND user_id = $2`;
+  const params: (string | boolean)[] = [includeImputed, userId];
 
   if (fromDate) { params.push(fromDate); query += ` AND date >= $${params.length}`; }
   if (toDate) { params.push(toDate); query += ` AND date <= $${params.length}`; }
@@ -540,9 +553,10 @@ export async function getProxyData(fromDate?: string, toDate?: string, includeIm
   return rows as Record<string, unknown>[];
 }
 
-export async function getSessionBadges(): Promise<Record<string, "measured" | "imputed">> {
+export async function getSessionBadges(userId: string = DEFAULT_USER_ID): Promise<Record<string, "measured" | "imputed">> {
   const { rows } = await pool.query(
-    `SELECT date::text as date, is_imputed FROM erection_sessions ORDER BY date ASC`,
+    `SELECT date::text as date, is_imputed FROM erection_sessions WHERE user_id = $1 ORDER BY date ASC`,
+    [userId],
   );
   const badges: Record<string, "measured" | "imputed"> = {};
   for (const r of rows as { date: string; is_imputed: boolean }[]) {
@@ -560,7 +574,7 @@ export interface ConfidenceWindow {
   grade: "High" | "Med" | "Low" | "None";
 }
 
-export async function getDataConfidence(): Promise<ConfidenceWindow[]> {
+export async function getDataConfidence(userId: string = DEFAULT_USER_ID): Promise<ConfidenceWindow[]> {
   const today = new Date().toISOString().slice(0, 10);
   const windows = [
     { label: "7d", days: 7 },
@@ -574,8 +588,8 @@ export async function getDataConfidence(): Promise<ConfidenceWindow[]> {
     const fromDate = addDays(today, -(w.days - 1));
     const { rows } = await pool.query(
       `SELECT is_imputed, multi_night_combined FROM erection_sessions
-       WHERE date BETWEEN $1 AND $2`,
-      [fromDate, today],
+       WHERE date BETWEEN $1 AND $2 AND user_id = $3`,
+      [fromDate, today, userId],
     );
 
     const measured = rows.filter((r: { is_imputed: boolean }) => !r.is_imputed).length;

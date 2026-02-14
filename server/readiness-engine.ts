@@ -2,6 +2,8 @@ import { pool } from "./db";
 import { computeReadinessDeltas, type ReadinessDeltas } from "./readiness-deltas";
 import { compoundBudgetPoints } from "./workout-engine";
 
+const DEFAULT_USER_ID = 'local_default';
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
@@ -64,19 +66,22 @@ export interface ReadinessResult {
   };
 }
 
-export async function getAnalysisStartDate(): Promise<string> {
-  const { rows } = await pool.query(`SELECT value FROM app_settings WHERE key = 'analysis_start_date'`);
+export async function getAnalysisStartDate(userId: string = DEFAULT_USER_ID): Promise<string> {
+  const { rows } = await pool.query(
+    `SELECT value FROM app_settings WHERE key = 'analysis_start_date' AND user_id = $1`,
+    [userId]
+  );
   if (rows.length > 0) return rows[0].value;
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - 60);
   return d.toISOString().slice(0, 10);
 }
 
-export async function setAnalysisStartDate(date: string): Promise<void> {
+export async function setAnalysisStartDate(date: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   await pool.query(
-    `INSERT INTO app_settings (key, value, updated_at) VALUES ('analysis_start_date', $1, NOW())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [date],
+    `INSERT INTO app_settings (user_id, key, value, updated_at) VALUES ($1, 'analysis_start_date', $2, NOW())
+     ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [userId, date],
   );
 }
 
@@ -97,8 +102,8 @@ export interface DataSufficiency {
   };
 }
 
-export async function getDataSufficiency(): Promise<DataSufficiency> {
-  const startDate = await getAnalysisStartDate();
+export async function getDataSufficiency(userId: string = DEFAULT_USER_ID): Promise<DataSufficiency> {
+  const startDate = await getAnalysisStartDate(userId);
   const today = new Date().toISOString().slice(0, 10);
 
   const totalDays = Math.max(1, Math.round((new Date(today + "T00:00:00Z").getTime() - new Date(startDate + "T00:00:00Z").getTime()) / 86400000) + 1);
@@ -109,19 +114,19 @@ export async function getDataSufficiency(): Promise<DataSufficiency> {
        COUNT(*) FILTER (WHERE hrv_rmssd_ms IS NOT NULL) AS hrv_days,
        COUNT(*) FILTER (WHERE resting_hr_bpm IS NOT NULL) AS rhr_days,
        COUNT(*) FILTER (WHERE steps IS NOT NULL) AS steps_days
-     FROM vitals_daily WHERE date >= $1::date AND date <= $2::date`,
-    [startDate, today],
+     FROM vitals_daily WHERE date >= $1::date AND date <= $2::date AND user_id = $3`,
+    [startDate, today, userId],
   );
   const { rows: sleepRows } = await pool.query(
     `SELECT COUNT(*) AS sleep_days FROM sleep_summary_daily
-     WHERE date >= $1::date AND date <= $2::date`,
-    [startDate, today],
+     WHERE date >= $1::date AND date <= $2::date AND user_id = $3`,
+    [startDate, today, userId],
   );
 
   const { rows: proxyRows } = await pool.query(
     `SELECT COUNT(*) AS proxy_days FROM androgen_proxy_daily
-     WHERE date >= $1::date AND date <= $2::date AND computed_with_imputed = FALSE`,
-    [startDate, today],
+     WHERE date >= $1::date AND date <= $2::date AND computed_with_imputed = FALSE AND user_id = $3`,
+    [startDate, today, userId],
   );
 
   const daysWithData = Number(rows[0]?.days_with_data ?? 0);
@@ -152,34 +157,34 @@ export async function getDataSufficiency(): Promise<DataSufficiency> {
   };
 }
 
-export async function computeReadiness(date: string): Promise<ReadinessResult> {
-  const analysisStart = await getAnalysisStartDate();
+export async function computeReadiness(date: string, userId: string = DEFAULT_USER_ID): Promise<ReadinessResult> {
+  const analysisStart = await getAnalysisStartDate(userId);
   const effectiveStart = date < analysisStart ? date : analysisStart;
   const pullFrom = effectiveStart > addDays(date, -34) ? effectiveStart : addDays(date, -34);
 
   const { rows: vitalsRows } = await pool.query(
     `SELECT date::text as date, hrv_rmssd_ms, resting_hr_bpm
      FROM vitals_daily
-     WHERE date BETWEEN $1::date AND $2::date
+     WHERE date BETWEEN $1::date AND $2::date AND user_id = $3
      ORDER BY date ASC`,
-    [pullFrom, date],
+    [pullFrom, date, userId],
   );
 
   const { rows: sleepRows } = await pool.query(
     `SELECT date::text as date, total_sleep_minutes
      FROM sleep_summary_daily
-     WHERE date BETWEEN $1::date AND $2::date
+     WHERE date BETWEEN $1::date AND $2::date AND user_id = $3
      ORDER BY date ASC`,
-    [pullFrom, date],
+    [pullFrom, date, userId],
   );
 
   const { rows: proxyRows } = await pool.query(
     `SELECT date::text as date, proxy_score
      FROM androgen_proxy_daily
-     WHERE date BETWEEN $1::date AND $2::date
+     WHERE date BETWEEN $1::date AND $2::date AND user_id = $3
        AND computed_with_imputed = FALSE
      ORDER BY date ASC`,
-    [pullFrom, date],
+    [pullFrom, date, userId],
   );
 
   const logMap = new Map<string, { hrv: number | null; rhr: number | null; sleep: number | null }>();
@@ -260,8 +265,8 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
        COUNT(*) FILTER (WHERE is_imputed = TRUE) as imputed,
        COUNT(*) as combined
      FROM erection_sessions
-     WHERE date BETWEEN $1::date AND $2::date`,
-    [addDays(date, -6), date],
+     WHERE date BETWEEN $1::date AND $2::date AND user_id = $3`,
+    [addDays(date, -6), date, userId],
   );
   const measuredSessions = Number(confRows[0]?.measured ?? 0);
   const imputedSessions = Number(confRows[0]?.imputed ?? 0);
@@ -347,7 +352,7 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   typeLean = Math.round(typeLean * 100) / 100;
   exerciseBias = Math.round(exerciseBias * 100) / 100;
 
-  const sufficiency = await getDataSufficiency();
+  const sufficiency = await getDataSufficiency(userId);
 
   const r_hrv7d = hrv7d != null ? Math.round(hrv7d * 100) / 100 : null;
   const r_hrv28d = hrv28d != null ? Math.round(hrv28d * 100) / 100 : null;
@@ -404,15 +409,15 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
   };
 }
 
-export async function persistReadiness(r: ReadinessResult): Promise<void> {
+export async function persistReadiness(r: ReadinessResult, userId: string = DEFAULT_USER_ID): Promise<void> {
   await pool.query(
-    `INSERT INTO readiness_daily (date, readiness_score, readiness_tier, confidence_grade,
+    `INSERT INTO readiness_daily (user_id, date, readiness_score, readiness_tier, confidence_grade,
        hrv_delta, rhr_delta, sleep_delta, proxy_delta,
        hrv_7d, hrv_28d, rhr_7d, rhr_28d, sleep_7d, sleep_28d, proxy_7d, proxy_28d,
        type_lean, exercise_bias, cortisol_flag,
        drivers, computed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,NOW())
-     ON CONFLICT (date) DO UPDATE SET
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,NOW())
+     ON CONFLICT (user_id, date) DO UPDATE SET
        readiness_score = EXCLUDED.readiness_score,
        readiness_tier = EXCLUDED.readiness_tier,
        confidence_grade = EXCLUDED.confidence_grade,
@@ -434,6 +439,7 @@ export async function persistReadiness(r: ReadinessResult): Promise<void> {
        drivers = EXCLUDED.drivers,
        computed_at = NOW()`,
     [
+      userId,
       r.date, r.readinessScore, r.readinessTier, r.confidenceGrade,
       r.hrvDelta, r.rhrDelta, r.sleepDelta, r.proxyDelta,
       r.hrv7d, r.hrv28d, r.rhr7d, r.rhr28d, r.sleep7d, r.sleep28d, r.proxy7d, r.proxy28d,
@@ -443,13 +449,13 @@ export async function persistReadiness(r: ReadinessResult): Promise<void> {
   );
 }
 
-export async function recomputeReadinessRange(targetDate: string): Promise<void> {
+export async function recomputeReadinessRange(targetDate: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   const start = addDays(targetDate, -7);
   const end = addDays(targetDate, 1);
   let cur = start;
   while (cur <= end) {
-    const result = await computeReadiness(cur);
-    await persistReadiness(result);
+    const result = await computeReadiness(cur, userId);
+    await persistReadiness(result, userId);
     cur = addDays(cur, 1);
   }
 }
@@ -478,14 +484,14 @@ const defaultConfBreakdown = (grade: string) => ({
   combined_7d: 0,
 });
 
-export async function getReadiness(date: string): Promise<ReadinessResult | null> {
+export async function getReadiness(date: string, userId: string = DEFAULT_USER_ID): Promise<ReadinessResult | null> {
   const { rows } = await pool.query(
-    `SELECT * FROM readiness_daily WHERE date = $1::date`,
-    [date],
+    `SELECT * FROM readiness_daily WHERE date = $1::date AND user_id = $2`,
+    [date, userId],
   );
   if (rows.length === 0) return null;
   const r = rows[0];
-  const sufficiency = await getDataSufficiency();
+  const sufficiency = await getDataSufficiency(userId);
   const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
   return {
     date: (r.date as Date).toISOString().slice(0, 10),
@@ -517,12 +523,12 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
   };
 }
 
-export async function getReadinessRange(from: string, to: string): Promise<ReadinessResult[]> {
+export async function getReadinessRange(from: string, to: string, userId: string = DEFAULT_USER_ID): Promise<ReadinessResult[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM readiness_daily WHERE date BETWEEN $1::date AND $2::date ORDER BY date ASC`,
-    [from, to],
+    `SELECT * FROM readiness_daily WHERE date BETWEEN $1::date AND $2::date AND user_id = $3 ORDER BY date ASC`,
+    [from, to, userId],
   );
-  const sufficiency = await getDataSufficiency();
+  const sufficiency = await getDataSufficiency(userId);
   const gateValue: "NONE" | "LOW" | "MED" | "HIGH" = sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
   return rows.map((r: Record<string, unknown>) => {
     const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
@@ -581,8 +587,11 @@ export const TYPE_B_SESSIONS: TrainingTemplate["sessions"] = [
   { name: "Posterior", highLabel: "Heavy Rows / Pulls", medLabel: "Normal Lats/Traps", lowLabel: "Cables / Light Pulls / Technique" },
 ];
 
-export async function getTrainingTemplate(): Promise<{ typeA: TrainingTemplate; typeB: TrainingTemplate }> {
-  const { rows } = await pool.query(`SELECT template_type, sessions FROM training_template ORDER BY id`);
+export async function getTrainingTemplate(userId: string = DEFAULT_USER_ID): Promise<{ typeA: TrainingTemplate; typeB: TrainingTemplate }> {
+  const { rows } = await pool.query(
+    `SELECT template_type, sessions FROM training_template WHERE user_id = $1 ORDER BY id`,
+    [userId]
+  );
   let typeA: TrainingTemplate = { templateType: "type_a", sessions: TYPE_A_SESSIONS };
   let typeB: TrainingTemplate = { templateType: "type_b", sessions: TYPE_B_SESSIONS };
 
@@ -594,15 +603,15 @@ export async function getTrainingTemplate(): Promise<{ typeA: TrainingTemplate; 
   return { typeA, typeB };
 }
 
-export async function updateTrainingTemplate(templateType: string, sessions: TrainingTemplate["sessions"]): Promise<void> {
+export async function updateTrainingTemplate(templateType: string, sessions: TrainingTemplate["sessions"], userId: string = DEFAULT_USER_ID): Promise<void> {
   const id = templateType === "type_b" ? 2 : 1;
   await pool.query(
-    `INSERT INTO training_template (id, template_type, sessions, updated_at)
-     VALUES ($1, $2, $3::jsonb, NOW())
-     ON CONFLICT (id) DO UPDATE SET
+    `INSERT INTO training_template (id, user_id, template_type, sessions, updated_at)
+     VALUES ($1, $2, $3, $4::jsonb, NOW())
+     ON CONFLICT (user_id, id) DO UPDATE SET
        template_type = EXCLUDED.template_type,
        sessions = EXCLUDED.sessions,
        updated_at = NOW()`,
-    [id, templateType, JSON.stringify(sessions)],
+    [id, userId, templateType, JSON.stringify(sessions)],
   );
 }
