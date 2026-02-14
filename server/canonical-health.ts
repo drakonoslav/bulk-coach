@@ -616,7 +616,8 @@ export function processSessionRrIntervals(
 
   if (restingHr != null && restingHr > 0) {
     if (peakHr != null) {
-      suppressionDepthPct = clampPct(((peakHr - restingHr) / restingHr) * 100);
+      const rawDepth = ((peakHr - restingHr) / restingHr) * 100;
+      suppressionDepthPct = Math.round(Math.max(0, Math.min(500, rawDepth)) * 10) / 10;
     }
 
     if (endTime != null) {
