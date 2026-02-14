@@ -464,11 +464,17 @@ export async function persistReadiness(r: ReadinessResult, userId: string = DEFA
   );
 }
 
-export async function recomputeReadinessRange(targetDate: string, userId: string = DEFAULT_USER_ID): Promise<void> {
+export async function recomputeReadinessRange(
+  targetDate: string,
+  userId: string = DEFAULT_USER_ID,
+  endDate?: string,
+): Promise<void> {
   const start = addDays(targetDate, -7);
-  const end = addDays(targetDate, 1);
+  const today = new Date().toISOString().slice(0, 10);
+  const end = endDate ? (endDate > today ? today : endDate) : addDays(targetDate, 1);
+  const clampedEnd = end > today ? today : end;
   let cur = start;
-  while (cur <= end) {
+  while (cur <= clampedEnd) {
     const result = await computeReadiness(cur, userId);
     await persistReadiness(result, userId);
     cur = addDays(cur, 1);

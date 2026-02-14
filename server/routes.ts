@@ -91,6 +91,58 @@ if (!fs.existsSync(CHUNK_DIR)) fs.mkdirSync(CHUNK_DIR, { recursive: true });
 
 const jobResults = new Map<string, { status: "processing" | "done" | "error"; result?: any; error?: string }>();
 
+function requireAuth(req: Request, res: Response, next: Function) {
+  const API_KEY = process.env.API_KEY;
+  if (!API_KEY) {
+    return res.status(500).json({ error: "Server missing API_KEY" });
+  }
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (token !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  (req as any).userId = 'local_default';
+  next();
+}
+
+function requireAdmin(req: Request, res: Response, next: Function) {
+  const userId = (req as any).userId;
+  if (userId !== 'local_default') {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  next();
+}
+
+const rateLimitMap = new Map<string, number[]>();
+
+function rateLimit(windowMs: number, maxRequests: number) {
+  return (req: Request, res: Response, next: Function) => {
+    const key = `${req.path}:${(req as any).userId || 'anon'}`;
+    const now = Date.now();
+    const timestamps = (rateLimitMap.get(key) || []).filter(t => t > now - windowMs);
+    if (timestamps.length >= maxRequests) {
+      return res.status(429).json({ error: "Too many requests. Try again later." });
+    }
+    timestamps.push(now);
+    rateLimitMap.set(key, timestamps);
+    next();
+  };
+}
+
+const MAX_CHUNKS = 200;
+const MAX_CHUNK_TOTAL_SIZE = 1073741824;
+
+const TEXT_FIELDS = new Set([
+  "day", "date", "sleep_start", "sleep_end", "performance_note", "notes",
+  "cardio_fuel_note", "created_at", "updated_at", "recomputed_at",
+  "source", "source_file", "timezone", "timezone_used", "session_id",
+  "user_id", "id", "sha256", "original_filename", "import_id",
+  "raw_start", "raw_end", "bucket_date", "suspicion_reason",
+  "workout_type", "session_type_tag", "hrv_response_flag",
+  "gate", "confidence_grade", "readiness_tier", "cortisol_flag",
+  "type_lean", "exercise_bias",
+]);
+
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
   const vals = [r1, r2, r3].filter((v): v is number => v != null && !isNaN(v));
   if (vals.length < 3) return null;
@@ -100,8 +152,43 @@ function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
 export async function registerRoutes(app: Express): Promise<Server> {
   await initDb();
 
+  setInterval(() => {
+    try {
+      if (!fs.existsSync(CHUNK_DIR)) return;
+      const dirs = fs.readdirSync(CHUNK_DIR);
+      const now = Date.now();
+      for (const dir of dirs) {
+        const metaPath = path.join(CHUNK_DIR, dir, "_meta.json");
+        if (!fs.existsSync(metaPath)) {
+          fs.rmSync(path.join(CHUNK_DIR, dir), { recursive: true, force: true });
+          continue;
+        }
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+          if (meta.createdAt && now - meta.createdAt > 3600000) {
+            fs.rmSync(path.join(CHUNK_DIR, dir), { recursive: true, force: true });
+            console.log(`Cleaned up expired upload: ${dir}`);
+          }
+        } catch {
+          fs.rmSync(path.join(CHUNK_DIR, dir), { recursive: true, force: true });
+        }
+      }
+    } catch (err) {
+      console.error("Chunk cleanup error:", err);
+    }
+  }, 900000);
+
   const getUserId = (req: Request): string =>
-    (req.body?.user_id || req.query?.user_id || 'local_default') as string;
+    (req as any).userId || 'local_default';
+
+  const PUBLIC_PATHS = ["/privacy", "/terms", "/api/auth/fitbit/start", "/api/auth/fitbit/callback", "/api/auth/fitbit/status"];
+
+  app.use((req, res, next) => {
+    if (PUBLIC_PATHS.some(p => req.path === p) || !req.path.startsWith("/api")) {
+      return next();
+    }
+    requireAuth(req, res, next);
+  });
 
   app.get("/privacy", (_req: Request, res: Response) => {
     res.send(`<!DOCTYPE html>
@@ -399,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await importFitbitCSV(req.file.buffer, req.file.originalname, overwriteFields);
 
       if (result.dateRange?.start) {
-        recomputeReadinessRange(result.dateRange.start, userId).catch((err: unknown) =>
+        recomputeReadinessRange(result.dateRange.start, userId, result.dateRange?.end).catch((err: unknown) =>
           console.error("readiness recompute after fitbit:", err)
         );
       }
@@ -450,6 +537,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!filename || !totalChunks) {
         return res.status(400).json({ error: "Missing filename or totalChunks" });
       }
+      if (totalChunks > MAX_CHUNKS) {
+        return res.status(400).json({ error: `Too many chunks (max ${MAX_CHUNKS})` });
+      }
+      if (fileSize && fileSize > MAX_CHUNK_TOTAL_SIZE) {
+        return res.status(400).json({ error: `File too large (max 1 GB)` });
+      }
       const uploadId = crypto.randomUUID();
       const uploadDir = path.join(CHUNK_DIR, uploadId);
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -474,8 +567,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!fs.existsSync(uploadDir)) {
         return res.status(404).json({ error: "Upload session not found" });
       }
-      fs.writeFileSync(path.join(uploadDir, `chunk_${chunkIndex}`), req.file.buffer);
       const meta = JSON.parse(fs.readFileSync(path.join(uploadDir, "_meta.json"), "utf8"));
+      if (chunkIndex >= meta.totalChunks) {
+        return res.status(400).json({ error: `chunkIndex ${chunkIndex} exceeds totalChunks ${meta.totalChunks}` });
+      }
+      fs.writeFileSync(path.join(uploadDir, `chunk_${chunkIndex}`), req.file.buffer);
       meta.receivedChunks = (meta.receivedChunks || 0) + 1;
       fs.writeFileSync(path.join(uploadDir, "_meta.json"), JSON.stringify(meta));
       res.json({ received: chunkIndex, total: meta.totalChunks, done: meta.receivedChunks >= meta.totalChunks });
@@ -559,7 +655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/import/takeout_history/:id", async (req: Request, res: Response) => {
+  app.delete("/api/import/takeout_history/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       await pool.query(`DELETE FROM fitbit_takeout_imports WHERE id = $1`, [id]);
@@ -570,7 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/import/takeout_reset_hashes", async (_req: Request, res: Response) => {
+  app.post("/api/import/takeout_reset_hashes", requireAdmin, async (_req: Request, res: Response) => {
     try {
       const { rowCount } = await pool.query(`DELETE FROM fitbit_takeout_imports`);
       res.json({ status: "ok", cleared: rowCount });
@@ -580,7 +676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/import/history/:id", async (req: Request, res: Response) => {
+  app.delete("/api/import/history/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       await pool.query(`DELETE FROM fitbit_imports WHERE id = $1`, [id]);
@@ -828,7 +924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/backup/export", async (_req: Request, res: Response) => {
+  app.get("/api/backup/export", requireAdmin, rateLimit(60000, 5), async (_req: Request, res: Response) => {
     try {
       const payload = await exportBackup();
       const filename = `bulk-coach-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -841,7 +937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/backup/import", upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/backup/import", requireAdmin, rateLimit(60000, 3), upload.single("file"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -2140,8 +2236,8 @@ function snakeToCamel(row: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(row)) {
     const camel = key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
-    if (typeof val === "string" && !isNaN(Number(val)) && key !== "day" && key !== "sleep_start" && key !== "sleep_end" && key !== "performance_note" && key !== "notes" && key !== "cardio_fuel_note" && key !== "created_at" && key !== "updated_at" && key !== "recomputed_at") {
-      result[camel] = val;
+    if (typeof val === "string" && !TEXT_FIELDS.has(key) && val !== "" && !isNaN(Number(val)) && isFinite(Number(val))) {
+      result[camel] = Number(val);
     } else {
       result[camel] = val;
     }
