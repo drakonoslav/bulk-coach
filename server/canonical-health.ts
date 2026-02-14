@@ -468,14 +468,67 @@ export function computeRmssdFromRr(rrIntervalsMs: number[]): number | null {
   return Math.round(rmssd * 100) / 100;
 }
 
-function computeRollingRmssd(rrMs: number[], windowSize: number = 30): number[] {
+function clampPct(val: number): number {
+  return Math.round(Math.max(0, Math.min(100, val)) * 10) / 10;
+}
+
+function medianOf(vals: number[]): number | null {
+  if (vals.length === 0) return null;
+  const s = [...vals].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function meanOf(vals: number[]): number | null {
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function computeTimeBasedRollingRmssd(
+  rrWithTs: { ts: number; rr_ms: number }[],
+  windowSec: number = 60,
+  stepSec: number = 10,
+  minBeatsPerWindow: number = 20,
+): number[] {
+  if (rrWithTs.length < minBeatsPerWindow) return [];
+  const startTs = rrWithTs[0].ts;
+  const endTs = rrWithTs[rrWithTs.length - 1].ts;
   const results: number[] = [];
-  for (let i = windowSize; i <= rrMs.length; i++) {
-    const window = rrMs.slice(i - windowSize, i);
-    const rmssd = computeRmssdFromRr(window);
+
+  for (let wStart = startTs; wStart + windowSec * 1000 <= endTs; wStart += stepSec * 1000) {
+    const wEnd = wStart + windowSec * 1000;
+    const windowRr = rrWithTs
+      .filter(r => r.ts >= wStart && r.ts < wEnd)
+      .map(r => r.rr_ms);
+
+    if (windowRr.length < minBeatsPerWindow) continue;
+    const rmssd = computeRmssdFromRr(windowRr);
     if (rmssd != null) results.push(rmssd);
   }
   return results;
+}
+
+function p10(vals: number[]): number | null {
+  if (vals.length === 0) return null;
+  const s = [...vals].sort((a, b) => a - b);
+  const idx = Math.max(0, Math.ceil(s.length * 0.10) - 1);
+  return s[idx];
+}
+
+function smoothedHr(
+  samples: { ts: number; hr: number }[],
+  windowMs: number = 15000,
+): { ts: number; hr: number }[] {
+  if (samples.length === 0) return [];
+  const result: { ts: number; hr: number }[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const center = samples[i].ts;
+    const half = windowMs / 2;
+    const neighbors = samples.filter(s => s.ts >= center - half && s.ts <= center + half);
+    const avgHr = neighbors.reduce((sum, s) => sum + s.hr, 0) / neighbors.length;
+    result.push({ ts: center, hr: Math.round(avgHr * 10) / 10 });
+  }
+  return result;
 }
 
 export function processSessionRrIntervals(
@@ -488,67 +541,82 @@ export function processSessionRrIntervals(
 ): SessionHrvAnalysis {
   const startTime = new Date(sessionStartTs).getTime();
   const endTime = sessionEndTs ? new Date(sessionEndTs).getTime() : null;
+  const nullResult: SessionHrvAnalysis = {
+    pre_session_rmssd: null, min_session_rmssd: null, post_session_rmssd: null,
+    hrv_suppression_pct: null, hrv_rebound_pct: null,
+    suppression_depth_pct: null, rebound_bpm_per_min: null,
+    baseline_window_seconds: baselineWindowSec, baseline_rr_count: 0,
+    active_rr_count: 0, recovery_rr_count: 0, time_to_recovery_sec: null,
+    strength_bias: 0.5, cardio_bias: 0.5,
+  };
 
-  if (isNaN(startTime)) {
-    return {
-      pre_session_rmssd: null, min_session_rmssd: null, post_session_rmssd: null,
-      hrv_suppression_pct: null, hrv_rebound_pct: null,
-      suppression_depth_pct: null, rebound_bpm_per_min: null,
-      baseline_window_seconds: baselineWindowSec, baseline_rr_count: 0,
-      active_rr_count: 0, recovery_rr_count: 0, time_to_recovery_sec: null,
-      strength_bias: 0.5, cardio_bias: 0.5,
-    };
-  }
+  if (isNaN(startTime)) return nullResult;
 
-  const sorted = rrIntervals
+  const sortedRr = rrIntervals
     .map(r => ({ ts: new Date(r.ts).getTime(), rr_ms: r.rr_ms }))
-    .filter(r => !isNaN(r.ts))
+    .filter(r => !isNaN(r.ts) && r.rr_ms >= 300 && r.rr_ms <= 2000)
     .sort((a, b) => a.ts - b.ts);
-
-  const baselineStart = startTime - baselineWindowSec * 1000;
-  const baselineRr = sorted.filter(r => r.ts >= baselineStart && r.ts < startTime).map(r => r.rr_ms);
-  const activeRr = sorted.filter(r => r.ts >= startTime && (endTime == null || r.ts < endTime)).map(r => r.rr_ms);
-  const recoveryRr = endTime != null
-    ? sorted.filter(r => r.ts >= endTime && r.ts <= endTime + recoveryWindowSec * 1000).map(r => r.rr_ms)
-    : [];
-
-  const preRmssd = computeRmssdFromRr(baselineRr);
-
-  let minRmssd: number | null = null;
-  if (activeRr.length >= 10) {
-    const rolling = computeRollingRmssd(activeRr, Math.min(30, Math.floor(activeRr.length / 3)));
-    if (rolling.length > 0) {
-      minRmssd = Math.round(Math.min(...rolling) * 100) / 100;
-    }
-  }
-
-  const postRmssd = computeRmssdFromRr(recoveryRr);
-
-  let hrvSuppressionPct: number | null = null;
-  if (preRmssd != null && minRmssd != null && preRmssd > 0) {
-    hrvSuppressionPct = Math.round(((preRmssd - minRmssd) / preRmssd) * 1000) / 10;
-  }
-
-  let hrvReboundPct: number | null = null;
-  if (preRmssd != null && minRmssd != null && postRmssd != null && preRmssd > minRmssd) {
-    hrvReboundPct = Math.round(((postRmssd - minRmssd) / (preRmssd - minRmssd)) * 1000) / 10;
-  }
 
   const hrSorted = hrSamples
     .map(s => ({ ts: new Date(s.ts).getTime(), hr: s.hr_bpm }))
     .filter(s => !isNaN(s.ts))
     .sort((a, b) => a.ts - b.ts);
 
+  const baselineStart = startTime - baselineWindowSec * 1000;
+  const baselineRr = sortedRr.filter(r => r.ts >= baselineStart && r.ts < startTime);
+  const activeRr = sortedRr.filter(r => r.ts >= startTime && (endTime == null || r.ts < endTime));
+  const recoverySkipMs = 60 * 1000;
+  const recoveryRr = endTime != null
+    ? sortedRr.filter(r => r.ts >= endTime + recoverySkipMs && r.ts <= endTime + recoveryWindowSec * 1000)
+    : [];
+
+  const MIN_BASELINE_BEATS = 60;
+  const MIN_RECOVERY_BEATS = 60;
+  const preRmssd = baselineRr.length >= MIN_BASELINE_BEATS
+    ? computeRmssdFromRr(baselineRr.map(r => r.rr_ms))
+    : null;
+
+  let minRmssd: number | null = null;
+  if (activeRr.length >= 20) {
+    const rolling = computeTimeBasedRollingRmssd(activeRr, 60, 10, 20);
+    if (rolling.length > 0) {
+      minRmssd = p10(rolling);
+      if (minRmssd != null) minRmssd = Math.round(minRmssd * 100) / 100;
+    }
+  }
+
+  const postRmssd = recoveryRr.length >= MIN_RECOVERY_BEATS
+    ? computeRmssdFromRr(recoveryRr.map(r => r.rr_ms))
+    : null;
+
+  let hrvSuppressionPct: number | null = null;
+  if (preRmssd != null && minRmssd != null && preRmssd > 0) {
+    hrvSuppressionPct = clampPct(((preRmssd - minRmssd) / preRmssd) * 100);
+  }
+
+  let hrvReboundPct: number | null = null;
+  if (preRmssd != null && minRmssd != null && postRmssd != null && preRmssd > minRmssd) {
+    const raw = (postRmssd - minRmssd) / (preRmssd - minRmssd);
+    hrvReboundPct = clampPct(raw * 100);
+  }
+
+  const baselineHrSamples = hrSorted.filter(s => s.ts >= baselineStart && s.ts < startTime);
+  let restingHr: number | null = medianOf(baselineHrSamples.map(s => s.hr));
+  if (restingHr == null && baselineRr.length > 0) {
+    const meanRr = meanOf(baselineRr.map(r => r.rr_ms));
+    if (meanRr != null && meanRr > 0) restingHr = 60000 / meanRr;
+  }
+
   let suppressionDepthPct: number | null = null;
   let reboundBpmPerMin: number | null = null;
   let timeToRecoverySec: number | null = null;
 
-  if (preRmssd != null && preRmssd > 0) {
-    const restingHr = 60000 / preRmssd;
-    const activeSamples = hrSorted.filter(s => s.ts >= startTime && (endTime == null || s.ts < endTime));
-    if (activeSamples.length >= 5) {
-      const peakHr = Math.max(...activeSamples.map(s => s.hr));
-      suppressionDepthPct = Math.round(((peakHr - restingHr) / restingHr) * 1000) / 10;
+  const activeSamples = hrSorted.filter(s => s.ts >= startTime && (endTime == null || s.ts < endTime));
+  const peakHr = activeSamples.length >= 5 ? Math.max(...activeSamples.map(s => s.hr)) : null;
+
+  if (restingHr != null && restingHr > 0) {
+    if (peakHr != null) {
+      suppressionDepthPct = clampPct(((peakHr - restingHr) / restingHr) * 100);
     }
 
     if (endTime != null) {
@@ -562,10 +630,28 @@ export function processSessionRrIntervals(
         }
       }
 
-      const recoveryTarget = restingHr * 1.1;
-      const recoverySample = postSamples.find(s => s.hr <= recoveryTarget);
-      if (recoverySample) {
-        timeToRecoverySec = Math.round((recoverySample.ts - endTime) / 1000);
+      if (peakHr != null) {
+        const recoveryTarget = restingHr + 0.10 * (peakHr - restingHr);
+        const smoothed = smoothedHr(postSamples, 15000);
+        const SUSTAIN_MS = 30000;
+
+        for (let i = 0; i < smoothed.length; i++) {
+          if (smoothed[i].hr > recoveryTarget) continue;
+          const sustainStart = smoothed[i].ts;
+          let sustained = true;
+          for (let j = i + 1; j < smoothed.length; j++) {
+            if (smoothed[j].ts > sustainStart + SUSTAIN_MS) break;
+            if (smoothed[j].hr > recoveryTarget) { sustained = false; break; }
+          }
+          if (sustained && smoothed.length > i + 1) {
+            const lastInWindow = smoothed.find(s => s.ts > sustainStart + SUSTAIN_MS);
+            const endOfSustain = lastInWindow ? sustainStart + SUSTAIN_MS : smoothed[smoothed.length - 1].ts;
+            if (endOfSustain - sustainStart >= SUSTAIN_MS * 0.8) {
+              timeToRecoverySec = Math.round((sustainStart - endTime) / 1000);
+              break;
+            }
+          }
+        }
       }
     }
   }
