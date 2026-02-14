@@ -436,12 +436,15 @@ export function computeRecoverySlope(
   return Math.round(((firstHr - lastHr) / elapsedMin) * 100) / 100;
 }
 
+export type HrvResponseFlag = "suppressed" | "increased" | "flat" | "insufficient";
+
 export interface SessionHrvAnalysis {
   pre_session_rmssd: number | null;
   min_session_rmssd: number | null;
   post_session_rmssd: number | null;
   hrv_suppression_pct: number | null;
   hrv_rebound_pct: number | null;
+  hrv_response_flag: HrvResponseFlag;
   suppression_depth_pct: number | null;
   rebound_bpm_per_min: number | null;
   baseline_window_seconds: number;
@@ -544,6 +547,7 @@ export function processSessionRrIntervals(
   const nullResult: SessionHrvAnalysis = {
     pre_session_rmssd: null, min_session_rmssd: null, post_session_rmssd: null,
     hrv_suppression_pct: null, hrv_rebound_pct: null,
+    hrv_response_flag: "insufficient" as HrvResponseFlag,
     suppression_depth_pct: null, rebound_bpm_per_min: null,
     baseline_window_seconds: baselineWindowSec, baseline_rr_count: 0,
     active_rr_count: 0, recovery_rr_count: 0, time_to_recovery_sec: null,
@@ -659,12 +663,25 @@ export function processSessionRrIntervals(
 
   const biases = computeSessionBiasesFromPhysiology(hrSorted, startTime, endTime, preRmssd, minRmssd);
 
+  let hrvResponseFlag: HrvResponseFlag = "insufficient";
+  if (preRmssd != null && minRmssd != null) {
+    const ratio = (preRmssd - minRmssd) / preRmssd;
+    if (ratio > 0.05) {
+      hrvResponseFlag = "suppressed";
+    } else if (ratio < -0.05) {
+      hrvResponseFlag = "increased";
+    } else {
+      hrvResponseFlag = "flat";
+    }
+  }
+
   return {
     pre_session_rmssd: preRmssd,
     min_session_rmssd: minRmssd,
     post_session_rmssd: postRmssd,
     hrv_suppression_pct: hrvSuppressionPct,
     hrv_rebound_pct: hrvReboundPct,
+    hrv_response_flag: hrvResponseFlag,
     suppression_depth_pct: suppressionDepthPct,
     rebound_bpm_per_min: reboundBpmPerMin,
     baseline_window_seconds: baselineWindowSec,
@@ -756,8 +773,8 @@ function computeSessionBiasesFromPhysiology(
     strength = 0.5;
     cardio = 0.5;
   }
-  strength = Math.round(strength * 100) / 100;
-  cardio = Math.round(cardio * 100) / 100;
+  strength = Math.round(strength * 10000) / 10000;
+  cardio = Math.round((1 - strength) * 10000) / 10000;
 
   return { strength_bias: strength, cardio_bias: cardio };
 }
@@ -836,17 +853,18 @@ export async function analyzeSessionHrv(sessionId: string): Promise<SessionHrvAn
        post_session_rmssd = $4,
        hrv_suppression_pct = $5,
        hrv_rebound_pct = $6,
-       suppression_depth_pct = $7,
-       rebound_bpm_per_min = $8,
-       baseline_window_seconds = $9,
-       time_to_recovery_sec = $10,
-       strength_bias = $11,
-       cardio_bias = $12,
+       hrv_response_flag = $7,
+       suppression_depth_pct = $8,
+       rebound_bpm_per_min = $9,
+       baseline_window_seconds = $10,
+       time_to_recovery_sec = $11,
+       strength_bias = $12,
+       cardio_bias = $13,
        updated_at = NOW()
      WHERE session_id = $1`,
     [sessionId,
      analysis.pre_session_rmssd, analysis.min_session_rmssd, analysis.post_session_rmssd,
-     analysis.hrv_suppression_pct, analysis.hrv_rebound_pct,
+     analysis.hrv_suppression_pct, analysis.hrv_rebound_pct, analysis.hrv_response_flag,
      analysis.suppression_depth_pct, analysis.rebound_bpm_per_min,
      analysis.baseline_window_seconds, analysis.time_to_recovery_sec,
      analysis.strength_bias, analysis.cardio_bias]

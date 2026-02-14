@@ -398,6 +398,24 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  const migrationColumns: [string, string, string][] = [
+    ['workout_session', 'strength_bias', 'REAL'],
+    ['workout_session', 'cardio_bias', 'REAL'],
+    ['workout_session', 'pre_session_rmssd', 'REAL'],
+    ['workout_session', 'min_session_rmssd', 'REAL'],
+    ['workout_session', 'post_session_rmssd', 'REAL'],
+    ['workout_session', 'hrv_suppression_pct', 'REAL'],
+    ['workout_session', 'hrv_rebound_pct', 'REAL'],
+    ['workout_session', 'hrv_response_flag', 'TEXT'],
+    ['workout_session', 'suppression_depth_pct', 'REAL'],
+    ['workout_session', 'rebound_bpm_per_min', 'REAL'],
+    ['workout_session', 'baseline_window_seconds', 'INTEGER DEFAULT 120'],
+    ['workout_session', 'time_to_recovery_sec', 'INTEGER'],
+  ];
+  for (const [table, col, type] of migrationColumns) {
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col} ${type}`);
+  }
+
   const defaultStart = new Date();
   defaultStart.setUTCDate(defaultStart.getUTCDate() - 60);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
