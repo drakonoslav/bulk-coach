@@ -47,7 +47,7 @@ function CountCard({ label, value, icon }: { label: string; value: number; icon:
 
 export default function HealthKitScreen() {
   const insets = useSafeAreaInsets();
-  const { status, error, counts, progress, requestPermissions, syncDays } = useHealthKit();
+  const { status, error, counts, progress, requestPermissions, syncDays, debugInfo } = useHealthKit();
 
   const handleSync = async (days: number) => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -85,13 +85,55 @@ export default function HealthKitScreen() {
           <StatusBadge status={status} />
         </View>
 
-        {isUnavailable && (
+        <View style={styles.debugBox}>
+          <Text style={styles.debugTitle}>Runtime Debug</Text>
+          <View style={styles.debugRow}>
+            <Text style={styles.debugLabel}>Runtime:</Text>
+            <Text style={[
+              styles.debugValue,
+              { color: debugInfo.runtime === "Dev Client" ? Colors.primary : Colors.warning },
+            ]}>
+              {debugInfo.runtime}
+            </Text>
+          </View>
+          <View style={styles.debugRow}>
+            <Text style={styles.debugLabel}>HealthKit module loaded:</Text>
+            <Text style={[
+              styles.debugValue,
+              { color: debugInfo.moduleLoaded ? Colors.success : Colors.danger },
+            ]}>
+              {debugInfo.moduleLoaded ? "yes" : "no"}
+            </Text>
+          </View>
+        </View>
+
+        {isUnavailable && debugInfo.runtime === "Expo Go" && (
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={20} color={Colors.warning} />
             <Text style={styles.infoText}>
-              HealthKit is only available on iOS with a native dev build.
-              This screen will become functional when running on a real iPhone
-              with react-native-health installed.
+              HealthKit requires a native dev build (not Expo Go). Build and install
+              a dev client via EAS to enable HealthKit on your iPhone.
+              See IOS_DEV_BUILD_STEPS.md for instructions.
+            </Text>
+          </View>
+        )}
+
+        {isUnavailable && debugInfo.runtime === "Dev Client" && !debugInfo.moduleLoaded && (
+          <View style={[styles.infoBox, { borderColor: Colors.danger }]}>
+            <Ionicons name="alert-circle" size={20} color={Colors.danger} />
+            <Text style={[styles.infoText, { color: Colors.danger }]}>
+              Dev Client detected but HealthKit native module failed to load.
+              Ensure react-native-health is linked and the app was rebuilt with
+              the HealthKit entitlement.
+            </Text>
+          </View>
+        )}
+
+        {isUnavailable && debugInfo.runtime === "Non-iOS" && (
+          <View style={styles.infoBox}>
+            <Ionicons name="information-circle" size={20} color={Colors.textTertiary} />
+            <Text style={styles.infoText}>
+              HealthKit is only available on iOS devices.
             </Text>
           </View>
         )}
@@ -221,6 +263,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Rubik_500Medium",
   },
+  debugBox: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    backgroundColor: Colors.cardBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  debugTitle: {
+    fontSize: 12,
+    fontFamily: "Rubik_700Bold",
+    color: Colors.textTertiary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  debugRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  debugLabel: {
+    fontSize: 13,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textSecondary,
+  },
+  debugValue: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+  },
   infoBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -249,7 +323,7 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_600SemiBold",
     color: Colors.textSecondary,
     marginBottom: 12,
-    textTransform: "uppercase",
+    textTransform: "uppercase" as const,
     letterSpacing: 0.8,
   },
   syncButton: {

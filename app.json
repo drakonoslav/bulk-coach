@@ -15,10 +15,19 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp"
+      "bundleIdentifier": "com.bulkcoach.app",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Bulk Coach reads your health data (heart rate, HRV, sleep, workouts, steps) to provide personalized training recommendations.",
+        "NSHealthUpdateUsageDescription": "Bulk Coach writes workout data to Apple Health."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": [],
+        "com.apple.developer.healthkit.background-delivery": false
+      }
     },
     "android": {
-      "package": "com.myapp",
+      "package": "com.bulkcoach.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -37,7 +46,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

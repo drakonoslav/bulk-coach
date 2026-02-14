@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from "react";
-import { Platform } from "react-native";
+import { useState, useCallback, useRef, useMemo } from "react";
+import { Platform, NativeModules } from "react-native";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import Constants from "expo-constants";
 
 export type HealthKitStatus = "unavailable" | "idle" | "requesting_permissions" | "syncing" | "done" | "error";
 
@@ -13,7 +14,34 @@ export interface SyncCounts {
 
 const EMPTY_COUNTS: SyncCounts = { sleep_upserts: 0, vitals_upserts: 0, sessions_upserts: 0, hr_samples_points: 0 };
 
+function isExpoGo(): boolean {
+  return Constants.appOwnership === "expo";
+}
+
+function hasNativeHealthKitModule(): boolean {
+  if (Platform.OS !== "ios") return false;
+  try {
+    const mod = NativeModules.AppleHealthKit;
+    return !!mod;
+  } catch {
+    return false;
+  }
+}
+
 let AppleHealthKit: any = null;
+
+if (Platform.OS === "ios" && !isExpoGo()) {
+  try {
+    AppleHealthKit = require("react-native-health").default;
+  } catch {
+    AppleHealthKit = null;
+  }
+}
+
+export interface HealthKitDebugInfo {
+  runtime: "Expo Go" | "Dev Client" | "Non-iOS";
+  moduleLoaded: boolean;
+}
 
 const HK_PERMISSIONS = {
   permissions: {
@@ -55,8 +83,22 @@ async function postJson(path: string, body: any): Promise<any> {
 }
 
 export function useHealthKit() {
+  const debugInfo = useMemo<HealthKitDebugInfo>(() => {
+    if (Platform.OS !== "ios") {
+      return { runtime: "Non-iOS", moduleLoaded: false };
+    }
+    const expoGo = isExpoGo();
+    const modLoaded = AppleHealthKit !== null;
+    return {
+      runtime: expoGo ? "Expo Go" : "Dev Client",
+      moduleLoaded: modLoaded,
+    };
+  }, []);
+
+  const available = Platform.OS === "ios" && !isExpoGo() && AppleHealthKit !== null;
+
   const [status, setStatus] = useState<HealthKitStatus>(
-    Platform.OS !== "ios" || !AppleHealthKit ? "unavailable" : "idle"
+    available ? "idle" : "unavailable"
   );
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState<SyncCounts>(EMPTY_COUNTS);
@@ -302,5 +344,6 @@ export function useHealthKit() {
     requestPermissions,
     syncDays,
     abort,
+    debugInfo,
   };
 }
