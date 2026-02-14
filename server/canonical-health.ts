@@ -237,10 +237,9 @@ export async function batchUpsertHrSamples(samples: WorkoutHrSample[], userId: s
     const result = await pool.query(
       `INSERT INTO workout_hr_samples (session_id, user_id, ts, hr_bpm, source)
        SELECT * FROM UNNEST($1::text[], $2::text[], $3::timestamptz[], $4::int[], $5::text[])
-       ON CONFLICT (session_id, ts) DO UPDATE SET
+       ON CONFLICT (user_id, session_id, ts) DO UPDATE SET
          hr_bpm = EXCLUDED.hr_bpm,
-         source = EXCLUDED.source,
-         user_id = EXCLUDED.user_id`,
+         source = EXCLUDED.source`,
       [sessionIds, userIds, timestamps, hrBpms, sources]
     );
     total += result.rowCount ?? chunk.length;
@@ -268,10 +267,9 @@ export async function batchUpsertRrIntervals(intervals: WorkoutRrInterval[], use
     const result = await pool.query(
       `INSERT INTO workout_rr_intervals (session_id, user_id, ts, rr_ms, source)
        SELECT * FROM UNNEST($1::text[], $2::text[], $3::timestamptz[], $4::real[], $5::text[])
-       ON CONFLICT (session_id, ts) DO UPDATE SET
+       ON CONFLICT (user_id, session_id, ts) DO UPDATE SET
          rr_ms = EXCLUDED.rr_ms,
-         source = EXCLUDED.source,
-         user_id = EXCLUDED.user_id`,
+         source = EXCLUDED.source`,
       [sessionIds, userIds, timestamps, rrValues, sources]
     );
     total += result.rowCount ?? chunk.length;

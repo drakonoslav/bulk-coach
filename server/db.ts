@@ -614,6 +614,20 @@ async function runMigrations(): Promise<void> {
     -- C) Index for deterministic source resolution (updated_at tiebreak)
     CREATE INDEX IF NOT EXISTS idx_vitals_daily_user_date_updated ON vitals_daily(user_id, date, updated_at DESC);
   `);
+
+  await runMigration('007_pk_user_isolation_hr_rr', `
+    -- Update PK on workout_hr_samples to include user_id
+    ALTER TABLE workout_hr_samples DROP CONSTRAINT IF EXISTS workout_hr_samples_pkey;
+    ALTER TABLE workout_hr_samples ADD PRIMARY KEY (user_id, session_id, ts);
+
+    -- Update PK on workout_rr_intervals to include user_id
+    ALTER TABLE workout_rr_intervals DROP CONSTRAINT IF EXISTS workout_rr_intervals_pkey;
+    ALTER TABLE workout_rr_intervals ADD PRIMARY KEY (user_id, session_id, ts);
+
+    -- Drop redundant indexes now covered by new PKs
+    DROP INDEX IF EXISTS idx_hr_samples_user_session;
+    DROP INDEX IF EXISTS idx_rr_intervals_user_session;
+  `);
 }
 
 export { pool };
