@@ -12,7 +12,7 @@ import {
   TextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
@@ -666,8 +666,18 @@ export default function VitalsScreen() {
                 : src.id === "healthkit" ? "heart-outline" as const
                 : src.id === "polar" ? "bluetooth-outline" as const
                 : "create-outline" as const;
+              const isNavigable = src.id === "healthkit" || src.id === "polar";
+              const handleSourcePress = () => {
+                if (src.id === "healthkit") router.push("/healthkit");
+                else if (src.id === "polar") router.push("/polar");
+              };
               return (
-                <View key={src.id} style={[srcStyles.sourceRow, idx > 0 && srcStyles.sourceRowBorder]}>
+                <Pressable
+                  key={src.id}
+                  style={[srcStyles.sourceRow, idx > 0 && srcStyles.sourceRowBorder]}
+                  onPress={isNavigable ? handleSourcePress : undefined}
+                  disabled={!isNavigable}
+                >
                   <View style={[srcStyles.sourceIcon, { backgroundColor: statusColor + "18" }]}>
                     <Ionicons name={iconName} size={20} color={statusColor} />
                   </View>
@@ -682,19 +692,37 @@ export default function VitalsScreen() {
                         ].filter(Boolean).join(" / ")}
                       </Text>
                     ) : needsBuild ? (
-                      <Text style={srcStyles.sourceDetail}>Requires native dev build</Text>
+                      <Text style={srcStyles.sourceDetail}>Tap to configure</Text>
                     ) : (
                       <Text style={srcStyles.sourceDetail}>No data yet</Text>
                     )}
                   </View>
-                  <View style={[srcStyles.statusBadge, { backgroundColor: statusColor + "20", borderColor: statusColor + "40" }]}>
-                    <Text style={[srcStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-                  </View>
-                </View>
+                  {isNavigable ? (
+                    <Ionicons name="chevron-forward" size={18} color={statusColor} />
+                  ) : (
+                    <View style={[srcStyles.statusBadge, { backgroundColor: statusColor + "20", borderColor: statusColor + "40" }]}>
+                      <Text style={[srcStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+                    </View>
+                  )}
+                </Pressable>
               );
             })}
           </View>
         )}
+
+        <Pressable
+          style={[styles.card, { borderColor: Colors.primary + "40" }]}
+          onPress={() => router.push("/workout")}
+        >
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons name="sword-cross" size={18} color={Colors.primary} />
+            <Text style={styles.cardTitle}>Workout Game Guide</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} style={{ marginLeft: "auto" }} />
+          </View>
+          <Text style={{ fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+            CBP-driven training with phase transitions and muscle targeting
+          </Text>
+        </Pressable>
 
         <View style={[styles.card, { borderColor: "#374151" }]}>
           <View style={styles.cardHeader}>

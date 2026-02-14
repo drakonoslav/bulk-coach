@@ -40,6 +40,9 @@ UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purp
 - **Bias Normalization**: strength_bias rounded to 4 decimals, cardio_bias = 1 - strength_bias (ensures exact 1.0 sum).
 - **Data Sources API**: `/api/data-sources` (GET) returns per-source record counts (workouts/vitals/sleep) and last sync timestamp.
 - **Phase 2**: HealthKit adapter (react-native-health), Polar BLE adapter (react-native-ble-plx) — both require native dev build, will use same canonical schema. Adapters are built (`server/adapters/healthkit.ts`, `server/adapters/polar.ts`); sync UI in Vitals tab shows connection status.
+- **Phase 3 Screens**: `app/healthkit.tsx` (HealthKit sync UI with 7d/30d sync, permission flow, result counts), `app/polar.tsx` (Polar H10 BLE scan/connect/stream with 120s baseline capture, live HR/RR display, post-session HRV analysis), `app/workout.tsx` (Game Guide with CBP bar, phase indicator, muscle grid, RPE selector, set logging, isolation targets).
+- **Phase 3 Hooks**: `hooks/useHealthKit.ts` (HealthKit permission + multi-day sync), `hooks/usePolarH10.ts` (BLE scan/connect/stream with buffer upload), `hooks/useWorkoutEngine.ts` (workout start/logSet/end with server state sync).
+- **iOS Dev Build**: `IOS_DEV_BUILD.md` documents EAS setup, required packages (react-native-health, react-native-ble-plx), config plugins, entitlements, and Info.plist settings.
 
 ## External Dependencies
 - **Postgres (Neon)**: Primary database for all persistent application data.
