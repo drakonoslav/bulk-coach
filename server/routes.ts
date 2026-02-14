@@ -1973,6 +1973,128 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Macro Presets API ──
+
+  app.get("/api/presets", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT * FROM macro_presets WHERE user_id = $1 ORDER BY name ASC`,
+        [userId]
+      );
+      res.json(rows.map(snakeToCamel));
+    } catch (err) {
+      console.error("presets list error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/presets/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT * FROM macro_presets WHERE user_id = $1 AND id = $2`,
+        [userId, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Preset not found" });
+      res.json(snakeToCamel(rows[0]));
+    } catch (err) {
+      console.error("preset detail error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/presets", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const p = req.body;
+      if (!p.id || !p.name || p.calories == null) {
+        return res.status(400).json({ error: "id, name, and calories required" });
+      }
+      await pool.query(
+        `INSERT INTO macro_presets (id, user_id, name, locked, calories, protein_g, carbs_g, fat_g, items, adjust_priority, cardio_fuel, checklist, meal_slots)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (user_id, id) DO UPDATE SET
+           name = EXCLUDED.name,
+           calories = EXCLUDED.calories,
+           protein_g = EXCLUDED.protein_g,
+           carbs_g = EXCLUDED.carbs_g,
+           fat_g = EXCLUDED.fat_g,
+           items = EXCLUDED.items,
+           adjust_priority = EXCLUDED.adjust_priority,
+           cardio_fuel = EXCLUDED.cardio_fuel,
+           checklist = EXCLUDED.checklist,
+           meal_slots = EXCLUDED.meal_slots,
+           updated_at = NOW()
+         WHERE macro_presets.locked = FALSE`,
+        [
+          p.id, userId, p.name, p.locked ?? false,
+          p.calories, p.protein_g ?? 0, p.carbs_g ?? 0, p.fat_g ?? 0,
+          JSON.stringify(p.items ?? {}),
+          JSON.stringify(p.adjust_priority ?? []),
+          JSON.stringify(p.cardio_fuel ?? {}),
+          JSON.stringify(p.checklist ?? []),
+          JSON.stringify(p.meal_slots ?? []),
+        ]
+      );
+      res.json({ ok: true, id: p.id });
+    } catch (err) {
+      console.error("preset upsert error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/presets/load-file", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const presetPath = req.body.path || "presets/conrad_v1.json";
+      const fullPath = path.resolve(presetPath);
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ error: `Preset file not found: ${presetPath}` });
+      }
+      const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+      await pool.query(
+        `INSERT INTO macro_presets (id, user_id, name, locked, calories, protein_g, carbs_g, fat_g, items, adjust_priority, cardio_fuel, checklist, meal_slots)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (user_id, id) DO UPDATE SET
+           name = EXCLUDED.name, locked = EXCLUDED.locked,
+           calories = EXCLUDED.calories, protein_g = EXCLUDED.protein_g,
+           carbs_g = EXCLUDED.carbs_g, fat_g = EXCLUDED.fat_g,
+           items = EXCLUDED.items, adjust_priority = EXCLUDED.adjust_priority,
+           cardio_fuel = EXCLUDED.cardio_fuel, checklist = EXCLUDED.checklist,
+           meal_slots = EXCLUDED.meal_slots, updated_at = NOW()`,
+        [
+          data.id, userId, data.name, data.locked ?? false,
+          data.calories, data.protein_g ?? 0, data.carbs_g ?? 0, data.fat_g ?? 0,
+          JSON.stringify(data.items ?? {}),
+          JSON.stringify(data.adjust_priority ?? []),
+          JSON.stringify(data.cardio_fuel ?? {}),
+          JSON.stringify(data.checklist ?? []),
+          JSON.stringify(data.meal_slots ?? []),
+        ]
+      );
+      res.json({ ok: true, id: data.id, name: data.name, locked: data.locked });
+    } catch (err) {
+      console.error("preset load error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/presets/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rowCount } = await pool.query(
+        `DELETE FROM macro_presets WHERE user_id = $1 AND id = $2 AND locked = FALSE`,
+        [userId, req.params.id]
+      );
+      if (rowCount === 0) return res.status(400).json({ error: "Preset not found or is locked" });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("preset delete error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

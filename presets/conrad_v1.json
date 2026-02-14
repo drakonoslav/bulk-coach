@@ -1,0 +1,51 @@
+{
+  "id": "conrad_v1",
+  "name": "Conrad V1 — Lean Bulk",
+  "locked": true,
+  "calories": 2850,
+  "protein_g": 220,
+  "carbs_g": 310,
+  "fat_g": 75,
+  "items": {
+    "protein_shake": { "label": "Whey Isolate Shake", "kcal": 160, "p": 30, "c": 5, "f": 2, "servings": 2 },
+    "chicken_breast": { "label": "Chicken Breast 8oz", "kcal": 280, "p": 52, "c": 0, "f": 6, "servings": 1 },
+    "rice_white": { "label": "White Rice 1.5 cups", "kcal": 310, "p": 6, "c": 68, "f": 1, "servings": 2 },
+    "eggs_whole": { "label": "Whole Eggs x4", "kcal": 312, "p": 24, "c": 2, "f": 22, "servings": 1 },
+    "oats": { "label": "Rolled Oats 1 cup", "kcal": 300, "p": 10, "c": 54, "f": 6, "servings": 1 },
+    "banana": { "label": "Banana", "kcal": 105, "p": 1, "c": 27, "f": 0, "servings": 1 },
+    "olive_oil": { "label": "Olive Oil 1 tbsp", "kcal": 120, "p": 0, "c": 0, "f": 14, "servings": 1 },
+    "greek_yogurt": { "label": "Greek Yogurt 1 cup", "kcal": 130, "p": 22, "c": 8, "f": 0, "servings": 1 },
+    "mixed_veggies": { "label": "Mixed Vegetables 2 cups", "kcal": 80, "p": 4, "c": 16, "f": 0, "servings": 1 },
+    "sweet_potato": { "label": "Sweet Potato 1 medium", "kcal": 115, "p": 2, "c": 27, "f": 0, "servings": 1 }
+  },
+  "adjust_priority": [
+    { "item": "rice_white", "direction": "both", "step_kcal": 155, "note": "First lever — add/remove 0.75 cup rice per meal" },
+    { "item": "oats", "direction": "both", "step_kcal": 150, "note": "Second lever — add/remove 0.5 cup oats" },
+    { "item": "olive_oil", "direction": "up", "step_kcal": 120, "note": "Third lever (surplus only) — add 1 tbsp oil" },
+    { "item": "banana", "direction": "both", "step_kcal": 105, "note": "Easy add/remove for fine-tuning" }
+  ],
+  "cardio_fuel": {
+    "threshold_min": 30,
+    "fuel_item": "banana",
+    "fuel_kcal_per_30min": 105,
+    "note": "Add 1 banana per 30 min of cardio above threshold"
+  },
+  "checklist": [
+    "2+ scoops whey isolate",
+    "8oz chicken or equivalent lean protein",
+    "3+ cups rice or starchy carbs",
+    "4 whole eggs (fat anchor)",
+    "1 cup oats (AM carbs)",
+    "2+ cups vegetables",
+    "1 tbsp olive oil or fat source",
+    "3+ liters water",
+    "Creatine 5g"
+  ],
+  "meal_slots": [
+    { "slot": "breakfast", "time": "07:00", "items": ["oats", "eggs_whole", "banana"] },
+    { "slot": "pre_workout", "time": "10:00", "items": ["protein_shake", "rice_white"] },
+    { "slot": "post_workout", "time": "13:00", "items": ["protein_shake", "rice_white", "sweet_potato"] },
+    { "slot": "dinner", "time": "18:00", "items": ["chicken_breast", "rice_white", "mixed_veggies", "olive_oil"] },
+    { "slot": "evening", "time": "21:00", "items": ["greek_yogurt"] }
+  ]
+}
