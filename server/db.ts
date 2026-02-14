@@ -574,6 +574,46 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS conf_combined_7d INTEGER DEFAULT 0;
     ALTER TABLE readiness_daily ADD COLUMN IF NOT EXISTS gate TEXT DEFAULT 'NONE';
   `);
+
+  await runMigration('006_canonical_health_hardening', `
+    -- A) Add user_id to workout_hr_samples and workout_rr_intervals
+    ALTER TABLE workout_hr_samples ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+    ALTER TABLE workout_rr_intervals ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'local_default';
+
+    -- Backfill user_id from workout_session
+    UPDATE workout_hr_samples h SET user_id = (
+      SELECT COALESCE(w.user_id, 'local_default') FROM workout_session w WHERE w.session_id = h.session_id
+    ) WHERE EXISTS (SELECT 1 FROM workout_session w WHERE w.session_id = h.session_id);
+
+    UPDATE workout_rr_intervals r SET user_id = (
+      SELECT COALESCE(w.user_id, 'local_default') FROM workout_session w WHERE w.session_id = r.session_id
+    ) WHERE EXISTS (SELECT 1 FROM workout_session w WHERE w.session_id = r.session_id);
+
+    -- Composite indexes for user-scoped queries (keep existing PKs since session_id is globally unique)
+    CREATE INDEX IF NOT EXISTS idx_hr_samples_user_session ON workout_hr_samples(user_id, session_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_intervals_user_session ON workout_rr_intervals(user_id, session_id);
+    CREATE INDEX IF NOT EXISTS idx_workout_session_user_date ON workout_session(user_id, date);
+
+    -- D) CHECK constraints for data quality
+    ALTER TABLE workout_hr_samples DROP CONSTRAINT IF EXISTS chk_hr_bpm_range;
+    ALTER TABLE workout_hr_samples ADD CONSTRAINT chk_hr_bpm_range CHECK (hr_bpm BETWEEN 25 AND 250);
+
+    ALTER TABLE workout_rr_intervals DROP CONSTRAINT IF EXISTS chk_rr_ms_range;
+    ALTER TABLE workout_rr_intervals ADD CONSTRAINT chk_rr_ms_range CHECK (rr_ms BETWEEN 300 AND 2000);
+
+    ALTER TABLE sleep_summary_daily DROP CONSTRAINT IF EXISTS chk_sleep_minutes_range;
+    ALTER TABLE sleep_summary_daily ADD CONSTRAINT chk_sleep_minutes_range CHECK (total_sleep_minutes BETWEEN 0 AND 1000);
+
+    ALTER TABLE vitals_daily DROP CONSTRAINT IF EXISTS chk_resting_hr_range;
+    ALTER TABLE vitals_daily ADD CONSTRAINT chk_resting_hr_range CHECK (resting_hr_bpm IS NULL OR resting_hr_bpm BETWEEN 25 AND 250);
+
+    -- E) Analysis idempotency columns on workout_session
+    ALTER TABLE workout_session ADD COLUMN IF NOT EXISTS analysis_version TEXT;
+    ALTER TABLE workout_session ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ;
+
+    -- C) Index for deterministic source resolution (updated_at tiebreak)
+    CREATE INDEX IF NOT EXISTS idx_vitals_daily_user_date_updated ON vitals_daily(user_id, date, updated_at DESC);
+  `);
 }
 
 export { pool };

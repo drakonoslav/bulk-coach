@@ -77,6 +77,7 @@ export interface WorkoutSession {
 
 export interface WorkoutHrSample {
   session_id: string;
+  user_id?: string;
   ts: string;
   hr_bpm: number;
   source: string;
@@ -84,10 +85,13 @@ export interface WorkoutHrSample {
 
 export interface WorkoutRrInterval {
   session_id: string;
+  user_id?: string;
   ts: string;
   rr_ms: number;
   source: string;
 }
+
+export const ANALYSIS_VERSION = '1.0.0';
 
 export interface HrvBaselineDaily {
   date: string;
@@ -211,34 +215,68 @@ export async function upsertWorkoutSession(w: WorkoutSession): Promise<void> {
   );
 }
 
-export async function batchUpsertHrSamples(samples: WorkoutHrSample[]): Promise<number> {
+const BULK_CHUNK_SIZE = 500;
+
+export async function batchUpsertHrSamples(samples: WorkoutHrSample[], userId: string = DEFAULT_USER_ID): Promise<number> {
   if (samples.length === 0) return 0;
-  let count = 0;
-  for (const s of samples) {
-    await pool.query(
-      `INSERT INTO workout_hr_samples (session_id, ts, hr_bpm, source)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (session_id, ts) DO UPDATE SET hr_bpm = EXCLUDED.hr_bpm, source = EXCLUDED.source`,
-      [s.session_id, s.ts, s.hr_bpm, s.source]
+  let total = 0;
+  for (let i = 0; i < samples.length; i += BULK_CHUNK_SIZE) {
+    const chunk = samples.slice(i, i + BULK_CHUNK_SIZE);
+    const sessionIds: string[] = [];
+    const userIds: string[] = [];
+    const timestamps: string[] = [];
+    const hrBpms: number[] = [];
+    const sources: string[] = [];
+    for (const s of chunk) {
+      sessionIds.push(s.session_id);
+      userIds.push(s.user_id ?? userId);
+      timestamps.push(s.ts);
+      hrBpms.push(s.hr_bpm);
+      sources.push(s.source);
+    }
+    const result = await pool.query(
+      `INSERT INTO workout_hr_samples (session_id, user_id, ts, hr_bpm, source)
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::timestamptz[], $4::int[], $5::text[])
+       ON CONFLICT (session_id, ts) DO UPDATE SET
+         hr_bpm = EXCLUDED.hr_bpm,
+         source = EXCLUDED.source,
+         user_id = EXCLUDED.user_id`,
+      [sessionIds, userIds, timestamps, hrBpms, sources]
     );
-    count++;
+    total += result.rowCount ?? chunk.length;
   }
-  return count;
+  return total;
 }
 
-export async function batchUpsertRrIntervals(intervals: WorkoutRrInterval[]): Promise<number> {
+export async function batchUpsertRrIntervals(intervals: WorkoutRrInterval[], userId: string = DEFAULT_USER_ID): Promise<number> {
   if (intervals.length === 0) return 0;
-  let count = 0;
-  for (const r of intervals) {
-    await pool.query(
-      `INSERT INTO workout_rr_intervals (session_id, ts, rr_ms, source)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (session_id, ts) DO UPDATE SET rr_ms = EXCLUDED.rr_ms, source = EXCLUDED.source`,
-      [r.session_id, r.ts, r.rr_ms, r.source]
+  let total = 0;
+  for (let i = 0; i < intervals.length; i += BULK_CHUNK_SIZE) {
+    const chunk = intervals.slice(i, i + BULK_CHUNK_SIZE);
+    const sessionIds: string[] = [];
+    const userIds: string[] = [];
+    const timestamps: string[] = [];
+    const rrValues: number[] = [];
+    const sources: string[] = [];
+    for (const r of chunk) {
+      sessionIds.push(r.session_id);
+      userIds.push(r.user_id ?? userId);
+      timestamps.push(r.ts);
+      rrValues.push(r.rr_ms);
+      sources.push(r.source);
+    }
+    const result = await pool.query(
+      `INSERT INTO workout_rr_intervals (session_id, user_id, ts, rr_ms, source)
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::timestamptz[], $4::real[], $5::text[])
+       ON CONFLICT (session_id, ts) DO UPDATE SET
+         rr_ms = EXCLUDED.rr_ms,
+         source = EXCLUDED.source,
+         user_id = EXCLUDED.user_id`,
+      [sessionIds, userIds, timestamps, rrValues, sources]
     );
-    count++;
+    total += result.rowCount ?? chunk.length;
   }
-  return count;
+  return total;
 }
 
 export async function upsertHrvBaseline(b: HrvBaselineDaily): Promise<void> {
@@ -291,18 +329,18 @@ export async function getWorkoutSessions(startDate: string, endDate: string, use
   return rows;
 }
 
-export async function getHrSamplesForSession(sessionId: string): Promise<WorkoutHrSample[]> {
+export async function getHrSamplesForSession(sessionId: string, userId: string = DEFAULT_USER_ID): Promise<WorkoutHrSample[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM workout_hr_samples WHERE session_id = $1 ORDER BY ts ASC`,
-    [sessionId]
+    `SELECT * FROM workout_hr_samples WHERE session_id = $1 AND user_id = $2 ORDER BY ts ASC`,
+    [sessionId, userId]
   );
   return rows;
 }
 
-export async function getRrIntervalsForSession(sessionId: string): Promise<WorkoutRrInterval[]> {
+export async function getRrIntervalsForSession(sessionId: string, userId: string = DEFAULT_USER_ID): Promise<WorkoutRrInterval[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM workout_rr_intervals WHERE session_id = $1 ORDER BY ts ASC`,
-    [sessionId]
+    `SELECT * FROM workout_rr_intervals WHERE session_id = $1 AND user_id = $2 ORDER BY ts ASC`,
+    [sessionId, userId]
   );
   return rows;
 }
@@ -322,11 +360,20 @@ function median(values: number[]): number {
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+const SOURCE_PRIORITY: Record<string, number> = {
+  healthkit: 1,
+  polar: 2,
+  fitbit: 3,
+  manual: 4,
+  unknown: 5,
+};
+
 export async function recomputeHrvBaselines(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<number> {
   const { rows: vitals } = await pool.query(
-    `SELECT date::text as date, hrv_rmssd_ms, hrv_sdnn_ms, source FROM vitals_daily
+    `SELECT date::text as date, hrv_rmssd_ms, hrv_sdnn_ms, source, updated_at
+     FROM vitals_daily
      WHERE date >= ($1::date - interval '14 days') AND date <= $2::date AND user_id = $3
-     ORDER BY date ASC`,
+     ORDER BY date ASC, updated_at DESC`,
     [startDate, endDate, userId]
   );
 
@@ -334,6 +381,12 @@ export async function recomputeHrvBaselines(startDate: string, endDate: string, 
   const sdnnMap = new Map<string, number>();
   const sourceMap = new Map<string, string>();
   for (const r of vitals) {
+    const existing = sourceMap.get(r.date);
+    if (existing != null) {
+      const existingPriority = SOURCE_PRIORITY[existing] ?? 99;
+      const newPriority = SOURCE_PRIORITY[r.source] ?? 99;
+      if (newPriority >= existingPriority) continue;
+    }
     if (r.hrv_rmssd_ms != null) rmssdMap.set(r.date, Number(r.hrv_rmssd_ms));
     if (r.hrv_sdnn_ms != null) sdnnMap.set(r.date, Number(r.hrv_sdnn_ms));
     sourceMap.set(r.date, r.source);
@@ -460,6 +513,16 @@ export function computeRecoverySlope(
 
 export type HrvResponseFlag = "suppressed" | "increased" | "flat" | "insufficient";
 
+export interface RrQuality {
+  baseline_beats: number;
+  active_beats: number;
+  recovery_beats: number;
+  baseline_ok: boolean;
+  active_ok: boolean;
+  recovery_ok: boolean;
+  reasons: string[];
+}
+
 export interface SessionHrvAnalysis {
   pre_session_rmssd: number | null;
   min_session_rmssd: number | null;
@@ -476,6 +539,7 @@ export interface SessionHrvAnalysis {
   time_to_recovery_sec: number | null;
   strength_bias: number;
   cardio_bias: number;
+  quality: RrQuality;
 }
 
 export function computeRmssdFromRr(rrIntervalsMs: number[]): number | null {
@@ -574,6 +638,11 @@ export function processSessionRrIntervals(
     baseline_window_seconds: baselineWindowSec, baseline_rr_count: 0,
     active_rr_count: 0, recovery_rr_count: 0, time_to_recovery_sec: null,
     strength_bias: 0.5, cardio_bias: 0.5,
+    quality: {
+      baseline_beats: 0, active_beats: 0, recovery_beats: 0,
+      baseline_ok: false, active_ok: false, recovery_ok: false,
+      reasons: ['No valid RR data'],
+    },
   };
 
   if (isNaN(startTime)) return nullResult;
@@ -697,6 +766,17 @@ export function processSessionRrIntervals(
     }
   }
 
+  const MIN_ACTIVE_BEATS = 20;
+  const baselineOk = baselineRr.length >= MIN_BASELINE_BEATS;
+  const activeOk = activeRr.length >= MIN_ACTIVE_BEATS;
+  const recoveryOk = recoveryRr.length >= MIN_RECOVERY_BEATS;
+  const qualityReasons: string[] = [];
+  if (!baselineOk) qualityReasons.push(`Baseline beats ${baselineRr.length} < ${MIN_BASELINE_BEATS} required`);
+  if (!activeOk) qualityReasons.push(`Active beats ${activeRr.length} < ${MIN_ACTIVE_BEATS} required`);
+  if (!recoveryOk) qualityReasons.push(`Recovery beats ${recoveryRr.length} < ${MIN_RECOVERY_BEATS} required`);
+  if (endTime == null) qualityReasons.push('Session end time missing — no recovery window');
+  if (qualityReasons.length === 0) qualityReasons.push('All windows sufficient');
+
   return {
     pre_session_rmssd: preRmssd,
     min_session_rmssd: minRmssd,
@@ -712,6 +792,15 @@ export function processSessionRrIntervals(
     recovery_rr_count: recoveryRr.length,
     time_to_recovery_sec: timeToRecoverySec,
     ...biases,
+    quality: {
+      baseline_beats: baselineRr.length,
+      active_beats: activeRr.length,
+      recovery_beats: recoveryRr.length,
+      baseline_ok: baselineOk,
+      active_ok: activeOk,
+      recovery_ok: recoveryOk,
+      reasons: qualityReasons,
+    },
   };
 }
 
@@ -851,16 +940,16 @@ export function computeSessionBiases(
   };
 }
 
-export async function analyzeSessionHrv(sessionId: string): Promise<SessionHrvAnalysis> {
+export async function analyzeSessionHrv(sessionId: string, userId: string = DEFAULT_USER_ID): Promise<SessionHrvAnalysis> {
   const { rows: sessions } = await pool.query(
-    `SELECT * FROM workout_session WHERE session_id = $1`,
-    [sessionId]
+    `SELECT * FROM workout_session WHERE session_id = $1 AND user_id = $2`,
+    [sessionId, userId]
   );
   if (sessions.length === 0) throw new Error(`Session ${sessionId} not found`);
   const session = sessions[0];
 
-  const rrIntervals = await getRrIntervalsForSession(sessionId);
-  const hrSamples = await getHrSamplesForSession(sessionId);
+  const rrIntervals = await getRrIntervalsForSession(sessionId, userId);
+  const hrSamples = await getHrSamplesForSession(sessionId, userId);
 
   const analysis = processSessionRrIntervals(
     rrIntervals, hrSamples,
@@ -882,14 +971,17 @@ export async function analyzeSessionHrv(sessionId: string): Promise<SessionHrvAn
        time_to_recovery_sec = $11,
        strength_bias = $12,
        cardio_bias = $13,
+       analysis_version = $14,
+       analyzed_at = NOW(),
        updated_at = NOW()
-     WHERE session_id = $1`,
+     WHERE session_id = $1 AND user_id = $15`,
     [sessionId,
      analysis.pre_session_rmssd, analysis.min_session_rmssd, analysis.post_session_rmssd,
      analysis.hrv_suppression_pct, analysis.hrv_rebound_pct, analysis.hrv_response_flag,
      analysis.suppression_depth_pct, analysis.rebound_bpm_per_min,
      analysis.baseline_window_seconds, analysis.time_to_recovery_sec,
-     analysis.strength_bias, analysis.cardio_bias]
+     analysis.strength_bias, analysis.cardio_bias,
+     ANALYSIS_VERSION, userId]
   );
 
   return analysis;

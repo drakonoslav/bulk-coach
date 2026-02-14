@@ -1381,8 +1381,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/:sessionId/analyze-hrv", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
-      const result = await analyzeSessionHrv(sessionId);
+      const result = await analyzeSessionHrv(sessionId, userId);
       res.json({ ok: true, session_id: sessionId, ...result });
     } catch (err: any) {
       console.error("session hrv analysis error:", err);
@@ -1395,8 +1396,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/workouts/:sessionId/hr", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
-      const rows = await getHrSamplesForSession(sessionId);
+      const rows = await getHrSamplesForSession(sessionId, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical hr samples error:", err);
@@ -1406,13 +1408,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/:sessionId/hr", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
       const samples = req.body as WorkoutHrSample[];
       if (!Array.isArray(samples)) {
         return res.status(400).json({ error: "expected array of hr samples" });
       }
       const tagged = samples.map(s => ({ ...s, session_id: sessionId }));
-      const count = await batchUpsertHrSamples(tagged);
+      const count = await batchUpsertHrSamples(tagged, userId);
       res.json({ ok: true, count });
     } catch (err) {
       console.error("canonical hr samples upsert error:", err);
@@ -1422,8 +1425,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/workouts/:sessionId/rr", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
-      const rows = await getRrIntervalsForSession(sessionId);
+      const rows = await getRrIntervalsForSession(sessionId, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical rr intervals error:", err);
@@ -1433,13 +1437,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/:sessionId/rr", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
       const intervals = req.body as WorkoutRrInterval[];
       if (!Array.isArray(intervals)) {
         return res.status(400).json({ error: "expected array of rr intervals" });
       }
       const tagged = intervals.map(r => ({ ...r, session_id: sessionId }));
-      const count = await batchUpsertRrIntervals(tagged);
+      const count = await batchUpsertRrIntervals(tagged, userId);
       res.json({ ok: true, count });
     } catch (err) {
       console.error("canonical rr intervals upsert error:", err);
@@ -1600,6 +1605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/hr-samples/upsert-bulk", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const p = req.body;
       if (!p.session_id || !p.source || !Array.isArray(p.samples)) {
         return res.status(400).json({ error: "session_id, source, and samples[] required" });
@@ -1610,7 +1616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hr_bpm: s.hr_bpm,
         source: p.source,
       }));
-      const count = await batchUpsertHrSamples(tagged);
+      const count = await batchUpsertHrSamples(tagged, userId);
       res.json({ ok: true, session_id: p.session_id, inserted_or_updated: count });
     } catch (err) {
       console.error("hr samples bulk upsert error:", err);
@@ -1620,6 +1626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/rr-intervals/upsert-bulk", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const p = req.body;
       if (!p.session_id || !p.source || !Array.isArray(p.intervals)) {
         return res.status(400).json({ error: "session_id, source, and intervals[] required" });
@@ -1630,7 +1637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rr_ms: r.rr_ms,
         source: p.source,
       }));
-      const count = await batchUpsertRrIntervals(tagged);
+      const count = await batchUpsertRrIntervals(tagged, userId);
       res.json({ ok: true, session_id: p.session_id, inserted_or_updated: count });
     } catch (err) {
       console.error("rr intervals bulk upsert error:", err);
