@@ -24,6 +24,7 @@ import {
   computeSessionStrain,
   computeSessionBiases,
   analyzeSessionHrv,
+  DEFAULT_USER_ID,
   type SleepSummary,
   type VitalsDaily,
   type WorkoutSession,
@@ -89,6 +90,9 @@ function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await initDb();
+
+  const getUserId = (req: Request): string =>
+    (req.body?.user_id || req.query?.user_id || 'local_default') as string;
 
   app.get("/privacy", (_req: Request, res: Response) => {
     res.send(`<!DOCTYPE html>
@@ -184,6 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/logs/upsert", async (req: Request, res: Response) => {
     try {
       const b = req.body;
+      const userId = getUserId(req);
       if (!b.day || !b.morningWeightLb) {
         return res.status(400).json({ error: "day and morningWeightLb required" });
       }
@@ -193,6 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await pool.query(
         `INSERT INTO daily_log (
+          user_id,
           day, morning_weight_lb, evening_weight_lb, waist_in,
           bf_morning_r1, bf_morning_r2, bf_morning_r3, bf_morning_pct,
           bf_evening_r1, bf_evening_r2, bf_evening_r3, bf_evening_pct,
@@ -205,9 +211,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_latency_min, sleep_waso_min, nap_minutes,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,NOW()
         )
-        ON CONFLICT (day) DO UPDATE SET
+        ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
           evening_weight_lb = EXCLUDED.evening_weight_lb,
           waist_in = EXCLUDED.waist_in,
@@ -242,6 +248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           nap_minutes = EXCLUDED.nap_minutes,
           updated_at = NOW()`,
         [
+          userId,
           b.day,
           b.morningWeightLb,
           b.eveningWeightLb ?? null,
@@ -278,13 +285,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ],
       );
 
-      await recomputeRange(b.day);
+      await recomputeRange(b.day, userId);
 
-      computeSleepBlock(b.day).catch((err: unknown) =>
+      computeSleepBlock(b.day, userId).catch((err: unknown) =>
         console.error("sleep block compute error:", err)
       );
 
-      recomputeReadinessRange(b.day).catch((err: unknown) =>
+      recomputeReadinessRange(b.day, userId).catch((err: unknown) =>
         console.error("readiness recompute error:", err)
       );
 
@@ -295,10 +302,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/logs", async (_req: Request, res: Response) => {
+  app.get("/api/logs", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { rows } = await pool.query(
-        `SELECT * FROM daily_log ORDER BY day ASC`,
+        `SELECT * FROM daily_log WHERE user_id = $1 ORDER BY day ASC`,
+        [userId],
       );
       const mapped = rows.map(snakeToCamel);
       res.json(mapped);
@@ -310,9 +319,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/logs/:day", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { rows } = await pool.query(
-        `SELECT * FROM daily_log WHERE day = $1`,
-        [req.params.day],
+        `SELECT * FROM daily_log WHERE day = $1 AND user_id = $2`,
+        [req.params.day, userId],
       );
       if (rows.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(snakeToCamel(rows[0]));
@@ -324,8 +334,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/logs/:day", async (req: Request, res: Response) => {
     try {
-      await pool.query(`DELETE FROM daily_log WHERE day = $1`, [req.params.day]);
-      await pool.query(`DELETE FROM dashboard_cache WHERE day = $1`, [req.params.day]);
+      const userId = getUserId(req);
+      await pool.query(`DELETE FROM daily_log WHERE day = $1 AND user_id = $2`, [req.params.day, userId]);
+      await pool.query(`DELETE FROM dashboard_cache WHERE day = $1 AND user_id = $2`, [req.params.day, userId]);
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("delete error:", err);
@@ -335,6 +346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/dashboard", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.query.start as string) || "2020-01-01";
       const end = (req.query.end as string) || "2099-12-31";
 
@@ -353,10 +365,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 d.weight_7d_avg, d.waist_7d_avg, d.lean_mass_7d_avg,
                 d.lean_gain_ratio_14d_roll, d.cardio_fuel_note
          FROM dashboard_cache d
-         JOIN daily_log l ON l.day = d.day
-         WHERE d.day BETWEEN $1 AND $2
+         JOIN daily_log l ON l.day = d.day AND l.user_id = d.user_id
+         WHERE d.user_id = $3 AND d.day BETWEEN $1 AND $2
          ORDER BY d.day ASC`,
-        [start, end],
+        [start, end, userId],
       );
 
       const mapped = rows.map(snakeToCamel);
@@ -372,12 +384,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
+      const userId = getUserId(req);
 
       const overwriteFields = req.body?.overwrite_fields === "true";
       const result = await importFitbitCSV(req.file.buffer, req.file.originalname, overwriteFields);
 
       if (result.dateRange?.start) {
-        recomputeReadinessRange(result.dateRange.start).catch((err: unknown) =>
+        recomputeReadinessRange(result.dateRange.start, userId).catch((err: unknown) =>
           console.error("readiness recompute after fitbit:", err)
         );
       }
@@ -389,10 +402,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/import/history", async (_req: Request, res: Response) => {
+  app.get("/api/import/history", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { rows } = await pool.query(
-        `SELECT * FROM fitbit_imports ORDER BY uploaded_at DESC LIMIT 10`,
+        `SELECT * FROM fitbit_imports WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 10`,
+        [userId],
       );
       res.json(rows.map(snakeToCamel));
     } catch (err: unknown) {
@@ -521,10 +536,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(job);
   });
 
-  app.get("/api/import/takeout_history", async (_req: Request, res: Response) => {
+  app.get("/api/import/takeout_history", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { rows } = await pool.query(
-        `SELECT * FROM fitbit_takeout_imports ORDER BY uploaded_at DESC LIMIT 10`,
+        `SELECT * FROM fitbit_takeout_imports WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 10`,
+        [userId],
       );
       res.json(rows.map(snakeToCamel));
     } catch (err: unknown) {
@@ -610,10 +627,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "sessionDate cannot be in the future" });
       }
 
+      const userId = getUserId(req);
       const parsed = parseSnapshotFile(req.file.buffer, req.file.originalname);
-      const result = await importSnapshotAndDerive(parsed, sessionDate, req.file.originalname);
+      const result = await importSnapshotAndDerive(parsed, sessionDate, req.file.originalname, userId);
 
-      recomputeReadinessRange(sessionDate).catch((err: unknown) =>
+      recomputeReadinessRange(sessionDate, userId).catch((err: unknown) =>
         console.error("readiness recompute after snapshot:", err)
       );
 
@@ -625,9 +643,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/erection/snapshots", async (_req: Request, res: Response) => {
+  app.get("/api/erection/snapshots", async (req: Request, res: Response) => {
     try {
-      const snapshots = await getSnapshots();
+      const userId = getUserId(req);
+      const snapshots = await getSnapshots(userId);
       res.json(snapshots);
     } catch (err: unknown) {
       console.error("snapshots error:", err);
@@ -637,10 +656,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/erection/sessions", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const from = req.query.from as string | undefined;
       const to = req.query.to as string | undefined;
       const includeImputed = req.query.include_imputed !== "false";
-      const sessions = await getSessions(from, to, includeImputed);
+      const sessions = await getSessions(from, to, includeImputed, userId);
       res.json(sessions.map(snakeToCamel));
     } catch (err: unknown) {
       console.error("sessions error:", err);
@@ -650,10 +670,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/erection/proxy", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const from = req.query.from as string | undefined;
       const to = req.query.to as string | undefined;
       const includeImputed = req.query.include_imputed === "true";
-      const data = await getProxyData(from, to, includeImputed);
+      const data = await getProxyData(from, to, includeImputed, userId);
       res.json(data.map(snakeToCamel));
     } catch (err: unknown) {
       console.error("proxy error:", err);
@@ -661,9 +682,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/erection/badges", async (_req: Request, res: Response) => {
+  app.get("/api/erection/badges", async (req: Request, res: Response) => {
     try {
-      const badges = await getSessionBadges();
+      const userId = getUserId(req);
+      const badges = await getSessionBadges(userId);
       res.json(badges);
     } catch (err: unknown) {
       console.error("badges error:", err);
@@ -671,9 +693,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/erection/confidence", async (_req: Request, res: Response) => {
+  app.get("/api/erection/confidence", async (req: Request, res: Response) => {
     try {
-      const confidence = await getDataConfidence();
+      const userId = getUserId(req);
+      const confidence = await getDataConfidence(userId);
       res.json(confidence);
     } catch (err: unknown) {
       console.error("confidence error:", err);
@@ -683,14 +706,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/readiness", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-      let result = await getReadiness(date);
+      let result = await getReadiness(date, userId);
       if (!result) {
-        result = await computeReadiness(date);
-        await persistReadiness(result);
+        result = await computeReadiness(date, userId);
+        await persistReadiness(result, userId);
       }
-      const sleepBlock = await computeSleepBlock(date);
-      const sleepTrending = await computeSleepTrending(date);
+      const sleepBlock = await computeSleepBlock(date, userId);
+      const sleepTrending = await computeSleepTrending(date, userId);
       res.json({ ...result, sleepBlock, sleepTrending });
     } catch (err: unknown) {
       console.error("readiness error:", err);
@@ -700,9 +724,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/readiness/range", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
-      const results = await getReadinessRange(from, to);
+      const results = await getReadinessRange(from, to, userId);
       res.json(results);
     } catch (err: unknown) {
       console.error("readiness range error:", err);
@@ -710,9 +735,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/training/template", async (_req: Request, res: Response) => {
+  app.get("/api/training/template", async (req: Request, res: Response) => {
     try {
-      const template = await getTrainingTemplate();
+      const userId = getUserId(req);
+      const template = await getTrainingTemplate(userId);
       res.json(template);
     } catch (err: unknown) {
       console.error("template get error:", err);
@@ -722,11 +748,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/training/template", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { templateType, sessions } = req.body;
       if (!templateType || !Array.isArray(sessions)) {
         return res.status(400).json({ error: "templateType and sessions required" });
       }
-      await updateTrainingTemplate(templateType, sessions);
+      await updateTrainingTemplate(templateType, sessions, userId);
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("template update error:", err);
@@ -734,9 +761,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/settings/analysis-start-date", async (_req: Request, res: Response) => {
+  app.get("/api/settings/analysis-start-date", async (req: Request, res: Response) => {
     try {
-      const date = await getAnalysisStartDate();
+      const userId = getUserId(req);
+      const date = await getAnalysisStartDate(userId);
       res.json({ analysisStartDate: date });
     } catch (err: unknown) {
       console.error("get analysis start date error:", err);
@@ -746,11 +774,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/settings/analysis-start-date", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { date } = req.body;
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: "Valid date (YYYY-MM-DD) required" });
       }
-      await setAnalysisStartDate(date);
+      await setAnalysisStartDate(date, userId);
       res.json({ ok: true, analysisStartDate: date });
     } catch (err: unknown) {
       console.error("set analysis start date error:", err);
@@ -760,14 +789,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/settings/rebaseline", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const days = Number(req.body?.days) || 60;
       const d = new Date();
       d.setUTCDate(d.getUTCDate() - days);
       const newStart = d.toISOString().slice(0, 10);
-      await setAnalysisStartDate(newStart);
+      await setAnalysisStartDate(newStart, userId);
 
       const today = new Date().toISOString().slice(0, 10);
-      recomputeReadinessRange(today).catch((err: unknown) =>
+      recomputeReadinessRange(today, userId).catch((err: unknown) =>
         console.error("readiness recompute after rebaseline:", err)
       );
 
@@ -778,9 +808,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/data-sufficiency", async (_req: Request, res: Response) => {
+  app.get("/api/data-sufficiency", async (req: Request, res: Response) => {
     try {
-      const result = await getDataSufficiency();
+      const userId = getUserId(req);
+      const result = await getDataSufficiency(userId);
       res.json(result);
     } catch (err: unknown) {
       console.error("data sufficiency error:", err);
@@ -831,6 +862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/sanity-check", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const date = req.query.date as string;
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
@@ -841,8 +873,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 energy_burned_kcal, resting_hr, hrv,
                 zone1_min, zone2_min, zone3_min, below_zone1_min,
                 morning_weight_lb, waist_in, sleep_start, sleep_end
-         FROM daily_log WHERE day = $1`,
-        [date],
+         FROM daily_log WHERE day = $1 AND user_id = $2`,
+        [date, userId],
       );
       const dailyLog = logRows[0] ? snakeToCamel(logRows[0]) : null;
 
@@ -875,20 +907,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let readinessResult = null;
       try {
-        readinessResult = await computeReadiness(date);
+        readinessResult = await computeReadiness(date, userId);
       } catch {}
 
       const { rows: storedReadiness } = await pool.query(
-        `SELECT * FROM readiness_daily WHERE date = $1::date`,
-        [date],
+        `SELECT * FROM readiness_daily WHERE date = $1::date AND user_id = $2`,
+        [date, userId],
       );
 
-      const sufficiency = await getDataSufficiency();
+      const sufficiency = await getDataSufficiency(userId);
 
       const { rows: proxyRows } = await pool.query(
         `SELECT date::text, proxy_score, computed_with_imputed
-         FROM androgen_proxy_daily WHERE date = $1::date`,
-        [date],
+         FROM androgen_proxy_daily WHERE date = $1::date AND user_id = $2`,
+        [date, userId],
       );
 
       res.json({
@@ -933,14 +965,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/sleep-diagnostics/:date", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { date } = req.params;
       const { rows } = await pool.query(
         `SELECT * FROM sleep_import_diagnostics WHERE date = $1 OR bucket_date = $1 ORDER BY created_at DESC`,
         [date],
       );
       const { rows: validation } = await pool.query(
-        `SELECT day, sleep_minutes FROM daily_log WHERE day = $1`,
-        [date],
+        `SELECT day, sleep_minutes FROM daily_log WHERE day = $1 AND user_id = $2`,
+        [date, userId],
       );
       res.json({
         date,
@@ -961,6 +994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/sleep-alignment", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const from = req.query.from as string;
       const to = req.query.to as string;
       if (!from || !to) return res.status(400).json({ error: "from and to required" });
@@ -970,9 +1004,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
                 sleep_efficiency, bedtime_deviation_min, wake_deviation_min, sleep_plan_alignment_score
          FROM daily_log
-         WHERE day >= $1 AND day <= $2 AND sleep_minutes IS NOT NULL
+         WHERE day >= $1 AND day <= $2 AND user_id = $3 AND sleep_minutes IS NOT NULL
          ORDER BY day ASC`,
-        [from, to]
+        [from, to, userId]
       );
       res.json(rows.map(r => ({
         day: r.day,
@@ -995,9 +1029,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/sleep-plan", async (_req: Request, res: Response) => {
+  app.get("/api/sleep-plan", async (req: Request, res: Response) => {
     try {
-      const settings = await getSleepPlanSettings();
+      const userId = getUserId(req);
+      const settings = await getSleepPlanSettings(userId);
       res.json(settings);
     } catch (err: unknown) {
       console.error("sleep-plan get error:", err);
@@ -1007,9 +1042,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/sleep-plan", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { bedtime, wake } = req.body;
       if (!bedtime || !wake) return res.status(400).json({ error: "bedtime and wake required" });
-      await setSleepPlanSettings(bedtime, wake);
+      await setSleepPlanSettings(bedtime, wake, userId);
       res.json({ ok: true, bedtime, wake });
     } catch (err: unknown) {
       console.error("sleep-plan set error:", err);
@@ -1019,6 +1055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/sleep-samples/:date", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { date } = req.params;
 
       const { rows: csvRows } = await pool.query(
@@ -1046,8 +1083,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 sleep_plan_bedtime, sleep_plan_wake, tossed_minutes,
                 sleep_efficiency, bedtime_deviation_min, wake_deviation_min,
                 sleep_plan_alignment_score
-         FROM daily_log WHERE day = $1`,
-        [date],
+         FROM daily_log WHERE day = $1 AND user_id = $2`,
+        [date, userId],
       );
 
       const csvSampleHeaders = [
@@ -1245,9 +1282,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/vitals", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
-      const rows = await getVitalsDailyRange(start, end);
+      const rows = await getVitalsDailyRange(start, end, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical vitals error:", err);
@@ -1257,10 +1295,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/vitals", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const v = req.body as VitalsDaily;
       if (!v.date || !v.source) {
         return res.status(400).json({ error: "date and source required" });
       }
+      v.user_id = userId;
       await upsertVitalsDaily(v);
       res.json({ ok: true, date: v.date });
     } catch (err) {
@@ -1271,9 +1311,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/sleep", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
-      const rows = await getSleepSummaryRange(start, end);
+      const rows = await getSleepSummaryRange(start, end, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical sleep error:", err);
@@ -1283,10 +1324,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/sleep", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const s = req.body as SleepSummary;
       if (!s.date || s.total_sleep_minutes == null || !s.source) {
         return res.status(400).json({ error: "date, total_sleep_minutes, and source required" });
       }
+      s.user_id = userId;
       await upsertSleepSummary(s);
       res.json({ ok: true, date: s.date });
     } catch (err) {
@@ -1297,9 +1340,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/workouts", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
-      const rows = await getWorkoutSessions(start, end);
+      const rows = await getWorkoutSessions(start, end, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical workouts error:", err);
@@ -1309,10 +1353,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const w = req.body as WorkoutSession;
       if (!w.session_id || !w.date || !w.start_ts || !w.source) {
         return res.status(400).json({ error: "session_id, date, start_ts, and source required" });
       }
+      w.user_id = userId;
       const { strainScore, typeTag } = computeSessionStrain(
         w.avg_hr, w.max_hr, w.duration_minutes, w.workout_type || "other"
       );
@@ -1403,9 +1449,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/hrv-baseline", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.query.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const end = (req.query.end as string) || new Date().toISOString().slice(0, 10);
-      const rows = await getHrvBaselineRange(start, end);
+      const rows = await getHrvBaselineRange(start, end, userId);
       res.json(rows);
     } catch (err) {
       console.error("canonical hrv baseline error:", err);
@@ -1415,9 +1462,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/hrv-baseline/recompute", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const start = (req.body.start as string) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const end = (req.body.end as string) || new Date().toISOString().slice(0, 10);
-      const count = await recomputeHrvBaselines(start, end);
+      const count = await recomputeHrvBaselines(start, end, userId);
       res.json({ ok: true, daysComputed: count });
     } catch (err) {
       console.error("canonical hrv recompute error:", err);
@@ -1429,11 +1477,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/sleep/upsert", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const p = req.body;
       if (!p.date || p.total_sleep_minutes == null || !p.source) {
         return res.status(400).json({ error: "date, total_sleep_minutes, and source required" });
       }
       const s: SleepSummary = {
+        user_id: userId,
         date: p.date,
         sleep_start: p.sleep_start ?? null,
         sleep_end: p.sleep_end ?? null,
@@ -1459,11 +1509,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/vitals/upsert", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const p = req.body;
       if (!p.date || !p.source) {
         return res.status(400).json({ error: "date and source required" });
       }
       const v: VitalsDaily = {
+        user_id: userId,
         date: p.date,
         resting_hr_bpm: p.resting_hr ?? null,
         hrv_rmssd_ms: p.hrv_rmssd_ms ?? null,
@@ -1483,7 +1535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       await upsertVitalsDaily(v);
       if (v.hrv_sdnn_ms != null || v.hrv_rmssd_ms != null) {
-        try { await recomputeHrvBaselines(v.date, v.date); } catch {}
+        try { await recomputeHrvBaselines(v.date, v.date, userId); } catch {}
       }
       res.json({ ok: true, date: v.date, updated_at: new Date().toISOString() });
     } catch (err) {
@@ -1494,12 +1546,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/canonical/workouts/upsert-session", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const p = req.body;
       if (!p.session_id || !p.date || !p.start_ts || !p.source) {
         return res.status(400).json({ error: "session_id, date, start_ts, and source required" });
       }
       const wt = p.workout_type || "other";
       const w: WorkoutSession = {
+        user_id: userId,
         session_id: p.session_id,
         date: p.date,
         start_ts: p.start_ts,
@@ -1588,12 +1642,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/canonical/summary", async (req: Request, res: Response) => {
     try {
-      const { rows: vitalsCount } = await pool.query(`SELECT COUNT(*) as count FROM vitals_daily`);
-      const { rows: sleepCount } = await pool.query(`SELECT COUNT(*) as count FROM sleep_summary_daily`);
-      const { rows: workoutCount } = await pool.query(`SELECT COUNT(*) as count FROM workout_session`);
-      const { rows: hrvCount } = await pool.query(`SELECT COUNT(*) as count FROM hrv_baseline_daily`);
+      const userId = getUserId(req);
+      const { rows: vitalsCount } = await pool.query(`SELECT COUNT(*) as count FROM vitals_daily WHERE user_id = $1`, [userId]);
+      const { rows: sleepCount } = await pool.query(`SELECT COUNT(*) as count FROM sleep_summary_daily WHERE user_id = $1`, [userId]);
+      const { rows: workoutCount } = await pool.query(`SELECT COUNT(*) as count FROM workout_session WHERE user_id = $1`, [userId]);
+      const { rows: hrvCount } = await pool.query(`SELECT COUNT(*) as count FROM hrv_baseline_daily WHERE user_id = $1`, [userId]);
       const { rows: sources } = await pool.query(
-        `SELECT DISTINCT source FROM vitals_daily UNION SELECT DISTINCT source FROM sleep_summary_daily`
+        `SELECT DISTINCT source FROM vitals_daily WHERE user_id = $1 UNION SELECT DISTINCT source FROM sleep_summary_daily WHERE user_id = $1`,
+        [userId],
       );
       res.json({
         vitals_days: Number(vitalsCount[0].count),
@@ -1612,6 +1668,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/workout/start", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { readinessScore, sessionId, workoutType } = req.body;
       if (readinessScore == null || !sessionId) {
         return res.status(400).json({ error: "readinessScore and sessionId are required" });
@@ -1619,6 +1676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const now = new Date();
       const dateStr = now.toISOString().slice(0, 10);
       await upsertWorkoutSession({
+        user_id: userId,
         session_id: sessionId,
         date: dateStr,
         start_ts: now.toISOString(),
@@ -1646,7 +1704,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timezone: null,
       });
       const state = initWorkoutState(sessionId, readinessScore);
-      await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0);
+      await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0, userId);
       res.json({ ...state, start_ts: now.toISOString() });
     } catch (err) {
       console.error("workout start error:", err);
@@ -1656,6 +1714,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/workout/:sessionId/set", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
       const { muscle, rpe, isCompound, cbpCurrent, compoundSets, isolationSets, phase, strainPoints } = req.body;
       if (!muscle) return res.status(400).json({ error: "muscle is required" });
@@ -1683,11 +1742,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedState = applyEvent(state, event);
       const drain = cbpBefore - updatedState.cbpCurrent;
 
-      await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain);
+      await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
 
       const today = new Date().toISOString().slice(0, 10);
       const weekStart = getWeekStart(today);
-      await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7);
+      await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
       res.json(updatedState);
     } catch (err) {
@@ -1698,8 +1757,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/workout/:sessionId/next-prompt", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sessionId = req.params.sessionId as string;
-      const events = await getWorkoutEvents(sessionId);
+      const events = await getWorkoutEvents(sessionId, userId);
 
       let phase: "COMPOUND" | "ISOLATION" = "COMPOUND";
       let cbpCurrent = 100;
@@ -1728,7 +1788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const today = new Date().toISOString().slice(0, 10);
       const weekStart = getWeekStart(today);
-      const loads = await getWeeklyLoads(weekStart);
+      const loads = await getWeeklyLoads(weekStart, userId);
 
       const ctx: ProgramContext = {
         dayType: "FULL_BODY",
@@ -1780,7 +1840,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/workout/:sessionId/events", async (req: Request, res: Response) => {
     try {
-      const events = await getWorkoutEvents(req.params.sessionId as string);
+      const userId = getUserId(req);
+      const events = await getWorkoutEvents(req.params.sessionId as string, userId);
       res.json(events);
     } catch (err) {
       console.error("workout events error:", err);
@@ -1804,9 +1865,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/muscle/weekly-load", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
       const weekStart = getWeekStart(date);
-      const summary = await getWeeklyLoadSummary(weekStart);
+      const summary = await getWeeklyLoadSummary(weekStart, userId);
       res.json({ weekStart, ...summary });
     } catch (err) {
       console.error("weekly load error:", err);
@@ -1816,13 +1878,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/muscle/isolation-targets", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { readinessScore, dayType, priority, count } = req.body;
       if (readinessScore == null || !dayType) {
         return res.status(400).json({ error: "readinessScore and dayType are required" });
       }
       const today = new Date().toISOString().slice(0, 10);
       const weekStart = getWeekStart(today);
-      const loads = await getWeeklyLoads(weekStart);
+      const loads = await getWeeklyLoads(weekStart, userId);
 
       const ctx: ProgramContext = {
         dayType: dayType,
@@ -1844,23 +1907,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(DEFAULT_WEEKLY_TARGETS);
   });
 
-  app.get("/api/data-sources", async (_req: Request, res: Response) => {
+  app.get("/api/data-sources", async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const sourceCounts = await pool.query(`
         SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
         FROM workout_session
+        WHERE user_id = $1
         GROUP BY source
-      `);
+      `, [userId]);
       const vitalsCounts = await pool.query(`
         SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
         FROM vitals_daily
+        WHERE user_id = $1
         GROUP BY source
-      `);
+      `, [userId]);
       const sleepCounts = await pool.query(`
         SELECT source, COUNT(*) as count, MAX(updated_at) as last_sync
         FROM sleep_summary_daily
+        WHERE user_id = $1
         GROUP BY source
-      `);
+      `, [userId]);
 
       const sources: Record<string, { workouts: number; vitals: number; sleep: number; lastSync: string | null }> = {};
       for (const row of sourceCounts.rows) {
