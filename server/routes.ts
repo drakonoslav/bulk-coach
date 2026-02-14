@@ -9,6 +9,15 @@ import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import {
+  validateSleepSummaryInput,
+  validateVitalsDailyInput,
+  validateWorkoutSessionInput,
+  validateHrSamples,
+  validateRrIntervals,
+  toUTCDateString,
+  ensureUTCTimestamp,
+} from "./validation";
+import {
   getSleepSummaryRange,
   getVitalsDailyRange,
   getWorkoutSessions,
@@ -1487,11 +1496,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!p.date || p.total_sleep_minutes == null || !p.source) {
         return res.status(400).json({ error: "date, total_sleep_minutes, and source required" });
       }
+      const validation = validateSleepSummaryInput(p);
+      if (!validation.ok) {
+        return res.status(400).json({ error: "Validation failed", details: validation.errors });
+      }
       const s: SleepSummary = {
         user_id: userId,
         date: p.date,
-        sleep_start: p.sleep_start ?? null,
-        sleep_end: p.sleep_end ?? null,
+        sleep_start: p.sleep_start ? ensureUTCTimestamp(p.sleep_start) : null,
+        sleep_end: p.sleep_end ? ensureUTCTimestamp(p.sleep_end) : null,
         total_sleep_minutes: p.total_sleep_minutes,
         time_in_bed_minutes: p.time_in_bed_minutes ?? null,
         awake_minutes: p.awake_minutes ?? null,
@@ -1518,6 +1531,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const p = req.body;
       if (!p.date || !p.source) {
         return res.status(400).json({ error: "date and source required" });
+      }
+      const validation = validateVitalsDailyInput(p);
+      if (!validation.ok) {
+        return res.status(400).json({ error: "Validation failed", details: validation.errors });
       }
       const v: VitalsDaily = {
         user_id: userId,
@@ -1553,16 +1570,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const p = req.body;
-      if (!p.session_id || !p.date || !p.start_ts || !p.source) {
-        return res.status(400).json({ error: "session_id, date, start_ts, and source required" });
+      if (!p.session_id || !p.start_ts || !p.source) {
+        return res.status(400).json({ error: "session_id, start_ts, and source required" });
+      }
+      const validation = validateWorkoutSessionInput(p);
+      if (!validation.ok) {
+        return res.status(400).json({ error: "Validation failed", details: validation.errors });
       }
       const wt = p.workout_type || "other";
+      const derivedDate = p.date || toUTCDateString(p.start_ts, p.timezone);
       const w: WorkoutSession = {
         user_id: userId,
         session_id: p.session_id,
-        date: p.date,
-        start_ts: p.start_ts,
-        end_ts: p.end_ts ?? null,
+        date: derivedDate,
+        start_ts: ensureUTCTimestamp(p.start_ts),
+        end_ts: p.end_ts ? ensureUTCTimestamp(p.end_ts) : null,
         workout_type: wt,
         duration_minutes: p.end_ts && p.start_ts
           ? Math.round((new Date(p.end_ts).getTime() - new Date(p.start_ts).getTime()) / 60000 * 10) / 10
@@ -1610,9 +1632,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!p.session_id || !p.source || !Array.isArray(p.samples)) {
         return res.status(400).json({ error: "session_id, source, and samples[] required" });
       }
+      const validation = validateHrSamples(p.samples);
+      if (!validation.ok) {
+        return res.status(400).json({ error: "Validation failed", details: validation.errors.slice(0, 10) });
+      }
       const tagged: WorkoutHrSample[] = p.samples.map((s: any) => ({
         session_id: p.session_id,
-        ts: s.ts,
+        ts: ensureUTCTimestamp(s.ts),
         hr_bpm: s.hr_bpm,
         source: p.source,
       }));
@@ -1631,9 +1657,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!p.session_id || !p.source || !Array.isArray(p.intervals)) {
         return res.status(400).json({ error: "session_id, source, and intervals[] required" });
       }
+      const validation = validateRrIntervals(p.intervals);
+      if (!validation.ok) {
+        return res.status(400).json({ error: "Validation failed", details: validation.errors.slice(0, 10) });
+      }
       const tagged: WorkoutRrInterval[] = p.intervals.map((r: any) => ({
         session_id: p.session_id,
-        ts: r.ts,
+        ts: ensureUTCTimestamp(r.ts),
         rr_ms: r.rr_ms,
         source: p.source,
       }));
