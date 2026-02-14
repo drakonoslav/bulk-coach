@@ -41,11 +41,6 @@ export interface SessionAnalysis {
 }
 
 let BleManager: any = null;
-try {
-  if (Platform.OS !== "web") {
-    BleManager = require("react-native-ble-plx").BleManager;
-  }
-} catch {}
 
 const POLAR_HR_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb";
 const POLAR_HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb";

@@ -14,11 +14,6 @@ export interface SyncCounts {
 const EMPTY_COUNTS: SyncCounts = { sleep: 0, vitals: 0, workouts: 0, hrSamples: 0 };
 
 let AppleHealthKit: any = null;
-try {
-  if (Platform.OS === "ios") {
-    AppleHealthKit = require("react-native-health").default;
-  }
-} catch {}
 
 const HK_PERMISSIONS = {
   permissions: {
