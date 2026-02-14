@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { SOURCE_PRIORITY } from "./validation";
 
 export const DEFAULT_USER_ID = 'local_default';
 
@@ -137,6 +138,43 @@ export async function upsertSleepSummary(s: SleepSummary): Promise<void> {
 }
 
 export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
+  const userId = v.user_id ?? DEFAULT_USER_ID;
+  const newPriority = SOURCE_PRIORITY[v.source] ?? 99;
+
+  const { rows: existing } = await pool.query(
+    `SELECT source FROM vitals_daily WHERE user_id = $1 AND date = $2`,
+    [userId, v.date]
+  );
+
+  if (existing.length > 0) {
+    const existingPriority = SOURCE_PRIORITY[existing[0].source] ?? 99;
+    if (newPriority > existingPriority) {
+      await pool.query(
+        `UPDATE vitals_daily SET
+           resting_hr_bpm = COALESCE(resting_hr_bpm, $3),
+           hrv_rmssd_ms = COALESCE(hrv_rmssd_ms, $4),
+           hrv_sdnn_ms = COALESCE(hrv_sdnn_ms, $5),
+           respiratory_rate_bpm = COALESCE(respiratory_rate_bpm, $6),
+           spo2_pct = COALESCE(spo2_pct, $7),
+           skin_temp_delta_c = COALESCE(skin_temp_delta_c, $8),
+           steps = COALESCE(steps, $9),
+           active_zone_minutes = COALESCE(active_zone_minutes, $10),
+           energy_burned_kcal = COALESCE(energy_burned_kcal, $11),
+           zone1_min = COALESCE(zone1_min, $12),
+           zone2_min = COALESCE(zone2_min, $13),
+           zone3_min = COALESCE(zone3_min, $14),
+           below_zone1_min = COALESCE(below_zone1_min, $15),
+           timezone = COALESCE(timezone, $16),
+           updated_at = NOW()
+         WHERE user_id = $1 AND date = $2`,
+        [userId, v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
+         v.spo2_pct, v.skin_temp_delta_c, v.steps, v.active_zone_minutes, v.energy_burned_kcal,
+         v.zone1_min, v.zone2_min, v.zone3_min, v.below_zone1_min, v.timezone ?? null]
+      );
+      return;
+    }
+  }
+
   await pool.query(
     `INSERT INTO vitals_daily
        (user_id, date, resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, respiratory_rate_bpm,
@@ -160,7 +198,7 @@ export async function upsertVitalsDaily(v: VitalsDaily): Promise<void> {
        source = EXCLUDED.source,
        timezone = COALESCE(EXCLUDED.timezone, vitals_daily.timezone),
        updated_at = NOW()`,
-    [v.user_id ?? DEFAULT_USER_ID, v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
+    [userId, v.date, v.resting_hr_bpm, v.hrv_rmssd_ms, v.hrv_sdnn_ms, v.respiratory_rate_bpm,
      v.spo2_pct, v.skin_temp_delta_c, v.steps, v.active_zone_minutes, v.energy_burned_kcal,
      v.zone1_min, v.zone2_min, v.zone3_min, v.below_zone1_min, v.source, v.timezone ?? null]
   );
@@ -357,14 +395,6 @@ function median(values: number[]): number {
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
-
-const SOURCE_PRIORITY: Record<string, number> = {
-  healthkit: 1,
-  polar: 2,
-  fitbit: 3,
-  manual: 4,
-  unknown: 5,
-};
 
 export async function recomputeHrvBaselines(startDate: string, endDate: string, userId: string = DEFAULT_USER_ID): Promise<number> {
   const { rows: vitals } = await pool.query(

@@ -1571,7 +1571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const p = req.body;
       if (!p.session_id || !p.start_ts || !p.source) {
-        return res.status(400).json({ error: "session_id, start_ts, and source required" });
+        return res.status(400).json({ error: "session_id, start_ts, and source are required" });
       }
       const validation = validateWorkoutSessionInput(p);
       if (!validation.ok) {
