@@ -4,6 +4,11 @@ import { compoundBudgetPoints } from "./workout-engine";
 
 const DEFAULT_USER_ID = 'local_default';
 
+const WEIGHTS = { hrv: 0.30, rhr: 0.20, sleep: 0.20, proxy: 0.20 } as const;
+const WEIGHT_SUM = WEIGHTS.hrv + WEIGHTS.rhr + WEIGHTS.sleep + WEIGHTS.proxy; // 0.90
+
+const THRESH = { hrv: -0.08, rhr: 0.03, sleep: -0.10, proxy: -0.10 } as const;
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
@@ -252,16 +257,12 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
   const Sleep_score = scoreFromDelta(sleepDelta, 0.10, false);
   const Proxy_score = scoreFromDelta(proxyDelta, 0.10, false);
 
-  const W_HRV = 0.30;
-  const W_RHR = 0.20;
-  const W_SLEEP = 0.25;
-  const W_PROXY = 0.25;
-
-  const readiness_raw =
-    W_HRV * HRV_score +
-    W_RHR * RHR_score +
-    W_SLEEP * Sleep_score +
-    W_PROXY * Proxy_score;
+  const readiness_raw = (
+    WEIGHTS.hrv * HRV_score +
+    WEIGHTS.rhr * RHR_score +
+    WEIGHTS.sleep * Sleep_score +
+    WEIGHTS.proxy * Proxy_score
+  ) / WEIGHT_SUM;
 
   const measuredNightsLast7 = last7(proxyAll).filter((v): v is number => v != null).length;
   const { rows: confRows } = await pool.query(
@@ -320,10 +321,10 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
     }
   }
 
-  const hrv_suppressed = (hrvDelta ?? 0) <= -0.08;
-  const rhr_elevated = (rhrDelta ?? 0) >= 0.03;
-  const sleep_low = (sleepDelta ?? 0) <= -0.10;
-  const proxy_low = (proxyDelta ?? 0) <= -0.10;
+  const hrv_suppressed = (hrvDelta ?? 0) <= THRESH.hrv;
+  const rhr_elevated = (rhrDelta ?? 0) >= THRESH.rhr;
+  const sleep_low = (sleepDelta ?? 0) <= THRESH.sleep;
+  const proxy_low = (proxyDelta ?? 0) <= THRESH.proxy;
   const flagCount = [hrv_suppressed, rhr_elevated, sleep_low, proxy_low].filter(Boolean).length;
   const cortisolFlag = confidenceGrade !== "None" && flagCount >= 3;
 
@@ -341,12 +342,6 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
   const sufficiency = await getDataSufficiency(userId);
   const gate: "NONE" | "LOW" | "MED" | "HIGH" =
     sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
-
-  if (gate === "NONE") {
-    readiness = Math.min(readiness, 59);
-  } else if (gate === "LOW") {
-    readiness = Math.min(readiness, 74);
-  }
 
   let tier: "GREEN" | "YELLOW" | "BLUE";
   if (readiness >= 75) {
