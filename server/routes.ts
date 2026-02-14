@@ -1451,10 +1451,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/workout/start", async (req: Request, res: Response) => {
     try {
-      const { readinessScore, sessionId } = req.body;
+      const { readinessScore, sessionId, workoutType } = req.body;
       if (readinessScore == null || !sessionId) {
         return res.status(400).json({ error: "readinessScore and sessionId are required" });
       }
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      await upsertWorkoutSession({
+        session_id: sessionId,
+        date: dateStr,
+        start_ts: now.toISOString(),
+        end_ts: null,
+        workout_type: workoutType || "strength",
+        duration_minutes: null,
+        avg_hr: null,
+        max_hr: null,
+        calories_burned: null,
+        session_strain_score: null,
+        session_type_tag: null,
+        recovery_slope: null,
+        strength_bias: null,
+        cardio_bias: null,
+        pre_session_rmssd: null,
+        min_session_rmssd: null,
+        post_session_rmssd: null,
+        hrv_suppression_pct: null,
+        hrv_rebound_pct: null,
+        suppression_depth_pct: null,
+        rebound_bpm_per_min: null,
+        baseline_window_seconds: null,
+        time_to_recovery_sec: null,
+        source: "app",
+      });
       const state = initWorkoutState(sessionId, readinessScore);
       await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0);
       res.json(state);
