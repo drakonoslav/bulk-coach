@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { computeReadinessDeltas, type ReadinessDeltas } from "./readiness-deltas";
+import { compoundBudgetPoints } from "./workout-engine";
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
@@ -33,6 +34,7 @@ export interface ReadinessResult {
   date: string;
   readinessScore: number;
   readinessTier: "GREEN" | "YELLOW" | "BLUE";
+  compoundBudgetPoints: number;
   confidenceGrade: "High" | "Med" | "Low" | "None";
   typeLean: number;
   exerciseBias: number;
@@ -371,6 +373,7 @@ export async function computeReadiness(date: string): Promise<ReadinessResult> {
     date,
     readinessScore: readiness,
     readinessTier: tier,
+    compoundBudgetPoints: compoundBudgetPoints(readiness),
     confidenceGrade,
     typeLean,
     exerciseBias,
@@ -488,6 +491,7 @@ export async function getReadiness(date: string): Promise<ReadinessResult | null
     date: (r.date as Date).toISOString().slice(0, 10),
     readinessScore: Number(r.readiness_score),
     readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
+    compoundBudgetPoints: compoundBudgetPoints(Number(r.readiness_score)),
     confidenceGrade: grade,
     typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
     exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,
@@ -526,6 +530,7 @@ export async function getReadinessRange(from: string, to: string): Promise<Readi
       date: (r.date as Date).toISOString().slice(0, 10),
       readinessScore: Number(r.readiness_score),
       readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
+      compoundBudgetPoints: compoundBudgetPoints(Number(r.readiness_score)),
       confidenceGrade: grade,
       typeLean: r.type_lean != null ? Number(r.type_lean) : 0,
       exerciseBias: r.exercise_bias != null ? Number(r.exercise_bias) : 0,

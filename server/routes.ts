@@ -31,6 +31,26 @@ import {
   type WorkoutRrInterval,
 } from "./canonical-health";
 import {
+  compoundBudgetPoints,
+  initWorkoutState,
+  applyEvent,
+  drainForSet,
+  persistWorkoutEvent,
+  getWorkoutEvents,
+  type WorkoutEvent,
+  type MuscleGroup,
+} from "./workout-engine";
+import {
+  pickIsolationTargets,
+  fallbackIsolation,
+  getWeekStart,
+  getWeeklyLoads,
+  incrementMuscleLoad,
+  getWeeklyLoadSummary,
+  DEFAULT_WEEKLY_TARGETS,
+  type ProgramContext,
+} from "./muscle-planner";
+import {
   parseSnapshotFile,
   importSnapshotAndDerive,
   getSnapshots,
@@ -1425,6 +1445,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("canonical summary error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
+  });
+
+  // ── Workout Engine API ──
+
+  app.post("/api/workout/start", async (req: Request, res: Response) => {
+    try {
+      const { readinessScore, sessionId } = req.body;
+      if (readinessScore == null || !sessionId) {
+        return res.status(400).json({ error: "readinessScore and sessionId are required" });
+      }
+      const state = initWorkoutState(sessionId, readinessScore);
+      await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0);
+      res.json(state);
+    } catch (err) {
+      console.error("workout start error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/workout/:sessionId/set", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.params.sessionId as string;
+      const { muscle, rpe, isCompound, cbpCurrent, compoundSets, isolationSets, phase, strainPoints } = req.body;
+      if (!muscle) return res.status(400).json({ error: "muscle is required" });
+
+      const state = {
+        session_id: sessionId,
+        phase: phase || "COMPOUND" as const,
+        cbpStart: cbpCurrent ?? 100,
+        cbpCurrent: cbpCurrent ?? 100,
+        strainPoints: strainPoints ?? 0,
+        compoundSets: compoundSets ?? 0,
+        isolationSets: isolationSets ?? 0,
+        setLog: [],
+      };
+
+      const event: WorkoutEvent = {
+        t: Date.now(),
+        type: "SET_COMPLETE",
+        muscle: muscle as MuscleGroup,
+        rpe: rpe ?? undefined,
+        isCompound: isCompound ?? (state.phase === "COMPOUND"),
+      };
+
+      const cbpBefore = state.cbpCurrent;
+      const updatedState = applyEvent(state, event);
+      const drain = cbpBefore - updatedState.cbpCurrent;
+
+      await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const weekStart = getWeekStart(today);
+      await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7);
+
+      res.json(updatedState);
+    } catch (err) {
+      console.error("workout set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/workout/:sessionId/events", async (req: Request, res: Response) => {
+    try {
+      const events = await getWorkoutEvents(req.params.sessionId as string);
+      res.json(events);
+    } catch (err) {
+      console.error("workout events error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/workout/cbp", async (req: Request, res: Response) => {
+    try {
+      const { readinessScore } = req.body;
+      if (readinessScore == null) return res.status(400).json({ error: "readinessScore is required" });
+      const cbp = compoundBudgetPoints(readinessScore);
+      res.json({ readinessScore, compoundBudgetPoints: cbp });
+    } catch (err) {
+      console.error("cbp error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Muscle Planner API ──
+
+  app.get("/api/muscle/weekly-load", async (req: Request, res: Response) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const weekStart = getWeekStart(date);
+      const summary = await getWeeklyLoadSummary(weekStart);
+      res.json({ weekStart, ...summary });
+    } catch (err) {
+      console.error("weekly load error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/muscle/isolation-targets", async (req: Request, res: Response) => {
+    try {
+      const { readinessScore, dayType, priority, count } = req.body;
+      if (readinessScore == null || !dayType) {
+        return res.status(400).json({ error: "readinessScore and dayType are required" });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const weekStart = getWeekStart(today);
+      const loads = await getWeeklyLoads(weekStart);
+
+      const ctx: ProgramContext = {
+        dayType: dayType,
+        priority: priority || [],
+        weeklyTargetSets: DEFAULT_WEEKLY_TARGETS,
+      };
+
+      const targets = pickIsolationTargets(readinessScore, loads, ctx, count || 3);
+      const fallback = fallbackIsolation(dayType);
+
+      res.json({ targets, fallback, weekStart, currentLoads: loads, readinessScore });
+    } catch (err) {
+      console.error("isolation targets error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/muscle/targets", async (_req: Request, res: Response) => {
+    res.json(DEFAULT_WEEKLY_TARGETS);
   });
 
   const httpServer = createServer(app);
