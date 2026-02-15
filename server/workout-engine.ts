@@ -19,6 +19,19 @@ export const ALL_MUSCLE_GROUPS: MuscleGroup[] = [
   "calves", "abs", "neck",
 ];
 
+export const WORKOUT_RULES = {
+  isolationSwitchAbsoluteCbp: 25,
+  isolationSwitchAfterCompounds: 8,
+  isolationSwitchWaningCbp: 40,
+
+  baseDrainCompound: 8,
+  baseDrainIsolation: 3,
+
+  rpePenaltyStart: 7,
+  rpePenaltyPerPointCompound: 2,
+  rpePenaltyPerPointIsolation: 1,
+} as const;
+
 export type WorkoutPhase = "COMPOUND" | "ISOLATION";
 
 export type WorkoutEventType =
@@ -79,57 +92,67 @@ export function initWorkoutState(sessionId: string, readinessScore: number): Wor
 }
 
 export function drainForSet(isCompound: boolean, rpe?: number): number {
-  const base = isCompound ? 8 : 3;
-  const rpeAdj = rpe != null ? Math.max(0, rpe - 7) * (isCompound ? 2 : 1) : 0;
+  const base = isCompound
+    ? WORKOUT_RULES.baseDrainCompound
+    : WORKOUT_RULES.baseDrainIsolation;
+  const rpeAdj = rpe != null
+    ? Math.max(0, rpe - WORKOUT_RULES.rpePenaltyStart) *
+      (isCompound ? WORKOUT_RULES.rpePenaltyPerPointCompound : WORKOUT_RULES.rpePenaltyPerPointIsolation)
+    : 0;
   return base + rpeAdj;
 }
 
 export function shouldSwitchToIsolation(s: WorkoutState): boolean {
-  if (s.cbpCurrent <= 25) return true;
-  if (s.compoundSets >= 8 && s.cbpCurrent <= 40) return true;
+  if (s.cbpCurrent <= WORKOUT_RULES.isolationSwitchAbsoluteCbp) return true;
+  if (s.compoundSets >= WORKOUT_RULES.isolationSwitchAfterCompounds &&
+      s.cbpCurrent <= WORKOUT_RULES.isolationSwitchWaningCbp) return true;
   return false;
 }
 
 export function applyEvent(s: WorkoutState, e: WorkoutEvent): WorkoutState {
+  const next: WorkoutState = {
+    ...s,
+    setLog: [...s.setLog],
+  };
+
   if (e.type === "PHASE_SET" && e.phase) {
-    s.phase = e.phase;
-    s.phaseTransitionReason = undefined;
-    return s;
+    next.phase = e.phase;
+    next.phaseTransitionReason = undefined;
+    return next;
   }
 
   if (e.type === "SET_COMPLETE" && e.muscle) {
-    const isCompound = e.isCompound ?? (s.phase === "COMPOUND");
+    const isCompound = e.isCompound ?? (next.phase === "COMPOUND");
     const drain = drainForSet(isCompound, e.rpe);
-    const cbpBefore = s.cbpCurrent;
 
-    s.strainPoints += drain;
-    s.cbpCurrent = Math.max(0, s.cbpCurrent - drain);
+    next.strainPoints += drain;
+    next.cbpCurrent = Math.max(0, next.cbpCurrent - drain);
 
-    if (isCompound) s.compoundSets += 1;
-    else s.isolationSets += 1;
+    if (isCompound) next.compoundSets += 1;
+    else next.isolationSets += 1;
 
-    s.setLog.push({
+    next.setLog.push({
       t: e.t,
       muscle: e.muscle,
       isCompound,
       rpe: e.rpe ?? null,
       drain,
-      cbpAfter: s.cbpCurrent,
+      cbpAfter: next.cbpCurrent,
     });
 
-    if (s.phase === "COMPOUND" && shouldSwitchToIsolation(s)) {
-      s.phase = "ISOLATION";
-      if (s.cbpCurrent <= 25) {
-        s.phaseTransitionReason = "Compound budget depleted";
+    if (next.phase === "COMPOUND" && shouldSwitchToIsolation(next)) {
+      next.phase = "ISOLATION";
+      if (next.cbpCurrent <= WORKOUT_RULES.isolationSwitchAbsoluteCbp) {
+        next.phaseTransitionReason = "Compound budget depleted";
       } else {
-        s.phaseTransitionReason = "Compound budget waning after 8+ sets";
+        next.phaseTransitionReason = "Compound budget waning after 8+ sets";
       }
     }
 
-    return s;
+    return next;
   }
 
-  return s;
+  return next;
 }
 
 export async function persistWorkoutEvent(
@@ -156,4 +179,42 @@ export async function getWorkoutEvents(sessionId: string, userId: string = DEFAU
     [sessionId, userId]
   );
   return rows;
+}
+
+export interface SessionSummary {
+  totalStrain: number;
+  avgRpe: number | null;
+  compoundSets: number;
+  isolationSets: number;
+  finalCbp: number;
+  musclesWorked: MuscleGroup[];
+}
+
+export function computeSessionSummary(
+  initialReadiness: number,
+  events: WorkoutEvent[]
+): SessionSummary {
+  let state = initWorkoutState("replay", initialReadiness);
+
+  for (const e of events) {
+    state = applyEvent(state, e);
+  }
+
+  const rpes = state.setLog
+    .map(l => l.rpe)
+    .filter((r): r is number => r != null);
+
+  const avgRpe =
+    rpes.length > 0
+      ? Math.round((rpes.reduce((a, b) => a + b, 0) / rpes.length) * 10) / 10
+      : null;
+
+  return {
+    totalStrain: state.strainPoints,
+    avgRpe,
+    compoundSets: state.compoundSets,
+    isolationSets: state.isolationSets,
+    finalCbp: state.cbpCurrent,
+    musclesWorked: [...new Set(state.setLog.map(l => l.muscle))],
+  };
 }
