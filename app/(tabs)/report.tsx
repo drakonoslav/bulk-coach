@@ -463,6 +463,26 @@ export default function ReportScreen() {
       imputed_7d: number;
       combined_7d: number;
     };
+    adherence?: {
+      alignmentScore: number | null;
+      bedDevMin: number | null;
+      wakeDevMin: number | null;
+      bedtimeDriftLateNights7d: number;
+      wakeDriftEarlyNights7d: number;
+      measuredNights7d: number;
+      bedtimeDriftNote: string | null;
+      wakeDriftNote: string | null;
+    };
+    primaryDriver?: {
+      driver: string;
+      severity: number;
+      recommendation: string;
+    } | null;
+    placeholders?: {
+      mealTimingTracked: boolean;
+    };
+    sleepBlock?: any;
+    sleepTrending?: any;
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
   const [dataSuff, setDataSuff] = useState<{
@@ -953,13 +973,55 @@ export default function ReportScreen() {
                 {(() => {
                   const insufficientData = readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7;
                   const needsMoreFor28d = (readiness.daysInWindow ?? 0) < 28;
+                  const sb = readiness.sleepBlock;
+                  const sa = sb?.sleepAlignment;
+                  const adh = readiness.adherence;
+                  const pd = readiness.primaryDriver;
+                  const hasAlignment = sa?.alignmentScore != null;
+                  const hasAdequacy = sb?.sleepAdequacyScore != null;
+                  const shortfallStr = sa?.shortfallMin != null && sa.shortfallMin > 0 ? ` (+${sa.shortfallMin}m)` : "";
+                  const confGradeVal = readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None";
+
+                  const sigRow = (label: string, valueEl: React.ReactNode, last = false) => (
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, ...(last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.border }) }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{label}</Text>
+                      {valueEl}
+                    </View>
+                  );
+
+                  const sigText = (val: string, color: string) => (
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{val}</Text>
+                  );
+
+                  const sectionHeader = (title: string, icon: string, color: string) => (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, marginBottom: 6 }}>
+                      <Ionicons name={icon as any} size={14} color={color} />
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_700Bold", color, textTransform: "uppercase" as const, letterSpacing: 1 }}>{title}</Text>
+                    </View>
+                  );
+
                   return (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
-                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
                       Signal Breakdown
                     </Text>
+
+                    {pd && (
+                      <View style={{ backgroundColor: "#FBBF2410", borderRadius: 10, padding: 10, marginBottom: 8, flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                        <Ionicons name="alert-circle" size={18} color="#FBBF24" style={{ marginTop: 1 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_700Bold", color: "#FBBF24", textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                            Primary Driver: {pd.driver}
+                          </Text>
+                          <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
+                            {pd.recommendation}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
                     {insufficientData && (
-                      <View style={{ backgroundColor: "#60A5FA12", borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ backgroundColor: "#60A5FA12", borderRadius: 8, padding: 10, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <Ionicons name="information-circle" size={16} color="#60A5FA" />
                         <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: "#60A5FA", flex: 1 }}>
                           Not enough data to compute deltas (need 7d rolling + 28d baseline)
@@ -967,76 +1029,95 @@ export default function ReportScreen() {
                       </View>
                     )}
                     {!insufficientData && needsMoreFor28d && (
-                      <View style={{ backgroundColor: "#FBBF2412", borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ backgroundColor: "#FBBF2412", borderRadius: 8, padding: 10, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <Ionicons name="information-circle" size={16} color="#FBBF24" />
                         <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: "#FBBF24", flex: 1 }}>
-                          Partial baselines ({readiness.daysInWindow ?? 0}d / 28d) - deltas may shift as more data arrives
+                          Partial baselines ({readiness.daysInWindow ?? 0}d / 28d) - deltas may shift
                         </Text>
                       </View>
                     )}
-                    {[
-                      { label: "Sleep", value: insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
-                      { label: "HRV", value: insufficientData ? "\u2014" : (readiness.deltas?.hrv_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
-                      { label: "RHR", value: insufficientData ? "\u2014" : (readiness.deltas?.rhr_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
-                      { label: "Proxy", value: insufficientData ? "\u2014" : (readiness.deltas?.proxy_str ?? "\u2014"), color: insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"), suffix: "vs baseline" },
-                    ].map((sig) => (
-                      <View key={sig.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{sig.label}</Text>
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sig.value === "\u2014" ? Colors.textTertiary : sig.color }}>{insufficientData ? "\u2014" : sig.value} {sig.suffix}</Text>
-                      </View>
+
+                    {sectionHeader("Discipline / Adherence", "checkbox-outline", "#818CF8")}
+
+                    {sigRow("Alignment", sigText(
+                      hasAlignment ? `${sa!.alignmentScore} / 100` : "\u2014 no observed times",
+                      hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
                     ))}
-                    {(() => {
-                      const sb = readiness.sleepBlock;
-                      const sa = sb?.sleepAlignment;
-                      const hasAlignment = sa?.alignmentScore != null;
-                      const hasAdequacy = sb?.sleepAdequacyScore != null;
-                      const cls = sa?.classification;
-                      const clsLabelMap: Record<string, string> = { efficient_on_plan: "Efficient & on-plan", behavioral_drift: "Behavioral drift", physiological_shortfall: "Physiological shortfall", oversleep_spillover: "Oversleep spillover" };
-                      const clsLabel = cls && cls !== "insufficient_data" ? clsLabelMap[cls] ?? null : null;
-                      const shortfallStr = sa?.shortfallMin != null && sa.shortfallMin > 0 ? ` (shortfall +${sa.shortfallMin}m)` : "";
-                      return (
-                        <>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Alignment</Text>
-                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasAlignment ? `${sa!.alignmentScore} / 100` : "\u2014 no observed times"}
-                            </Text>
+
+                    {hasAlignment && sigRow("Timing", sigText(sa!.deviationLabel, Colors.textSecondary))}
+
+                    {sigRow("Bedtime drift",
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: (adh?.bedtimeDriftLateNights7d ?? 0) >= 3 ? "#EF4444" : Colors.textSecondary }}>
+                          {adh?.bedtimeDriftLateNights7d ?? 0} late / 7d
+                        </Text>
+                        {(adh?.bedtimeDriftLateNights7d ?? 0) >= 3 && (
+                          <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>DRIFT</Text>
                           </View>
-                          {hasAlignment && (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Timing</Text>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{sa!.deviationLabel}</Text>
-                            </View>
-                          )}
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Adequacy</Text>
-                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary }}>
-                              {hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${shortfallStr}` : "\u2014 no Fitbit sleep"}
-                            </Text>
+                        )}
+                      </View>
+                    )}
+
+                    {sigRow("Wake drift",
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: (adh?.wakeDriftEarlyNights7d ?? 0) >= 3 ? "#EF4444" : Colors.textSecondary }}>
+                          {adh?.wakeDriftEarlyNights7d ?? 0} early / 7d
+                        </Text>
+                        {(adh?.wakeDriftEarlyNights7d ?? 0) >= 3 && (
+                          <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>EARLY</Text>
                           </View>
-                          {sb?.sleepEfficiencyEst != null && (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Efficiency</Text>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: sb.sleepEfficiencyEst >= 0.85 ? "#34D399" : sb.sleepEfficiencyEst >= 0.70 ? "#FBBF24" : "#EF4444" }}>
-                                {Math.round(sb.sleepEfficiencyEst * 100)}%{sb.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb.fitbitVsReportedDeltaMin > 0 ? "+" : ""}${sb.fitbitVsReportedDeltaMin}m vs reported)` : ""}
-                              </Text>
-                            </View>
-                          )}
-                          {clsLabel && (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Classification</Text>
-                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>{clsLabel}</Text>
-                            </View>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, marginTop: 2 }}>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Confidence</Text>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: (readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None") === "High" ? "#34D399" : (readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None") === "Med" ? "#FBBF24" : "#EF4444" }}>
-                        {readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None"} ({readiness.confidenceBreakdown?.measured_7d ?? 0} measured / 7 days)
-                      </Text>
-                    </View>
+                        )}
+                      </View>
+                    )}
+
+                    {sigRow("Meal timing",
+                      sigText(
+                        readiness.placeholders?.mealTimingTracked ? "Tracked" : "Not tracked",
+                        Colors.textTertiary,
+                      ),
+                      true,
+                    )}
+
+                    {sectionHeader("Sleep Outcome", "moon-outline", "#60A5FA")}
+
+                    {sigRow("Adequacy", sigText(
+                      hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${shortfallStr}` : "\u2014 no sleep data",
+                      hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+                    ))}
+
+                    {sigRow("Sleep delta", sigText(
+                      insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"),
+                      insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
+                    ))}
+
+                    {sb?.sleepEfficiencyEst != null && sigRow("Efficiency", sigText(
+                      `${Math.round(sb.sleepEfficiencyEst * 100)}%${sb.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb.fitbitVsReportedDeltaMin > 0 ? "+" : ""}${sb.fitbitVsReportedDeltaMin}m)` : ""}`,
+                      sb.sleepEfficiencyEst >= 0.85 ? "#34D399" : sb.sleepEfficiencyEst >= 0.70 ? "#FBBF24" : "#EF4444",
+                    ), true)}
+
+                    {sectionHeader("System State", "pulse-outline", "#34D399")}
+
+                    {sigRow("HRV", sigText(
+                      insufficientData ? "\u2014" : `${readiness.deltas?.hrv_str ?? "\u2014"} vs baseline`,
+                      insufficientData ? "#6B7280" : ((readiness.deltas?.hrv_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
+                    ))}
+
+                    {sigRow("RHR", sigText(
+                      insufficientData ? "\u2014" : `${readiness.deltas?.rhr_str ?? "\u2014"} vs baseline`,
+                      insufficientData ? "#6B7280" : ((readiness.deltas?.rhr_bpm ?? 0) <= 0 ? "#34D399" : "#EF4444"),
+                    ))}
+
+                    {sigRow("Proxy", sigText(
+                      insufficientData ? "\u2014" : `${readiness.deltas?.proxy_str ?? "\u2014"} vs baseline`,
+                      insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
+                    ))}
+
+                    {sigRow("Confidence", sigText(
+                      `${confGradeVal} (${readiness.confidenceBreakdown?.measured_7d ?? 0} / 7d)`,
+                      confGradeVal === "High" ? "#34D399" : confGradeVal === "Med" ? "#FBBF24" : "#EF4444",
+                    ), true)}
                   </View>
                   );
                 })()}
