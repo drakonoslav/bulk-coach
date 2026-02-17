@@ -252,17 +252,19 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
   const sleepDelta = computeDeltas(sleep7d, sleep28d);
   const proxyDelta = computeDeltas(proxy7d, proxy28d);
 
+  const hasAnyData = hrvAll.some(v => v != null) || rhrAll.some(v => v != null) || sleepAll.some(v => v != null) || proxyAll.some(v => v != null);
+
   const HRV_score = scoreFromDelta(hrvDelta, 0.10, false);
   const RHR_score = scoreFromDelta(rhrDelta, 0.05, true);
   const Sleep_score = scoreFromDelta(sleepDelta, 0.10, false);
   const Proxy_score = scoreFromDelta(proxyDelta, 0.10, false);
 
-  const readiness_raw = (
+  const readiness_raw = hasAnyData ? (
     WEIGHTS.hrv * HRV_score +
     WEIGHTS.rhr * RHR_score +
     WEIGHTS.sleep * Sleep_score +
     WEIGHTS.proxy * Proxy_score
-  ) / WEIGHT_SUM;
+  ) / WEIGHT_SUM : 0;
 
   const measuredNightsLast7 = last7(proxyAll).filter((v): v is number => v != null).length;
   const { rows: confRows } = await pool.query(

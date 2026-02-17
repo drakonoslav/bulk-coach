@@ -1077,7 +1077,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let result = await getReadiness(date, userId);
       if (!result) {
         result = await computeReadiness(date, userId);
-        await persistReadiness(result, userId);
+        if (result.readinessScore > 0) {
+          await persistReadiness(result, userId);
+        }
       }
       const sleepBlock = await computeSleepBlock(date, userId);
       const sleepTrending = await computeSleepTrending(date, userId);

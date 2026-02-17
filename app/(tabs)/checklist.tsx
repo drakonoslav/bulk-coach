@@ -687,10 +687,10 @@ export default function ChecklistScreen() {
                   <Text style={styles.readinessTitle}>Training Readiness</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={[styles.readinessScore, { color: tierColor }]}>
-                      {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
+                      {score === 0 ? "—" : (readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
                     </Text>
                     <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
-                      {(readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional floor — need 7+ days" : (readiness.daysInWindow ?? 0) < 28 ? "Partial baseline — score may shift" : "Estimates recovery permissiveness"}
+                      {score === 0 ? "No data — start logging to build your baseline" : (readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional floor — need 7+ days" : (readiness.daysInWindow ?? 0) < 28 ? "Partial baseline — score may shift" : "Estimates recovery permissiveness"}
                     </Text>
                     <View style={[styles.readinessTierBadge, { backgroundColor: tierColor + "18" }]}>
                       <Text style={[styles.readinessTierText, { color: tierColor }]}>
