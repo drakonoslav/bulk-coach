@@ -161,8 +161,35 @@ export async function classifyDayRange(
   for (const d of allDays) dayMap.set(d.day, d);
 
   const androgenMap = new Map<string, number>();
+  const androgenDateSet = new Set<string>();
   for (const a of androgenRows) {
-    if (a.proxy_score != null) androgenMap.set(a.date, Number(a.proxy_score));
+    if (a.proxy_score != null) {
+      androgenMap.set(a.date, Number(a.proxy_score));
+      androgenDateSet.add(a.date);
+    }
+  }
+
+  const androgenCoverage7 = new Map<string, number>();
+  const androgenCoverage28 = new Map<string, number>();
+  {
+    const allDates: string[] = [];
+    let d = lookbackStart;
+    while (d <= endDate) {
+      allDates.push(d);
+      d = addDays(d, 1);
+    }
+    const has: number[] = allDates.map(dt => androgenDateSet.has(dt) ? 1 : 0);
+    const prefix: number[] = new Array(has.length + 1).fill(0);
+    for (let i = 0; i < has.length; i++) {
+      prefix[i + 1] = prefix[i] + has[i];
+    }
+    for (let i = 0; i < allDates.length; i++) {
+      const dt = allDates[i];
+      const lo7 = Math.max(0, i - 6);
+      androgenCoverage7.set(dt, prefix[i + 1] - prefix[lo7]);
+      const lo28 = Math.max(0, i - 27);
+      androgenCoverage28.set(dt, prefix[i + 1] - prefix[lo28]);
+    }
   }
 
   const workoutMap = new Map<string, WorkoutRow[]>();
@@ -300,12 +327,8 @@ export async function classifyDayRange(
       missing.push("sleep_minutes (daily, need >=3 in last 14d)");
     }
 
-    const androgenLast7 = androgenRows.filter(a =>
-      a.date >= addDays(date, -6) && a.date <= date && a.proxy_score != null
-    ).length;
-    const androgenLast28 = androgenRows.filter(a =>
-      a.date >= addDays(date, -27) && a.date <= date && a.proxy_score != null
-    ).length;
+    const androgenLast7 = androgenCoverage7.get(date) ?? 0;
+    const androgenLast28 = androgenCoverage28.get(date) ?? 0;
     const androgenCoverageOk = androgenLast7 >= 4 && androgenLast28 >= 10;
 
     if (androgenRatio != null && androgenCoverageOk) {

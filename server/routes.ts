@@ -449,10 +449,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await recomputeRange(b.day, userId);
 
-      computeSleepBlock(b.day, userId).catch((err: unknown) =>
-        console.error("sleep block compute error:", err)
-      );
-
       recomputeReadinessRange(b.day, userId).catch((err: unknown) =>
         console.error("readiness recompute error:", err)
       );

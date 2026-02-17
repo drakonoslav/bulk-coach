@@ -13,9 +13,29 @@ const DEFAULT_PLAN_BED = "21:45";
 const DEFAULT_PLAN_WAKE = "05:30";
 
 function toMin(t: string): number {
-  const clean = t.includes(" ") ? t.split(" ")[1] : t;
-  const [h, m] = clean.slice(0, 5).split(":").map(Number);
-  return h * 60 + m;
+  const s = t.trim();
+
+  const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = parseInt(ampm[2], 10);
+    const period = ampm[3].toUpperCase();
+    if (period === "AM" && h === 12) h = 0;
+    if (period === "PM" && h !== 12) h += 12;
+    return h * 60 + m;
+  }
+
+  const iso = s.match(/T(\d{2}):(\d{2})/);
+  if (iso) {
+    return parseInt(iso[1], 10) * 60 + parseInt(iso[2], 10);
+  }
+
+  const hm = s.match(/^(\d{1,2}):(\d{2})/);
+  if (hm) {
+    return parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10);
+  }
+
+  return 0;
 }
 
 function circularDeltaMinutes(actualMin: number, plannedMin: number): number {
