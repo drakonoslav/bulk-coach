@@ -1277,6 +1277,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/backfill-canonical", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT day, hrv, resting_hr, steps, active_zone_minutes, energy_burned_kcal,
+                zone1_min, zone2_min, zone3_min, below_zone1_min,
+                sleep_minutes, actual_bed_time, actual_wake_time,
+                sleep_latency_min, sleep_waso_min, sleep_start, sleep_end
+         FROM daily_log WHERE user_id = $1 ORDER BY day ASC`,
+        [userId]
+      );
+
+      let vitalsCount = 0;
+      let sleepCount = 0;
+
+      for (const r of rows) {
+        const hasVitals = r.hrv != null || r.resting_hr != null || r.steps != null;
+        if (hasVitals) {
+          await upsertVitalsDaily({
+            date: r.day,
+            user_id: userId,
+            resting_hr_bpm: r.resting_hr != null ? Number(r.resting_hr) : null,
+            hrv_rmssd_ms: r.hrv != null ? Number(r.hrv) : null,
+            hrv_sdnn_ms: null,
+            respiratory_rate_bpm: null,
+            spo2_pct: null,
+            skin_temp_delta_c: null,
+            steps: r.steps != null ? Number(r.steps) : null,
+            active_zone_minutes: r.active_zone_minutes != null ? Number(r.active_zone_minutes) : null,
+            energy_burned_kcal: r.energy_burned_kcal != null ? Number(r.energy_burned_kcal) : null,
+            zone1_min: r.zone1_min != null ? Number(r.zone1_min) : null,
+            zone2_min: r.zone2_min != null ? Number(r.zone2_min) : null,
+            zone3_min: r.zone3_min != null ? Number(r.zone3_min) : null,
+            below_zone1_min: r.below_zone1_min != null ? Number(r.below_zone1_min) : null,
+            source: "manual",
+          });
+          vitalsCount++;
+        }
+
+        const hasSleep = r.sleep_minutes != null || r.actual_bed_time != null || r.actual_wake_time != null;
+        if (hasSleep) {
+          const sleepMin = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
+          const latency = r.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
+          const waso = r.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
+          const timeInBed = sleepMin != null ? sleepMin + (latency ?? 0) + (waso ?? 0) : null;
+          const efficiency = sleepMin != null && timeInBed != null && timeInBed > 0
+            ? Math.round((sleepMin / timeInBed) * 100) : null;
+
+          await upsertSleepSummary({
+            date: r.day,
+            user_id: userId,
+            sleep_start: r.actual_bed_time ?? r.sleep_start ?? null,
+            sleep_end: r.actual_wake_time ?? r.sleep_end ?? null,
+            total_sleep_minutes: sleepMin ?? 0,
+            time_in_bed_minutes: timeInBed,
+            awake_minutes: waso,
+            rem_minutes: null,
+            deep_minutes: null,
+            light_or_core_minutes: null,
+            sleep_efficiency: efficiency,
+            sleep_latency_min: latency,
+            waso_min: waso,
+            source: "manual",
+          });
+          sleepCount++;
+        }
+      }
+
+      res.json({ status: "ok", logsProcessed: rows.length, vitalsWritten: vitalsCount, sleepWritten: sleepCount });
+    } catch (err: unknown) {
+      console.error("backfill-canonical error:", err);
+      res.status(500).json({ error: "Backfill failed" });
+    }
+  });
+
   app.post("/api/reset-database", requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
