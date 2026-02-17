@@ -306,9 +306,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           planned_bed_time, planned_wake_time,
           actual_bed_time, actual_wake_time,
           sleep_latency_min, sleep_waso_min, nap_minutes,
+          sleep_minutes, hrv, resting_hr,
+          calories_in, training_load,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -343,6 +345,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_latency_min = EXCLUDED.sleep_latency_min,
           sleep_waso_min = EXCLUDED.sleep_waso_min,
           nap_minutes = EXCLUDED.nap_minutes,
+          sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, daily_log.sleep_minutes),
+          hrv = COALESCE(EXCLUDED.hrv, daily_log.hrv),
+          resting_hr = COALESCE(EXCLUDED.resting_hr, daily_log.resting_hr),
+          calories_in = COALESCE(EXCLUDED.calories_in, daily_log.calories_in),
+          training_load = COALESCE(EXCLUDED.training_load, daily_log.training_load),
           updated_at = NOW()`,
         [
           userId,
@@ -379,6 +386,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.sleepLatencyMin ?? null,
           b.sleepWasoMin ?? null,
           b.napMinutes ?? null,
+          b.sleepMinutes ?? null,
+          b.hrv ?? null,
+          b.restingHr ?? null,
+          b.caloriesIn ?? null,
+          b.trainingLoad ?? null,
         ],
       );
 
@@ -437,6 +449,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("delete error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/androgen/manual", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { date, nocturnalCount, totalDurationMin, firmnessAvg } = req.body;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "date required (YYYY-MM-DD)" });
+      }
+      if (nocturnalCount == null || nocturnalCount < 0) {
+        return res.status(400).json({ error: "nocturnalCount required (>= 0)" });
+      }
+      const count = Number(nocturnalCount);
+      const durMin = Number(totalDurationMin ?? 0);
+      const firmness = firmnessAvg != null ? Number(firmnessAvg) : null;
+
+      const proxyScore =
+        count * 20 +
+        Math.min(durMin, 60) * 0.5 +
+        (firmness != null ? firmness * 3 : 0);
+
+      await pool.query(
+        `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, computed_with_imputed, computed_at)
+         VALUES ($1, $2, $3, false, NOW())
+         ON CONFLICT (user_id, date) DO UPDATE SET
+           proxy_score = EXCLUDED.proxy_score,
+           computed_with_imputed = false,
+           computed_at = NOW()`,
+        [userId, date, proxyScore],
+      );
+
+      res.json({ ok: true, proxyScore: Math.round(proxyScore * 100) / 100 });
+    } catch (err: unknown) {
+      console.error("androgen manual error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/androgen/manual/:date", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT date::text, proxy_score, computed_with_imputed
+         FROM androgen_proxy_daily
+         WHERE user_id = $1 AND date = $2`,
+        [userId, req.params.date],
+      );
+      if (rows.length === 0) return res.json(null);
+      res.json(rows[0]);
+    } catch (err: unknown) {
+      console.error("androgen manual get error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
