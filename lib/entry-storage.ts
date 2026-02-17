@@ -1,7 +1,6 @@
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { apiRequest, getApiUrl, authFetch } from "@/lib/query-client";
 import { DailyEntry, BASELINE, type Baseline } from "./coaching-engine";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { fetch } from "expo/fetch";
 
 const BASELINE_KEY = "@bulk_coach_baseline";
 
@@ -9,7 +8,7 @@ export async function loadEntries(): Promise<DailyEntry[]> {
   try {
     const baseUrl = getApiUrl();
     const url = new URL("/api/logs", baseUrl);
-    const res = await fetch(url.toString(), { credentials: "include" });
+    const res = await authFetch(url.toString());
     if (!res.ok) throw new Error(`${res.status}`);
     const rows: any[] = await res.json();
     return rows.map(rowToEntry).sort((a, b) => a.day.localeCompare(b.day));
@@ -25,7 +24,7 @@ export async function loadDashboard(start?: string, end?: string): Promise<Dashb
     const url = new URL("/api/dashboard", baseUrl);
     if (start) url.searchParams.set("start", start);
     if (end) url.searchParams.set("end", end);
-    const res = await fetch(url.toString(), { credentials: "include" });
+    const res = await authFetch(url.toString());
     if (!res.ok) throw new Error(`${res.status}`);
     return await res.json();
   } catch (err) {
@@ -71,7 +70,7 @@ export async function loadEntry(day: string): Promise<DailyEntry | null> {
   try {
     const baseUrl = getApiUrl();
     const url = new URL(`/api/logs/${day}`, baseUrl);
-    const res = await fetch(url.toString(), { credentials: "include" });
+    const res = await authFetch(url.toString());
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`${res.status}`);
     const row = await res.json();

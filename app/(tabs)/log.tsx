@@ -19,8 +19,7 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import Colors from "@/constants/colors";
 import { saveEntry, loadEntry } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
-import { getApiUrl } from "@/lib/query-client";
-import { fetch as expoFetch } from "expo/fetch";
+import { getApiUrl, authFetch } from "@/lib/query-client";
 import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
 import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
 
@@ -316,7 +315,7 @@ export default function LogScreen() {
   const loadErectionBadges = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL("/api/erection/badges", baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL("/api/erection/badges", baseUrl).toString());
       if (res.ok) setErectionBadges(await res.json());
     } catch {}
   }, []);
@@ -324,7 +323,7 @@ export default function LogScreen() {
   const loadReadinessForDate = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL(`/api/readiness?date=${day}`, baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL(`/api/readiness?date=${day}`, baseUrl).toString());
       if (res.ok) {
         const data = await res.json();
         setReadinessBadge({ score: data.readinessScore, tier: data.readinessTier, confidence: data.confidenceGrade });
@@ -339,7 +338,7 @@ export default function LogScreen() {
   const loadSessionForDate = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL("/api/erection/sessions", baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL("/api/erection/sessions", baseUrl).toString());
       if (res.ok) {
         const rows = await res.json();
         const match = rows.find((r: any) => r.date === day);
@@ -361,7 +360,7 @@ export default function LogScreen() {
   const loadSleepPlan = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL("/api/sleep-plan", baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL("/api/sleep-plan", baseUrl).toString());
       if (res.ok) setSleepPlan(await res.json());
     } catch {}
   }, []);
@@ -369,7 +368,7 @@ export default function LogScreen() {
   const loadDayState = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL(`/api/day-state?start=${day}&end=${day}`, baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL(`/api/day-state?start=${day}&end=${day}`, baseUrl).toString());
       if (res.ok) {
         const marks = await res.json();
         if (marks.length > 0 && marks[0].color !== "UNKNOWN") {
@@ -386,7 +385,7 @@ export default function LogScreen() {
   const loadAndrogenForDate = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL(`/api/androgen/manual/${day}`, baseUrl).toString(), { credentials: "include" });
+      const res = await authFetch(new URL(`/api/androgen/manual/${day}`, baseUrl).toString());
       if (res.ok) {
         const data = await res.json();
         if (data && data.proxy_score != null) {
@@ -449,10 +448,9 @@ export default function LogScreen() {
       }
       formData.append("session_date", selectedDate);
 
-      const uploadRes = await expoFetch(url, {
+      const uploadRes = await authFetch(url, {
         method: "POST",
         body: formData,
-        credentials: "include",
       });
 
       const json = await uploadRes.json();
@@ -604,10 +602,9 @@ export default function LogScreen() {
       if (nocturnalCount) {
         try {
           const baseUrl = getApiUrl();
-          await expoFetch(new URL("/api/androgen/manual", baseUrl).toString(), {
+          await authFetch(new URL("/api/androgen/manual", baseUrl).toString(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({
               date: selectedDate,
               nocturnalCount: parseInt(nocturnalCount, 10),

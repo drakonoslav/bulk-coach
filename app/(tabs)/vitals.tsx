@@ -19,9 +19,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import * as LegacyFS from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, authFetch } from "@/lib/query-client";
 
 interface SessionRow {
   date: string;
@@ -179,11 +178,11 @@ export default function VitalsScreen() {
       const baseUrl = getApiUrl();
 
       const [sessRes, proxyRes, snapRes, confRes, srcRes] = await Promise.all([
-        expoFetch(new URL("/api/erection/sessions", baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL(`/api/erection/proxy?include_imputed=${includeImputed}`, baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/erection/snapshots", baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/data-sources", baseUrl).toString(), { credentials: "include" }),
+        authFetch(new URL("/api/erection/sessions", baseUrl).toString()),
+        authFetch(new URL(`/api/erection/proxy?include_imputed=${includeImputed}`, baseUrl).toString()),
+        authFetch(new URL("/api/erection/snapshots", baseUrl).toString()),
+        authFetch(new URL("/api/erection/confidence", baseUrl).toString()),
+        authFetch(new URL("/api/data-sources", baseUrl).toString()),
       ]);
 
       if (sessRes.ok) {
@@ -252,7 +251,7 @@ export default function VitalsScreen() {
 
       const baseUrl = getApiUrl();
       const url = new URL("/api/backup/export", baseUrl).toString();
-      const resp = await expoFetch(url, { credentials: "include" });
+      const resp = await authFetch(url);
       if (!resp.ok) {
         setBackupStatus("Export failed");
         return;
@@ -317,9 +316,9 @@ export default function VitalsScreen() {
       dryRunForm.append("mode", "merge");
       dryRunForm.append("dry_run", "true");
 
-      const dryRes = await globalThis.fetch(
+      const dryRes = await authFetch(
         new URL("/api/backup/import", baseUrl).toString(),
-        { method: "POST", body: dryRunForm, credentials: "include" },
+        { method: "POST", body: dryRunForm },
       );
       const dryJson = await dryRes.json();
 
@@ -365,9 +364,9 @@ export default function VitalsScreen() {
                 importForm.append("mode", "merge");
                 importForm.append("dry_run", "false");
 
-                const importRes = await globalThis.fetch(
+                const importRes = await authFetch(
                   new URL("/api/backup/import", baseUrl).toString(),
-                  { method: "POST", body: importForm, credentials: "include" },
+                  { method: "POST", body: importForm },
                 );
                 const importJson = await importRes.json();
 
@@ -426,10 +425,9 @@ export default function VitalsScreen() {
       }
       formData.append("session_date", sessionDate);
 
-      const uploadRes = await expoFetch(url, {
+      const uploadRes = await authFetch(url, {
         method: "POST",
         body: formData,
-        credentials: "include",
       });
 
       const json = await uploadRes.json();

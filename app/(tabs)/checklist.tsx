@@ -15,10 +15,9 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
-import { fetch as expoFetch } from "expo/fetch";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, authFetch } from "@/lib/query-client";
 
 function getTimeCategory(time: string): { icon: string; color: string } {
   const h = parseInt(time.split(":")[0], 10);
@@ -144,8 +143,8 @@ export default function ChecklistScreen() {
     try {
       const baseUrl = getApiUrl();
       const [csvRes, takeoutRes] = await Promise.all([
-        fetch(new URL("/api/import/history", baseUrl).toString(), { credentials: "include" }),
-        fetch(new URL("/api/import/takeout_history", baseUrl).toString(), { credentials: "include" }),
+        authFetch(new URL("/api/import/history", baseUrl).toString()),
+        authFetch(new URL("/api/import/takeout_history", baseUrl).toString()),
       ]);
       if (csvRes.ok) setImportHistory(await csvRes.json());
       if (takeoutRes.ok) setTakeoutHistory(await takeoutRes.json());
@@ -156,9 +155,8 @@ export default function ChecklistScreen() {
     const baseUrl = getApiUrl();
     const endpoint = type === "csv" ? `/api/import/history/${id}` : `/api/import/takeout_history/${id}`;
     try {
-      const res = await fetch(new URL(endpoint, baseUrl).toString(), {
+      const res = await authFetch(new URL(endpoint, baseUrl).toString(), {
         method: "DELETE",
-        credentials: "include",
       });
       if (res.ok) {
         if (type === "csv") {
@@ -176,9 +174,9 @@ export default function ChecklistScreen() {
       const baseUrl = getApiUrl();
       const today = new Date().toISOString().slice(0, 10);
       const [rRes, tRes, dsRes] = await Promise.all([
-        expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/training/template", baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/data-sufficiency", baseUrl).toString(), { credentials: "include" }),
+        authFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString()),
+        authFetch(new URL("/api/training/template", baseUrl).toString()),
+        authFetch(new URL("/api/data-sufficiency", baseUrl).toString()),
       ]);
       if (rRes.ok) setReadiness(await rRes.json());
       if (tRes.ok) {
@@ -198,11 +196,10 @@ export default function ChecklistScreen() {
     setRebaselining(true);
     try {
       const baseUrl = getApiUrl();
-      const res = await expoFetch(new URL("/api/settings/rebaseline", baseUrl).toString(), {
+      const res = await authFetch(new URL("/api/settings/rebaseline", baseUrl).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ days: 60 }),
-        credentials: "include",
       });
       if (res.ok) {
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -245,10 +242,9 @@ export default function ChecklistScreen() {
         const blob = await response.blob();
         formData.append("file", blob, asset.name || "import.csv");
 
-        const uploadRes = await globalThis.fetch(url.toString(), {
+        const uploadRes = await authFetch(url.toString(), {
           method: "POST",
           body: formData,
-          credentials: "include",
         });
         const data = await uploadRes.json();
         setLastResult(data);
@@ -262,7 +258,7 @@ export default function ChecklistScreen() {
           type: asset.mimeType || "text/csv",
         } as any);
 
-        const uploadRes = await globalThis.fetch(url.toString(), {
+        const uploadRes = await authFetch(url.toString(), {
           method: "POST",
           body: formData,
         });
@@ -292,7 +288,7 @@ export default function ChecklistScreen() {
       const baseUrl = getApiUrl();
       const CHUNK_SIZE = 5 * 1024 * 1024;
       const totalChunks = Math.max(1, Math.ceil(fileSize / CHUNK_SIZE));
-      const initRes = await globalThis.fetch(
+      const initRes = await authFetch(
         new URL("/api/import/takeout_chunk_init", baseUrl).toString(),
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: fileName, totalChunks, fileSize }) }
       );
@@ -310,7 +306,7 @@ export default function ChecklistScreen() {
           fd.append("chunk", chunkBlob, `chunk_${i}`);
           fd.append("uploadId", uploadId);
           fd.append("chunkIndex", String(i));
-          await globalThis.fetch(new URL("/api/import/takeout_chunk_upload", baseUrl).toString(), { method: "POST", body: fd, credentials: "include" });
+          await authFetch(new URL("/api/import/takeout_chunk_upload", baseUrl).toString(), { method: "POST", body: fd });
         }
       } else {
         const cacheDir = FileSystem.cacheDirectory || "";
@@ -329,7 +325,7 @@ export default function ChecklistScreen() {
       }
 
       setTakeoutProgress("Processing ZIP (force reimport)...");
-      const finalRes = await globalThis.fetch(
+      const finalRes = await authFetch(
         new URL("/api/import/takeout_chunk_finalize", baseUrl).toString(),
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uploadId, overwrite_fields: "false", timezone: "America/New_York", force: "true" }) }
       );
@@ -343,7 +339,7 @@ export default function ChecklistScreen() {
           attempts++;
           setTakeoutProgress(`Processing ZIP (${attempts * 3}s elapsed)...`);
           try {
-            const pollRes = await globalThis.fetch(new URL(`/api/import/takeout_job/${finalData.jobId}`, baseUrl).toString());
+            const pollRes = await authFetch(new URL(`/api/import/takeout_job/${finalData.jobId}`, baseUrl).toString());
             if (!pollRes.ok) continue;
             const job = await pollRes.json();
             if (job.status === "processing") continue;
@@ -391,7 +387,7 @@ export default function ChecklistScreen() {
         const totalChunks = Math.max(1, Math.ceil(fileSize / CHUNK_SIZE));
 
         setTakeoutProgress(`Initializing upload (${Math.round(fileSize / 1024 / 1024)}MB)...`);
-        const initRes = await globalThis.fetch(
+        const initRes = await authFetch(
           new URL("/api/import/takeout_chunk_init", baseUrl).toString(),
           {
             method: "POST",
@@ -416,9 +412,9 @@ export default function ChecklistScreen() {
             fd.append("chunk", chunkBlob, `chunk_${i}`);
             fd.append("uploadId", uploadId);
             fd.append("chunkIndex", String(i));
-            const chunkRes = await globalThis.fetch(
+            const chunkRes = await authFetch(
               new URL("/api/import/takeout_chunk_upload", baseUrl).toString(),
-              { method: "POST", body: fd, credentials: "include" }
+              { method: "POST", body: fd }
             );
             if (!chunkRes.ok) {
               const j = await chunkRes.json().catch(() => ({}));
@@ -460,7 +456,7 @@ export default function ChecklistScreen() {
         }
 
         setTakeoutProgress("Processing ZIP (this may take 1\u20132 minutes)...");
-        const finalRes = await globalThis.fetch(
+        const finalRes = await authFetch(
           new URL("/api/import/takeout_chunk_finalize", baseUrl).toString(),
           {
             method: "POST",
@@ -505,7 +501,7 @@ export default function ChecklistScreen() {
         const elapsed = attempts * 3;
         setTakeoutProgress(`Processing ZIP (${elapsed}s elapsed)...`);
         try {
-          const pollRes = await globalThis.fetch(
+          const pollRes = await authFetch(
             new URL(`/api/import/takeout_job/${jobId}`, baseUrl).toString()
           );
           if (!pollRes.ok) continue;

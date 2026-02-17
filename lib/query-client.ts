@@ -103,6 +103,14 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+export async function authFetch(url: string, options?: any): Promise<Response> {
+  const apiKey = await getApiKey();
+  const existing = (options?.headers as Record<string, string>) || {};
+  const headers: Record<string, string> = { ...existing };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  return fetch(url, { ...(options || {}), headers, credentials: "include" });
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

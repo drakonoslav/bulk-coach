@@ -13,8 +13,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadEntries } from "@/lib/entry-storage";
-import { getApiUrl } from "@/lib/query-client";
-import { fetch as expoFetch } from "expo/fetch";
+import { getApiUrl, authFetch } from "@/lib/query-client";
 import {
   DailyEntry,
   weeklyDelta,
@@ -489,11 +488,11 @@ export default function ReportScreen() {
         return d.toISOString().slice(0, 10);
       })();
       const [proxyRes, confRes, readinessRes, readinessHistRes, dsRes] = await Promise.all([
-        expoFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/erection/confidence", baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL(`/api/readiness/range?from=${histFrom}&to=${today}`, baseUrl).toString(), { credentials: "include" }),
-        expoFetch(new URL("/api/data-sufficiency", baseUrl).toString(), { credentials: "include" }),
+        authFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString()),
+        authFetch(new URL("/api/erection/confidence", baseUrl).toString()),
+        authFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString()),
+        authFetch(new URL(`/api/readiness/range?from=${histFrom}&to=${today}`, baseUrl).toString()),
+        authFetch(new URL("/api/data-sufficiency", baseUrl).toString()),
       ]);
       if (proxyRes.ok) {
         const rows = await proxyRes.json();
