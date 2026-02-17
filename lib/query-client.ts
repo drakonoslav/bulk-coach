@@ -20,6 +20,32 @@ export function getApiUrl(): string {
   return url.href;
 }
 
+let _cachedToken: string | null = null;
+let _tokenPromise: Promise<string> | null = null;
+
+async function getApiKey(): Promise<string> {
+  const envKey = process.env.EXPO_PUBLIC_API_KEY;
+  if (envKey) return envKey;
+
+  if (_cachedToken) return _cachedToken;
+
+  if (!_tokenPromise) {
+    _tokenPromise = (async () => {
+      try {
+        const baseUrl = getApiUrl();
+        const res = await fetch(new URL("/api/auth/token", baseUrl).toString());
+        if (res.ok) {
+          const data = await res.json();
+          _cachedToken = data.token || "";
+          return _cachedToken!;
+        }
+      } catch (e) {}
+      return "";
+    })();
+  }
+  return _tokenPromise;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -37,7 +63,7 @@ export async function apiRequest(
 
   const headers: Record<string, string> = {};
   if (data) headers["Content-Type"] = "application/json";
-  const apiKey = process.env.EXPO_PUBLIC_API_KEY;
+  const apiKey = await getApiKey();
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
   const res = await fetch(url.toString(), {
@@ -61,7 +87,7 @@ export const getQueryFn: <T>(options: {
     const url = new URL(queryKey.join("/") as string, baseUrl);
 
     const headers: Record<string, string> = {};
-    const apiKey = process.env.EXPO_PUBLIC_API_KEY;
+    const apiKey = await getApiKey();
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
     const res = await fetch(url.toString(), {

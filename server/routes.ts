@@ -182,13 +182,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const getUserId = (req: Request): string =>
     (req as any).userId || 'local_default';
 
-  const PUBLIC_PATHS = ["/privacy", "/terms", "/api/auth/fitbit/start", "/api/auth/fitbit/callback", "/api/auth/fitbit/status"];
+  const PUBLIC_PATHS = ["/privacy", "/terms", "/api/auth/fitbit/start", "/api/auth/fitbit/callback", "/api/auth/fitbit/status", "/api/auth/token"];
 
   app.use((req, res, next) => {
     if (PUBLIC_PATHS.some(p => req.path === p) || !req.path.startsWith("/api")) {
       return next();
     }
     requireAuth(req, res, next);
+  });
+
+  app.get("/api/auth/token", (_req: Request, res: Response) => {
+    res.json({ token: process.env.API_KEY || "" });
   });
 
   app.get("/privacy", (_req: Request, res: Response) => {
