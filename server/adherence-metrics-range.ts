@@ -34,17 +34,6 @@ function circDiffMin(actualMin: number, plannedMin: number): number {
   return d;
 }
 
-interface DayTimingRow {
-  day: string;
-  actual_bed_time: string | null;
-  actual_wake_time: string | null;
-  planned_bed_time: string | null;
-  planned_wake_time: string | null;
-  adherence: number | null;
-  training_load: string | null;
-  lift_done: boolean | null;
-}
-
 export interface DayAdherence {
   bedtimeDriftLateNights7d: number;
   bedtimeDriftMeasuredNights7d: number;
@@ -63,7 +52,8 @@ export async function computeRangeAdherence(
   endDate: string,
   userId: string = DEFAULT_USER_ID,
 ): Promise<Map<string, DayAdherence>> {
-  const lookbackStart = addDays(startDate, -6);
+  const WINDOW = 7;
+  const lookbackStart = addDays(startDate, -(WINDOW - 1));
 
   const { rows } = await pool.query(
     `SELECT day, actual_bed_time, actual_wake_time,
@@ -77,7 +67,7 @@ export async function computeRangeAdherence(
 
   const schedule = await getSleepPlanSettings(userId);
 
-  const byDate = new Map<string, DayTimingRow>();
+  const byDate = new Map<string, typeof rows[0]>();
   for (const r of rows) byDate.set(r.day, r);
 
   const allDates: string[] = [];
@@ -92,88 +82,84 @@ export async function computeRangeAdherence(
   const LATE_THRESH = 30;
   const EARLY_THRESH = -30;
 
-  const bedLate: number[] = allDates.map((dt) => {
-    const r = byDate.get(dt);
-    if (!r || !r.actual_bed_time) return 0;
-    const plannedBed = r.planned_bed_time || schedule.bedtime;
-    if (!plannedBed) return 0;
-    const dev = circDiffMin(toMin(r.actual_bed_time), toMin(plannedBed));
-    return dev > LATE_THRESH ? 1 : 0;
-  });
+  const bedLate: number[] = [];
+  const bedMeasured: number[] = [];
+  const earlyWake: number[] = [];
+  const wakeMeasured: number[] = [];
+  const trainScores: (number | null)[] = [];
+  const trainOverrun: (number | null)[] = [];
 
-  const bedMeasured: number[] = allDates.map((dt) => {
+  for (const dt of allDates) {
     const r = byDate.get(dt);
-    return r?.actual_bed_time ? 1 : 0;
-  });
 
-  const earlyWake: number[] = allDates.map((dt) => {
-    const r = byDate.get(dt);
-    if (!r || !r.actual_wake_time) return 0;
-    const plannedWake = r.planned_wake_time || schedule.wake;
-    if (!plannedWake) return 0;
-    const dev = circDiffMin(toMin(r.actual_wake_time), toMin(plannedWake));
-    return dev < EARLY_THRESH ? 1 : 0;
-  });
-
-  const wakeMeasured: number[] = allDates.map((dt) => {
-    const r = byDate.get(dt);
-    return r?.actual_wake_time ? 1 : 0;
-  });
-
-  const trainingScore: (number | null)[] = allDates.map((dt) => {
-    const r = byDate.get(dt);
-    if (!r) return null;
-    return r.adherence != null ? Number(r.adherence) : null;
-  });
-
-  const trainingOverrun: (number | null)[] = allDates.map((dt) => {
-    const r = byDate.get(dt);
-    if (!r) return null;
-    if (r.training_load) {
-      const match = r.training_load.match(/overrun[:\s]*(\d+)/i);
-      if (match) return parseInt(match[1], 10);
+    if (r?.actual_bed_time) {
+      const plannedBed = r.planned_bed_time || schedule.bedtime;
+      if (plannedBed) {
+        const dev = circDiffMin(toMin(r.actual_bed_time), toMin(plannedBed));
+        bedLate.push(dev > LATE_THRESH ? 1 : 0);
+        bedMeasured.push(1);
+      } else {
+        bedLate.push(0);
+        bedMeasured.push(0);
+      }
+    } else {
+      bedLate.push(0);
+      bedMeasured.push(0);
     }
-    return 0;
-  });
+
+    if (r?.actual_wake_time) {
+      const plannedWake = r.planned_wake_time || schedule.wake;
+      if (plannedWake) {
+        const dev = circDiffMin(toMin(r.actual_wake_time), toMin(plannedWake));
+        earlyWake.push(dev < EARLY_THRESH ? 1 : 0);
+        wakeMeasured.push(1);
+      } else {
+        earlyWake.push(0);
+        wakeMeasured.push(0);
+      }
+    } else {
+      earlyWake.push(0);
+      wakeMeasured.push(0);
+    }
+
+    if (!r) {
+      trainScores.push(null);
+      trainOverrun.push(null);
+    } else {
+      trainScores.push(r.adherence != null ? Number(r.adherence) : null);
+      let overrun: number | null = 0;
+      if (r.training_load) {
+        const match = r.training_load.match(/overrun[:\s]*(\d+)/i);
+        if (match) overrun = parseInt(match[1], 10);
+      }
+      trainOverrun.push(overrun);
+    }
+  }
 
   const bedLatePrefix = buildPrefix(bedLate);
   const bedMeasuredPrefix = buildPrefix(bedMeasured);
   const earlyWakePrefix = buildPrefix(earlyWake);
   const wakeMeasuredPrefix = buildPrefix(wakeMeasured);
 
-  const resultMap = new Map<string, DayAdherence>();
-
   const startIdx = allDates.indexOf(startDate);
   const endIdx = allDates.indexOf(endDate);
 
+  const trainAvg7d = slidingAvg(trainScores, WINDOW, startIdx, endIdx);
+
+  const resultMap = new Map<string, DayAdherence>();
+
   for (let i = startIdx; i <= endIdx; i++) {
     const dt = allDates[i];
-    const lo = Math.max(0, i - 6);
-
-    const bedLate7 = rangeSum(bedLatePrefix, lo, i);
-    const bedMeas7 = rangeSum(bedMeasuredPrefix, lo, i);
-    const wake7 = rangeSum(earlyWakePrefix, lo, i);
-    const wakeMeas7 = rangeSum(wakeMeasuredPrefix, lo, i);
-
-    const train7vals: number[] = [];
-    let overrunToday: number | null = null;
-    for (let j = lo; j <= i; j++) {
-      if (trainingScore[j] != null) train7vals.push(trainingScore[j]!);
-    }
-    overrunToday = trainingOverrun[i];
-
-    const trainAvg7 = train7vals.length > 0
-      ? Math.round((train7vals.reduce((a, b) => a + b, 0) / train7vals.length) * 100) / 100
-      : null;
+    const lo = Math.max(0, i - (WINDOW - 1));
 
     resultMap.set(dt, {
-      bedtimeDriftLateNights7d: bedLate7,
-      bedtimeDriftMeasuredNights7d: bedMeas7,
-      wakeDriftEarlyNights7d: wake7,
-      wakeDriftMeasuredNights7d: wakeMeas7,
-      trainingAdherenceScore: trainingScore[i],
-      trainingAdherenceAvg7d: trainAvg7,
-      trainingOverrunMin: overrunToday,
+      bedtimeDriftLateNights7d: rangeSum(bedLatePrefix, lo, i),
+      bedtimeDriftMeasuredNights7d: rangeSum(bedMeasuredPrefix, lo, i),
+      wakeDriftEarlyNights7d: rangeSum(earlyWakePrefix, lo, i),
+      wakeDriftMeasuredNights7d: rangeSum(wakeMeasuredPrefix, lo, i),
+      trainingAdherenceScore: trainScores[i],
+      trainingAdherenceAvg7d: trainAvg7d.get(i) ?? null,
+      trainingOverrunMin: trainOverrun[i],
       mealTimingAdherenceScore: null,
       mealTimingAdherenceAvg7d: null,
       mealTimingTracked: false,
@@ -193,4 +179,35 @@ function buildPrefix(arr: number[]): number[] {
 
 function rangeSum(prefix: number[], lo: number, hi: number): number {
   return prefix[hi + 1] - prefix[lo];
+}
+
+function slidingAvg(
+  scores: (number | null)[],
+  windowSize: number,
+  emitStart: number,
+  emitEnd: number,
+): Map<number, number | null> {
+  const result = new Map<number, number | null>();
+  let sum = 0;
+  let count = 0;
+  const q: (number | null)[] = [];
+
+  const scanStart = Math.max(0, emitStart - (windowSize - 1));
+
+  for (let i = scanStart; i <= emitEnd; i++) {
+    const s = scores[i];
+    q.push(s);
+    if (s !== null) { sum += s; count++; }
+
+    if (q.length > windowSize) {
+      const old = q.shift()!;
+      if (old !== null) { sum -= old; count--; }
+    }
+
+    if (i >= emitStart) {
+      result.set(i, count > 0 ? Math.round((sum / count) * 100) / 100 : null);
+    }
+  }
+
+  return result;
 }
