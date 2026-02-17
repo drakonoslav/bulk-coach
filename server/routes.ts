@@ -398,6 +398,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ],
       );
 
+      const hasVitals = b.hrv != null || b.restingHr != null || b.steps != null || b.sleepMinutes != null;
+      if (hasVitals) {
+        await upsertVitalsDaily({
+          date: b.day,
+          user_id: userId,
+          resting_hr_bpm: b.restingHr != null ? Number(b.restingHr) : null,
+          hrv_rmssd_ms: b.hrv != null ? Number(b.hrv) : null,
+          hrv_sdnn_ms: null,
+          respiratory_rate_bpm: null,
+          spo2_pct: null,
+          skin_temp_delta_c: null,
+          steps: b.steps != null ? Number(b.steps) : null,
+          active_zone_minutes: b.activeZoneMinutes != null ? Number(b.activeZoneMinutes) : null,
+          energy_burned_kcal: b.energyBurnedKcal != null ? Number(b.energyBurnedKcal) : null,
+          zone1_min: b.zone1Min != null ? Number(b.zone1Min) : null,
+          zone2_min: b.zone2Min != null ? Number(b.zone2Min) : null,
+          zone3_min: b.zone3Min != null ? Number(b.zone3Min) : null,
+          below_zone1_min: b.belowZone1Min != null ? Number(b.belowZone1Min) : null,
+          source: "manual",
+        });
+      }
+
+      const hasSleep = b.sleepMinutes != null || b.actualBedTime != null || b.actualWakeTime != null;
+      if (hasSleep) {
+        const sleepMin = b.sleepMinutes != null ? Number(b.sleepMinutes) : null;
+        const latency = b.sleepLatencyMin != null ? Number(b.sleepLatencyMin) : null;
+        const waso = b.sleepWasoMin != null ? Number(b.sleepWasoMin) : null;
+        const timeInBed = sleepMin != null ? sleepMin + (latency ?? 0) + (waso ?? 0) : null;
+        const efficiency = sleepMin != null && timeInBed != null && timeInBed > 0
+          ? Math.round((sleepMin / timeInBed) * 100) : null;
+
+        await upsertSleepSummary({
+          date: b.day,
+          user_id: userId,
+          sleep_start: b.actualBedTime ?? b.sleepStart ?? null,
+          sleep_end: b.actualWakeTime ?? b.sleepEnd ?? null,
+          total_sleep_minutes: sleepMin ?? 0,
+          time_in_bed_minutes: timeInBed,
+          awake_minutes: waso,
+          rem_minutes: null,
+          deep_minutes: null,
+          light_or_core_minutes: null,
+          sleep_efficiency: efficiency,
+          sleep_latency_min: latency,
+          waso_min: waso,
+          source: "manual",
+        });
+      }
+
       await recomputeRange(b.day, userId);
 
       computeSleepBlock(b.day, userId).catch((err: unknown) =>
