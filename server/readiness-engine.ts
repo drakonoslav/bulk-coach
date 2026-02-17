@@ -257,7 +257,8 @@ export async function computeReadiness(date: string, userId: string = DEFAULT_US
   const HRV_score = scoreFromDelta(hrvDelta, 0.10, false);
   const RHR_score = scoreFromDelta(rhrDelta, 0.05, true);
   const Sleep_score = scoreFromDelta(sleepDelta, 0.10, false);
-  const Proxy_score = scoreFromDelta(proxyDelta, 0.10, false);
+  const Proxy_score_raw = scoreFromDelta(proxyDelta, 0.20, false);
+  const Proxy_score = clamp(Proxy_score_raw, 25, 75);
 
   const readiness_raw = hasAnyData ? (
     WEIGHTS.hrv * HRV_score +

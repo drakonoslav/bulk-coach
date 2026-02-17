@@ -299,7 +299,15 @@ export async function classifyDayRange(
       missing.push("sleep_minutes (daily, need >=3 in last 14d)");
     }
 
-    if (androgenRatio != null) {
+    const androgenLast7 = androgenRows.filter(a =>
+      a.date >= addDays(date, -6) && a.date <= date && a.proxy_score != null
+    ).length;
+    const androgenLast28 = androgenRows.filter(a =>
+      a.date >= addDays(date, -27) && a.date <= date && a.proxy_score != null
+    ).length;
+    const androgenCoverageOk = androgenLast7 >= 4 && androgenLast28 >= 10;
+
+    if (androgenRatio != null && androgenCoverageOk) {
       suppressedAvailable++;
       if (androgenRatio < T.suppressedAndrogenRatio) {
         suppressedSignals++;
@@ -307,8 +315,8 @@ export async function classifyDayRange(
           `Androgen proxy ${Math.round((1 - androgenRatio) * 100)}% below baseline`,
         );
       }
-    } else if (androgenValues.length < 3) {
-      missing.push("androgen log (need >=3 entries in last 14d)");
+    } else if (!androgenCoverageOk) {
+      missing.push("androgen log (need >=4 of last 7d and >=10 of last 28d)");
     }
 
     if (suppressedSignals >= T.suppressedMinSignals) {
