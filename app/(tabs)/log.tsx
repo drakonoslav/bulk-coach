@@ -232,6 +232,15 @@ export default function LogScreen() {
     sleepEndLocal?: string;
   } | null>(null);
   const [picking, setPicking] = useState(false);
+  const [sleepMinutesManual, setSleepMinutesManual] = useState("");
+  const [hrvManual, setHrvManual] = useState("");
+  const [restingHrManual, setRestingHrManual] = useState("");
+  const [caloriesIn, setCaloriesIn] = useState("");
+  const [trainingLoad, setTrainingLoad] = useState<string | undefined>();
+  const [nocturnalCount, setNocturnalCount] = useState("");
+  const [nocturnalDuration, setNocturnalDuration] = useState("");
+  const [firmnessAvg, setFirmnessAvg] = useState("");
+  const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -279,6 +288,11 @@ export default function LogScreen() {
         sleepStartLocal: existing.sleepStartLocal,
         sleepEndLocal: existing.sleepEndLocal,
       });
+      setSleepMinutesManual(existing.sleepMinutes?.toString() || "");
+      setHrvManual(existing.hrv?.toString() || "");
+      setRestingHrManual(existing.restingHr?.toString() || "");
+      setCaloriesIn(existing.caloriesIn?.toString() || "");
+      setTrainingLoad(existing.trainingLoad || undefined);
     } else {
       setHasExisting(false);
       resetForm();
@@ -352,12 +366,46 @@ export default function LogScreen() {
     } catch {}
   }, []);
 
+  const loadDayState = useCallback(async (day: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL(`/api/day-state?start=${day}&end=${day}`, baseUrl).toString(), { credentials: "include" });
+      if (res.ok) {
+        const marks = await res.json();
+        if (marks.length > 0 && marks[0].color !== "UNKNOWN") {
+          setDayStateColor({ color: marks[0].color, label: marks[0].label });
+        } else {
+          setDayStateColor(null);
+        }
+      }
+    } catch {
+      setDayStateColor(null);
+    }
+  }, []);
+
+  const loadAndrogenForDate = useCallback(async (day: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await expoFetch(new URL(`/api/androgen/manual/${day}`, baseUrl).toString(), { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.proxy_score != null) {
+          setNocturnalCount("");
+          setNocturnalDuration("");
+          setFirmnessAvg("");
+        }
+      }
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDateEntry(selectedDate);
       loadErectionBadges();
       loadSessionForDate(selectedDate);
       loadReadinessForDate(selectedDate);
+      loadDayState(selectedDate);
+      loadAndrogenForDate(selectedDate);
       if (!sleepPlan) loadSleepPlan();
       setUploadResult(null);
     }, [selectedDate])
@@ -486,6 +534,14 @@ export default function LogScreen() {
     setNotes("");
     setSaved(false);
     setFitbitData(null);
+    setSleepMinutesManual("");
+    setHrvManual("");
+    setRestingHrManual("");
+    setCaloriesIn("");
+    setTrainingLoad(undefined);
+    setNocturnalCount("");
+    setNocturnalDuration("");
+    setFirmnessAvg("");
   };
 
   const handleSave = async () => {
@@ -536,9 +592,31 @@ export default function LogScreen() {
         performanceNote: perfNote || undefined,
         adherence,
         notes: notes || undefined,
+        sleepMinutes: sleepMinutesManual ? parseInt(sleepMinutesManual, 10) : undefined,
+        hrv: hrvManual ? parseFloat(hrvManual) : undefined,
+        restingHr: restingHrManual ? parseInt(restingHrManual, 10) : undefined,
+        caloriesIn: caloriesIn ? parseInt(caloriesIn, 10) : undefined,
+        trainingLoad: trainingLoad || undefined,
       };
 
       await saveEntry(entry);
+
+      if (nocturnalCount) {
+        try {
+          const baseUrl = getApiUrl();
+          await expoFetch(new URL("/api/androgen/manual", baseUrl).toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              date: selectedDate,
+              nocturnalCount: parseInt(nocturnalCount, 10),
+              totalDurationMin: nocturnalDuration ? parseFloat(nocturnalDuration) : 0,
+              firmnessAvg: firmnessAvg ? parseFloat(firmnessAvg) : null,
+            }),
+          });
+        } catch {}
+      }
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setHasExisting(true);
       setSaved(true);
@@ -602,6 +680,33 @@ export default function LogScreen() {
                     color: readinessBadge.tier === "GREEN" ? "#34D399" : readinessBadge.tier === "BLUE" ? "#60A5FA" : "#FBBF24",
                   }]}>
                     {readinessBadge.tier === "GREEN" ? "Ready" : readinessBadge.tier === "BLUE" ? "Deload" : "Normal"} {readinessBadge.score}
+                  </Text>
+                </View>
+              )}
+              {dayStateColor && (
+                <View style={[styles.dateNavBadge, {
+                  backgroundColor: dayStateColor.color === "LEAN_GAIN" ? "rgba(52, 211, 153, 0.12)"
+                    : dayStateColor.color === "CUT" ? "rgba(239, 68, 68, 0.12)"
+                    : dayStateColor.color === "RECOMP" ? "rgba(96, 165, 250, 0.12)"
+                    : dayStateColor.color === "DELOAD" ? "rgba(251, 191, 36, 0.12)"
+                    : "rgba(239, 68, 68, 0.12)",
+                }]}>
+                  <View style={{
+                    width: 8, height: 8, borderRadius: 4,
+                    backgroundColor: dayStateColor.color === "LEAN_GAIN" ? "#34D399"
+                      : dayStateColor.color === "CUT" ? "#EF4444"
+                      : dayStateColor.color === "RECOMP" ? "#60A5FA"
+                      : dayStateColor.color === "DELOAD" ? "#FBBF24"
+                      : "#EF4444",
+                  }} />
+                  <Text style={[styles.dateNavBadgeText, {
+                    color: dayStateColor.color === "LEAN_GAIN" ? "#34D399"
+                      : dayStateColor.color === "CUT" ? "#EF4444"
+                      : dayStateColor.color === "RECOMP" ? "#60A5FA"
+                      : dayStateColor.color === "DELOAD" ? "#FBBF24"
+                      : "#EF4444",
+                  }]}>
+                    {dayStateColor.label}
                   </Text>
                 </View>
               )}
@@ -893,22 +998,6 @@ export default function LogScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Activity</Text>
-          <View style={styles.toggleRow}>
-            <ToggleButton
-              label="Lifted"
-              value={liftDone}
-              onToggle={() => setLiftDone(liftDone === true ? undefined : true)}
-              icon="barbell-outline"
-              activeColor={Colors.success}
-            />
-            <ToggleButton
-              label="Deload"
-              value={deloadWeek}
-              onToggle={() => setDeloadWeek(deloadWeek === true ? undefined : true)}
-              icon="pause-circle-outline"
-              activeColor={Colors.secondary}
-            />
-          </View>
           <InputField
             label="Steps"
             value={steps}
@@ -936,6 +1025,121 @@ export default function LogScreen() {
             icon="trending-up-outline"
             iconColor={Colors.secondary}
           />
+        </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#00D4AA20" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Ionicons name="heart-circle-outline" size={16} color={Colors.primary} />
+            <Text style={[styles.sectionLabel, { marginBottom: 0, color: Colors.primary }]}>Recovery Vitals</Text>
+          </View>
+          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 12 }}>
+            Enter manually or auto-filled from device sync
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="moon-outline" size={16} color="#60A5FA" />
+                <Text style={styles.inputLabelText}>Sleep</Text>
+              </View>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={sleepMinutesManual}
+                  onChangeText={setSleepMinutesManual}
+                  placeholder="420"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>min</Text>
+              </View>
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="pulse-outline" size={16} color="#8B5CF6" />
+                <Text style={styles.inputLabelText}>HRV</Text>
+              </View>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={hrvManual}
+                  onChangeText={setHrvManual}
+                  placeholder="45"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>ms</Text>
+              </View>
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="heart-outline" size={16} color="#EF4444" />
+                <Text style={styles.inputLabelText}>RHR</Text>
+              </View>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={restingHrManual}
+                  onChangeText={setRestingHrManual}
+                  placeholder="62"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>bpm</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionLabel}>Training Load</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {(["none", "light", "moderate", "hard"] as const).map((level) => {
+              const isSelected = trainingLoad === level;
+              const levelColor = level === "none" ? Colors.textTertiary
+                : level === "light" ? "#60A5FA"
+                : level === "moderate" ? "#FBBF24"
+                : "#EF4444";
+              return (
+                <Pressable
+                  key={level}
+                  onPress={() => {
+                    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setTrainingLoad(isSelected ? undefined : level);
+                  }}
+                  style={[
+                    styles.adherenceBtn,
+                    { flex: 1 },
+                    isSelected && { backgroundColor: levelColor + "25", borderColor: levelColor },
+                  ]}
+                >
+                  <Text style={[styles.adherenceBtnText, isSelected && { color: levelColor }]}>
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={{ marginTop: 12 }}>
+            <View style={styles.toggleRow}>
+              <ToggleButton
+                label="Lifted"
+                value={liftDone}
+                onToggle={() => setLiftDone(liftDone === true ? undefined : true)}
+                icon="barbell-outline"
+                activeColor={Colors.success}
+              />
+              <ToggleButton
+                label="Deload"
+                value={deloadWeek}
+                onToggle={() => setDeloadWeek(deloadWeek === true ? undefined : true)}
+                icon="pause-circle-outline"
+                activeColor={Colors.secondary}
+              />
+            </View>
+          </View>
         </View>
 
         {fitbitData && (fitbitData.sleepMinutes != null || fitbitData.restingHr != null || fitbitData.hrv != null || fitbitData.energyBurnedKcal != null || fitbitData.zone1Min != null) && (
@@ -1043,6 +1247,16 @@ export default function LogScreen() {
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Nutrition</Text>
           <InputField
+            label="Calories Consumed"
+            value={caloriesIn}
+            onChangeText={setCaloriesIn}
+            placeholder="e.g. 2700"
+            keyboardType="number-pad"
+            icon="flame-outline"
+            iconColor="#F59E0B"
+            suffix="kcal"
+          />
+          <InputField
             label="Water (extra)"
             value={water}
             onChangeText={setWater}
@@ -1147,6 +1361,64 @@ export default function LogScreen() {
               <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>{uploadResult}</Text>
             </View>
           )}
+
+          <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: "rgba(139,92,246,0.15)", paddingTop: 14 }}>
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6", marginBottom: 10 }}>
+              Manual Entry (Androgen Proxy)
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="trending-up-outline" size={14} color="#8B5CF6" />
+                  <Text style={styles.inputLabelText}>Count</Text>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  value={nocturnalCount}
+                  onChangeText={setNocturnalCount}
+                  placeholder="0"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="time-outline" size={14} color="#8B5CF6" />
+                  <Text style={styles.inputLabelText}>Duration</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={nocturnalDuration}
+                    onChangeText={setNocturnalDuration}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                  <Text style={styles.inputSuffix}>min</Text>
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="speedometer-outline" size={14} color="#8B5CF6" />
+                  <Text style={styles.inputLabelText}>Firmness</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={firmnessAvg}
+                    onChangeText={setFirmnessAvg}
+                    placeholder="0-10"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+            </View>
+          </View>
         </View>
 
         <Pressable

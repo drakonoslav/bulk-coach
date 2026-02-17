@@ -44,6 +44,8 @@ export interface DailyEntry {
   sleepEfficiency?: number;
   sleepStartLocal?: string;
   sleepEndLocal?: string;
+  caloriesIn?: number;
+  trainingLoad?: string;
 }
 
 export interface CardioFuel {

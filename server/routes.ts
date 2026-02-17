@@ -475,9 +475,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await pool.query(
         `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, computed_with_imputed, computed_at)
          VALUES ($1, $2, $3, false, NOW())
-         ON CONFLICT (user_id, date) DO UPDATE SET
+         ON CONFLICT (user_id, date, computed_with_imputed) DO UPDATE SET
            proxy_score = EXCLUDED.proxy_score,
-           computed_with_imputed = false,
            computed_at = NOW()`,
         [userId, date, proxyScore],
       );
