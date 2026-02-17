@@ -1228,6 +1228,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/reset-database", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const confirm = req.body?.confirm;
+      if (confirm !== "RESET_ALL_DATA") {
+        return res.status(400).json({ error: "Must send { confirm: 'RESET_ALL_DATA' } to proceed" });
+      }
+
+      const userScopedTables = [
+        "daily_log",
+        "dashboard_cache",
+        "erection_sessions",
+        "erection_summary_snapshots",
+        "androgen_proxy_daily",
+        "vitals_daily",
+        "sleep_summary_daily",
+        "hrv_baseline_daily",
+        "readiness_daily",
+        "workout_session",
+        "workout_hr_samples",
+        "workout_rr_intervals",
+        "workout_events",
+        "muscle_weekly_load",
+        "fitbit_imports",
+        "fitbit_takeout_imports",
+      ];
+
+      const globalTables = [
+        "fitbit_import_conflicts",
+        "fitbit_import_file_contributions",
+        "fitbit_daily_sources",
+        "fitbit_sleep_bucketing",
+        "sleep_import_diagnostics",
+      ];
+
+      const counts: Record<string, number> = {};
+      for (const table of userScopedTables) {
+        const result = await pool.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+        counts[table] = result.rowCount ?? 0;
+      }
+      for (const table of globalTables) {
+        const result = await pool.query(`DELETE FROM ${table}`);
+        counts[table] = result.rowCount ?? 0;
+      }
+
+      const totalDeleted = Object.values(counts).reduce((sum, c) => sum + c, 0);
+      console.log(`[RESET] User ${userId} wiped ${totalDeleted} rows across ${userScopedTables.length + globalTables.length} tables`);
+
+      res.json({ status: "ok", totalDeleted, counts });
+    } catch (err: unknown) {
+      console.error("reset-database error:", err);
+      res.status(500).json({ error: "Reset failed" });
+    }
+  });
+
   app.get("/api/sanity-check", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);

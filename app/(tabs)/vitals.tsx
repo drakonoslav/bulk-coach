@@ -168,6 +168,8 @@ export default function VitalsScreen() {
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
   const [dataSources, setDataSources] = useState<Array<{
     id: string; name: string; status: string;
     workouts?: number; vitals?: number; sleep?: number; lastSync?: string | null;
@@ -393,6 +395,45 @@ export default function VitalsScreen() {
       setBackupStatus("Import failed");
       setBackupImporting(false);
     }
+  };
+
+  const handleResetDatabase = async () => {
+    Alert.alert(
+      "Reset All Data",
+      "This will permanently delete ALL daily logs, Fitbit uploads, vitals, sleep data, workout sessions, readiness scores, and cached data.\n\nSettings and meal plan presets will be kept.\n\nThis cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset Everything",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setResetting(true);
+              setResetStatus(null);
+              const baseUrl = getApiUrl();
+              const res = await authFetch(new URL("/api/reset-database", baseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ confirm: "RESET_ALL_DATA" }),
+              });
+              const json = await res.json();
+              if (res.ok && json.status === "ok") {
+                if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setResetStatus(`Cleared ${json.totalDeleted} rows`);
+                loadData();
+              } else {
+                setResetStatus(json.error || "Reset failed");
+              }
+            } catch (err) {
+              console.error("reset error:", err);
+              setResetStatus("Reset failed");
+            } finally {
+              setResetting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleUpload = async () => {
@@ -763,6 +804,36 @@ export default function VitalsScreen() {
           <Text style={styles.backupHint}>
             Export saves all logs, snapshots, sessions, and caches. Restore merges data without duplicating.
           </Text>
+        </View>
+
+        <View style={[styles.card, { borderColor: "#7F1D1D" }]}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            <Text style={[styles.cardTitle, { color: "#EF4444" }]}>Reset Database</Text>
+          </View>
+
+          <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginBottom: 12, lineHeight: 18 }}>
+            Wipe all daily logs, Fitbit uploads, vitals, sleep data, workout sessions, readiness scores, and caches. Settings and meal presets are preserved.
+          </Text>
+
+          <Pressable
+            style={[styles.backupBtn, { backgroundColor: "rgba(239, 68, 68, 0.12)", flex: 0 }, resetting && styles.uploadBtnDisabled]}
+            onPress={handleResetDatabase}
+            disabled={resetting}
+          >
+            {resetting ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Ionicons name="nuclear-outline" size={16} color="#EF4444" />
+            )}
+            <Text style={[styles.backupBtnText, { color: "#EF4444" }]}>
+              {resetting ? "Resetting..." : "Reset All Data"}
+            </Text>
+          </Pressable>
+
+          {resetStatus && (
+            <Text style={{ fontSize: 13, color: "#EF4444", textAlign: "center", marginTop: 8 }}>{resetStatus}</Text>
+          )}
         </View>
 
         <View style={{ height: 20 }} />
