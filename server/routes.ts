@@ -8,6 +8,7 @@ import { initDb, pool } from "./db";
 import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
+import { classifyDayRange } from "./day-classifier";
 import {
   validateSleepSummaryInput,
   validateVitalsDailyInput,
@@ -2215,6 +2216,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/muscle/targets", async (_req: Request, res: Response) => {
     res.json(DEFAULT_WEEKLY_TARGETS);
+  });
+
+  app.get("/api/day-state", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const start = req.query.start as string;
+      const end = req.query.end as string;
+      if (!start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        return res.status(400).json({ error: "start query param required (YYYY-MM-DD)" });
+      }
+      if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+        return res.status(400).json({ error: "end query param required (YYYY-MM-DD)" });
+      }
+      const marks = await classifyDayRange(start, end, userId);
+      res.json(marks);
+    } catch (err: unknown) {
+      console.error("day-state error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
   });
 
   app.get("/api/data-sources", async (req: Request, res: Response) => {
