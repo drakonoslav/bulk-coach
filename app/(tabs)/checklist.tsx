@@ -922,7 +922,7 @@ export default function ChecklistScreen() {
                   </Text>
                   {(adh?.wakeDriftEarlyNights7d ?? 0) >= 3 && (
                     <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                      <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>DEBT</Text>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>EARLY</Text>
                     </View>
                   )}
                 </View>
