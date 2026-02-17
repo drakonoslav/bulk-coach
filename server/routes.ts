@@ -470,6 +470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const count = Number(nocturnalCount);
       const durMin = Number(totalDurationMin ?? 0);
       const firmness = firmnessAvg != null ? Number(firmnessAvg) : null;
+      const durSec = Math.round(durMin * 60);
 
       const proxyScore =
         count * 20 +
@@ -477,12 +478,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (firmness != null ? firmness * 3 : 0);
 
       await pool.query(
-        `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, computed_with_imputed, computed_at)
-         VALUES ($1, $2, $3, false, NOW())
+        `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, computed_with_imputed, computed_at, nocturnal_count, duration_min, firmness_avg)
+         VALUES ($1, $2, $3, false, NOW(), $4, $5, $6)
          ON CONFLICT (user_id, date, computed_with_imputed) DO UPDATE SET
            proxy_score = EXCLUDED.proxy_score,
-           computed_at = NOW()`,
-        [userId, date, proxyScore],
+           computed_at = NOW(),
+           nocturnal_count = EXCLUDED.nocturnal_count,
+           duration_min = EXCLUDED.duration_min,
+           firmness_avg = EXCLUDED.firmness_avg`,
+        [userId, date, proxyScore, count, durMin, firmness],
+      );
+
+      await pool.query(
+        `INSERT INTO erection_sessions (user_id, date, nocturnal_erections, nocturnal_duration_seconds, is_imputed, updated_at)
+         VALUES ($1, $2, $3, $4, false, NOW())
+         ON CONFLICT (user_id, date) DO UPDATE SET
+           nocturnal_erections = EXCLUDED.nocturnal_erections,
+           nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
+           is_imputed = false,
+           updated_at = NOW()`,
+        [userId, date, count, durSec],
       );
 
       res.json({ ok: true, proxyScore: Math.round(proxyScore * 100) / 100 });
@@ -496,7 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const { rows } = await pool.query(
-        `SELECT date::text, proxy_score, computed_with_imputed
+        `SELECT date::text, proxy_score, computed_with_imputed, nocturnal_count, duration_min, firmness_avg
          FROM androgen_proxy_daily
          WHERE user_id = $1 AND date = $2`,
         [userId, req.params.date],

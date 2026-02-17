@@ -602,8 +602,8 @@ export default function VitalsScreen() {
                   <Text style={styles.snapDate}>{snap.sessionDate}</Text>
                 </View>
                 <View style={styles.snapRight}>
-                  <Text style={styles.snapVal}>{snap.totalNocturnalErections} erections</Text>
-                  <Text style={styles.snapVal}>{formatDur(snap.totalNocturnalDurationSeconds)}</Text>
+                  <Text style={styles.snapVal}>{isNaN(snap.totalNocturnalErections) ? "--" : snap.totalNocturnalErections} erections</Text>
+                  <Text style={styles.snapVal}>{isNaN(snap.totalNocturnalDurationSeconds) ? "--" : formatDur(snap.totalNocturnalDurationSeconds)}</Text>
                 </View>
               </View>
             ))}

@@ -388,13 +388,25 @@ export default function LogScreen() {
       const res = await authFetch(new URL(`/api/androgen/manual/${day}`, baseUrl).toString());
       if (res.ok) {
         const data = await res.json();
-        if (data && data.proxy_score != null) {
+        if (data && data.nocturnal_count != null) {
+          setNocturnalCount(String(data.nocturnal_count));
+          setNocturnalDuration(data.duration_min != null ? String(data.duration_min) : "");
+          setFirmnessAvg(data.firmness_avg != null ? String(data.firmness_avg) : "");
+        } else {
           setNocturnalCount("");
           setNocturnalDuration("");
           setFirmnessAvg("");
         }
+      } else {
+        setNocturnalCount("");
+        setNocturnalDuration("");
+        setFirmnessAvg("");
       }
-    } catch {}
+    } catch {
+      setNocturnalCount("");
+      setNocturnalDuration("");
+      setFirmnessAvg("");
+    }
   }, []);
 
   useFocusEffect(
