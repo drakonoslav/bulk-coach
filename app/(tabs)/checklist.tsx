@@ -120,6 +120,26 @@ export default function ChecklistScreen() {
       imputed_7d: number;
       combined_7d: number;
     };
+    adherence?: {
+      alignmentScore: number | null;
+      bedDevMin: number | null;
+      wakeDevMin: number | null;
+      bedtimeDriftLateNights7d: number;
+      wakeDriftEarlyNights7d: number;
+      measuredNights7d: number;
+      bedtimeDriftNote: string | null;
+      wakeDriftNote: string | null;
+    };
+    primaryDriver?: {
+      driver: string;
+      severity: number;
+      recommendation: string;
+    } | null;
+    placeholders?: {
+      mealTimingTracked: boolean;
+    };
+    sleepBlock?: any;
+    sleepTrending?: any;
   } | null>(null);
   const [dataSuff, setDataSuff] = useState<{
     analysisStartDate: string;

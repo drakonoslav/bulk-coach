@@ -72,6 +72,7 @@ import {
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
 import { computeDrift7d, computePrimaryDriver } from "./adherence-metrics";
+import { computeRangeAdherence } from "./adherence-metrics-range";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
   computeReadiness,
@@ -2522,8 +2523,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
         return res.status(400).json({ error: "end query param required (YYYY-MM-DD)" });
       }
-      const marks = await classifyDayRange(start, end, userId);
-      res.json(marks);
+      const [marks, adherenceMap] = await Promise.all([
+        classifyDayRange(start, end, userId),
+        computeRangeAdherence(start, end, userId),
+      ]);
+      const enriched = marks.map((m: any) => {
+        const adh = adherenceMap.get(m.date);
+        return {
+          ...m,
+          adherence: adh ?? {
+            bedtimeDriftLateNights7d: 0,
+            bedtimeDriftMeasuredNights7d: 0,
+            wakeDriftEarlyNights7d: 0,
+            wakeDriftMeasuredNights7d: 0,
+            trainingAdherenceScore: null,
+            trainingAdherenceAvg7d: null,
+            trainingOverrunMin: null,
+            mealTimingAdherenceScore: null,
+            mealTimingAdherenceAvg7d: null,
+            mealTimingTracked: false,
+          },
+        };
+      });
+      res.json(enriched);
     } catch (err: unknown) {
       console.error("day-state error:", err);
       res.status(500).json({ error: "Internal server error" });
