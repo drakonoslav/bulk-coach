@@ -483,26 +483,35 @@ async function recomputeAndrogenProxy(fromDate: string, toDate: string, includeI
     [pullFrom, toDate, includeImputed, userId],
   );
 
+  const sessionMap = new Map<string, number | null>();
+  for (const r of rows) {
+    const score = (r.nocturnal_erections == null || r.nocturnal_duration_seconds == null)
+      ? null
+      : computeProxyScore(r.nocturnal_erections, r.nocturnal_duration_seconds);
+    sessionMap.set(r.date, score);
+  }
+
   interface DailyProxy {
     date: string;
     proxy: number | null;
   }
 
-  const daily: DailyProxy[] = rows.map((r: { date: string; nocturnal_erections: number | null; nocturnal_duration_seconds: number | null }) => ({
-    date: r.date,
-    proxy: (r.nocturnal_erections == null || r.nocturnal_duration_seconds == null)
-      ? null
-      : computeProxyScore(r.nocturnal_erections, r.nocturnal_duration_seconds),
-  }));
+  const fullSeries: DailyProxy[] = [];
+  let cursor = pullFrom;
+  while (cursor <= toDate) {
+    fullSeries.push({ date: cursor, proxy: sessionMap.get(cursor) ?? null });
+    cursor = addDays(cursor, 1);
+  }
 
-  const targetRows = daily.filter((r: DailyProxy) => r.date >= fromDate && r.date <= toDate);
+  const targetRows = fullSeries.filter(r => r.date >= fromDate && r.date <= toDate);
 
   for (const row of targetRows) {
-    const idx = daily.findIndex((d: DailyProxy) => d.date === row.date);
-    const window = daily.slice(Math.max(0, idx - 6), idx + 1);
-    const vals = window.map((x: DailyProxy) => x.proxy).filter((v: number | null): v is number => v != null);
+    const idx = fullSeries.findIndex(d => d.date === row.date);
+    const windowStart = Math.max(0, idx - 6);
+    const window = fullSeries.slice(windowStart, idx + 1);
+    const vals = window.map(x => x.proxy).filter((v): v is number => v != null);
     const avg7 = vals.length > 0
-      ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100) / 100
+      ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100
       : null;
 
     await pool.query(
