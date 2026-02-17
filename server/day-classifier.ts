@@ -229,7 +229,8 @@ export async function classifyDayRange(
 
   const results: DayMark[] = [];
   let prevColor: DayColor | null = null;
-  let prevColorStreak = 0;
+  let candidateColor_hysteresis: DayColor | null = null;
+  let candidateStreak = 0;
 
   let curDate = startDate;
   while (curDate <= endDate) {
@@ -328,7 +329,8 @@ export async function classifyDayRange(
             : "low";
 
       prevColor = "SUPPRESSED";
-      prevColorStreak = 1;
+      candidateColor_hysteresis = null;
+      candidateStreak = 0;
 
       return {
         date,
@@ -360,7 +362,8 @@ export async function classifyDayRange(
         }
 
         prevColor = "DELOAD";
-        prevColorStreak = 1;
+        candidateColor_hysteresis = null;
+        candidateStreak = 0;
 
         return {
           date,
@@ -441,39 +444,38 @@ export async function classifyDayRange(
     }
 
     if (candidateColor !== "UNKNOWN") {
+      if (candidateColor === candidateColor_hysteresis) {
+        candidateStreak++;
+      } else {
+        candidateColor_hysteresis = candidateColor;
+        candidateStreak = 1;
+      }
+
       if (
-        prevColor != null &&
-        prevColor === candidateColor
-      ) {
-        prevColorStreak++;
-      } else if (
         prevColor != null &&
         prevColor !== candidateColor &&
         prevColor !== "SUPPRESSED" &&
         prevColor !== "DELOAD" &&
-        prevColor !== "UNKNOWN"
+        prevColor !== "UNKNOWN" &&
+        candidateStreak < T.hysteresisMinDays
       ) {
-        prevColorStreak++;
-        if (prevColorStreak < T.hysteresisMinDays) {
-          reasons.push(
-            ...candidateReasons,
-            `Hysteresis: holding ${prevColor} (${prevColorStreak}/${T.hysteresisMinDays}d)`,
-          );
+        reasons.push(
+          ...candidateReasons,
+          `Hysteresis: holding ${prevColor} (candidate ${candidateColor} ${candidateStreak}/${T.hysteresisMinDays}d)`,
+        );
 
-          return {
-            date,
-            color: prevColor,
-            label: labelFor(prevColor),
-            confidence: "medium",
-            reasons,
-            ...(missing.length > 0 ? { missing } : {}),
-            ...(isWeekend(date) ? { weekendSymbol: buildWeekendSymbol(date, prevColor) } : {}),
-          };
-        }
+        return {
+          date,
+          color: prevColor,
+          label: labelFor(prevColor),
+          confidence: "medium",
+          reasons,
+          ...(missing.length > 0 ? { missing } : {}),
+          ...(isWeekend(date) ? { weekendSymbol: buildWeekendSymbol(date, prevColor) } : {}),
+        };
       }
 
       prevColor = candidateColor;
-      prevColorStreak = 1;
       reasons.push(...candidateReasons);
 
       return {
