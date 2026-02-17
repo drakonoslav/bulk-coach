@@ -71,6 +71,7 @@ import {
   getDataConfidence,
 } from "./erection-engine";
 import { exportBackup, importBackup } from "./backup";
+import { computeDrift7d, computePrimaryDriver } from "./adherence-metrics";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
   computeReadiness,
@@ -1126,9 +1127,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await persistReadiness(result, userId);
         }
       }
-      const sleepBlock = await computeSleepBlock(date, userId);
-      const sleepTrending = await computeSleepTrending(date, userId);
-      res.json({ ...result, sleepBlock, sleepTrending });
+      const [sleepBlock, sleepTrending, drift] = await Promise.all([
+        computeSleepBlock(date, userId),
+        computeSleepTrending(date, userId),
+        computeDrift7d(date, userId),
+      ]);
+
+      const sa = sleepBlock?.sleepAlignment;
+      const primaryDriver = computePrimaryDriver(
+        sa?.shortfallMin ?? null,
+        sa?.wakeDeviationMin ?? null,
+        sa?.bedDeviationMin ?? null,
+        result.deltas?.hrv_pct ?? null,
+        result.deltas?.rhr_bpm ?? null,
+        result.deltas?.proxy_pct ?? null,
+      );
+
+      res.json({
+        ...result,
+        sleepBlock,
+        sleepTrending,
+        adherence: {
+          alignmentScore: sa?.alignmentScore ?? null,
+          bedDevMin: sa?.bedDeviationMin ?? null,
+          wakeDevMin: sa?.wakeDeviationMin ?? null,
+          bedtimeDriftLateNights7d: drift.bedtimeDriftLateNights7d,
+          wakeDriftEarlyNights7d: drift.wakeDriftEarlyNights7d,
+          measuredNights7d: drift.measuredNights7d,
+          bedtimeDriftNote: drift.bedtimeDriftNote,
+          wakeDriftNote: drift.wakeDriftNote,
+        },
+        primaryDriver,
+        placeholders: {
+          mealTimingTracked: false,
+        },
+      });
     } catch (err: unknown) {
       console.error("readiness error:", err);
       res.status(500).json({ error: "Internal server error" });
