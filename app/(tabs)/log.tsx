@@ -203,6 +203,8 @@ export default function LogScreen() {
   const [water, setWater] = useState("");
   const [steps, setSteps] = useState("");
   const [cardio, setCardio] = useState("");
+  const [cardioStartTime, setCardioStartTime] = useState("");
+  const [cardioEndTime, setCardioEndTime] = useState("");
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
   const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
   const [perfNote, setPerfNote] = useState("");
@@ -268,6 +270,8 @@ export default function LogScreen() {
       setWater(existing.waterLiters?.toString() || "");
       setSteps(existing.steps?.toString() || "");
       setCardio(existing.cardioMin?.toString() || "");
+      setCardioStartTime(existing.cardioStartTime || "");
+      setCardioEndTime(existing.cardioEndTime || "");
       setLiftDone(existing.liftDone);
       setDeloadWeek(existing.deloadWeek);
       setPerfNote(existing.performanceNote || "");
@@ -537,6 +541,8 @@ export default function LogScreen() {
     setWater("");
     setSteps("");
     setCardio("");
+    setCardioStartTime("");
+    setCardioEndTime("");
     setLiftDone(undefined);
     setDeloadWeek(undefined);
     setPerfNote("");
@@ -597,6 +603,8 @@ export default function LogScreen() {
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
+        cardioStartTime: cardioStartTime || undefined,
+        cardioEndTime: cardioEndTime || undefined,
         liftDone,
         deloadWeek,
         performanceNote: perfNote || undefined,
@@ -1016,16 +1024,87 @@ export default function LogScreen() {
             icon="footsteps-outline"
             iconColor={Colors.primary}
           />
-          <InputField
-            label="Cardio"
-            value={cardio}
-            onChangeText={setCardio}
-            placeholder="Optional"
-            keyboardType="number-pad"
-            icon="heart-outline"
-            iconColor={Colors.danger}
-            suffix="min"
-          />
+          <View style={[styles.sectionCard, { borderColor: "#EF444420", marginHorizontal: 0, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Ionicons name="heart-outline" size={14} color="#EF4444" />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#EF4444" }}>Cardio Session</Text>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>Z2 Rebounder 06:00-06:40</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="play-outline" size={14} color="#60A5FA" />
+                  <Text style={styles.inputLabelText}>Start</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={cardioStartTime}
+                    onChangeText={(t) => {
+                      setCardioStartTime(t);
+                      if (t && cardioEndTime) {
+                        const [sh, sm] = t.split(":").map(Number);
+                        const [eh, em] = cardioEndTime.split(":").map(Number);
+                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                          let dur = (eh * 60 + em) - (sh * 60 + sm);
+                          if (dur < 0) dur += 1440;
+                          setCardio(dur.toString());
+                        }
+                      }
+                    }}
+                    placeholder="06:00"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="stop-outline" size={14} color="#EF4444" />
+                  <Text style={styles.inputLabelText}>End</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={cardioEndTime}
+                    onChangeText={(t) => {
+                      setCardioEndTime(t);
+                      if (cardioStartTime && t) {
+                        const [sh, sm] = cardioStartTime.split(":").map(Number);
+                        const [eh, em] = t.split(":").map(Number);
+                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                          let dur = (eh * 60 + em) - (sh * 60 + sm);
+                          if (dur < 0) dur += 1440;
+                          setCardio(dur.toString());
+                        }
+                      }
+                    }}
+                    placeholder="06:40"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="time-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.inputLabelText}>Duration</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={cardio}
+                    onChangeText={setCardio}
+                    placeholder="40"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="number-pad"
+                    keyboardAppearance="dark"
+                  />
+                  <Text style={styles.inputSuffix}>min</Text>
+                </View>
+              </View>
+            </View>
+          </View>
           <InputField
             label="Performance Note"
             value={perfNote}

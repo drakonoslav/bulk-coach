@@ -928,6 +928,24 @@ export default function ChecklistScreen() {
                 </View>
               )}
 
+              {sigRow("Training overrun", (() => {
+                const overrun = adh?.trainingOverrunMin;
+                if (overrun == null) return sigText("\u2014 no cardio logged", Colors.textTertiary);
+                const absMin = Math.abs(overrun);
+                const label = overrun > 0 ? `+${absMin} min over` : overrun < 0 ? `${absMin} min under` : "On schedule";
+                const color = overrun > 5 ? "#EF4444" : overrun < -5 ? "#FBBF24" : "#34D399";
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {sigText(label, color)}
+                    {overrun > 5 && (
+                      <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>OVERRUN</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })())}
+
               {sigRow("Meal timing",
                 sigText(
                   readiness.placeholders?.mealTimingTracked ? "Tracked" : "Not tracked",
