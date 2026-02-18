@@ -315,9 +315,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_minutes, hrv, resting_hr,
           calories_in, training_load,
           cardio_start_time, cardio_end_time,
+          lift_start_time, lift_end_time, lift_min,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -359,6 +360,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           training_load = COALESCE(EXCLUDED.training_load, daily_log.training_load),
           cardio_start_time = EXCLUDED.cardio_start_time,
           cardio_end_time = EXCLUDED.cardio_end_time,
+          lift_start_time = EXCLUDED.lift_start_time,
+          lift_end_time = EXCLUDED.lift_end_time,
+          lift_min = EXCLUDED.lift_min,
           updated_at = NOW()`,
         [
           userId,
@@ -402,6 +406,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.trainingLoad ?? null,
           b.cardioStartTime ?? null,
           b.cardioEndTime ?? null,
+          b.liftStartTime ?? null,
+          b.liftEndTime ?? null,
+          b.liftMin ?? null,
         ],
       );
 
@@ -1688,6 +1695,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/lift-schedule", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT key, value FROM app_settings WHERE user_id = $1 AND key IN ('lift_schedule_start', 'lift_schedule_end', 'lift_schedule_type')`,
+        [userId]
+      );
+      const map = new Map<string, string>();
+      for (const r of rows) map.set(r.key, r.value);
+      res.json({
+        start: map.get("lift_schedule_start") || "15:45",
+        end: map.get("lift_schedule_end") || "17:00",
+        type: map.get("lift_schedule_type") || "Lift Session",
+        plannedMin: (() => {
+          const s = map.get("lift_schedule_start") || "15:45";
+          const e = map.get("lift_schedule_end") || "17:00";
+          const [sh, sm] = s.split(":").map(Number);
+          const [eh, em] = e.split(":").map(Number);
+          let d = (eh * 60 + em) - (sh * 60 + sm);
+          if (d < 0) d += 1440;
+          return d;
+        })(),
+      });
+    } catch (err: unknown) {
+      console.error("lift-schedule get error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/lift-schedule", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { start, end, type } = req.body;
+      if (!start || !end) return res.status(400).json({ error: "start and end times required" });
+      const keys = [
+        { key: "lift_schedule_start", value: start },
+        { key: "lift_schedule_end", value: end },
+        { key: "lift_schedule_type", value: type || "Lift Session" },
+      ];
+      for (const { key, value } of keys) {
+        await pool.query(
+          `INSERT INTO app_settings (user_id, key, value) VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, key) DO UPDATE SET value = $3`,
+          [userId, key, value]
+        );
+      }
+      res.json({ ok: true, start, end, type: type || "Lift Session" });
+    } catch (err: unknown) {
+      console.error("lift-schedule set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/sleep-samples/:date", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -2597,6 +2657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             trainingAdherenceScore: null,
             trainingAdherenceAvg7d: null,
             trainingOverrunMin: null,
+            liftOverrunMin: null,
             mealTimingAdherenceScore: null,
             mealTimingAdherenceAvg7d: null,
             mealTimingTracked: false,

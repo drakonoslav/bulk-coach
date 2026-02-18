@@ -20,6 +20,23 @@ export async function getCardioScheduleSettings(userId: string = DEFAULT_USER_ID
   return { start, end, type, plannedMin };
 }
 
+export async function getLiftScheduleSettings(userId: string = DEFAULT_USER_ID): Promise<{ start: string; end: string; type: string; plannedMin: number }> {
+  const { rows } = await pool.query(
+    `SELECT key, value FROM app_settings WHERE user_id = $1 AND key IN ('lift_schedule_start', 'lift_schedule_end', 'lift_schedule_type')`,
+    [userId]
+  );
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(r.key, r.value);
+  const start = map.get("lift_schedule_start") || "15:45";
+  const end = map.get("lift_schedule_end") || "17:00";
+  const type = map.get("lift_schedule_type") || "Lift Session";
+  const startMin = toMin(start);
+  const endMin = toMin(end);
+  let plannedMin = endMin - startMin;
+  if (plannedMin < 0) plannedMin += 1440;
+  return { start, end, type, plannedMin };
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
@@ -59,6 +76,7 @@ export interface DayAdherence {
   trainingAdherenceScore: number | null;
   trainingAdherenceAvg7d: number | null;
   trainingOverrunMin: number | null;
+  liftOverrunMin: number | null;
   mealTimingAdherenceScore: number | null;
   mealTimingAdherenceAvg7d: number | null;
   mealTimingTracked: boolean;
@@ -76,7 +94,8 @@ export async function computeRangeAdherence(
     `SELECT day, actual_bed_time, actual_wake_time,
             planned_bed_time, planned_wake_time,
             adherence, training_load, lift_done,
-            cardio_start_time, cardio_end_time, cardio_min
+            cardio_start_time, cardio_end_time, cardio_min,
+            lift_start_time, lift_end_time, lift_min
      FROM daily_log
      WHERE day >= $1 AND day <= $2 AND user_id = $3
      ORDER BY day ASC`,
@@ -85,6 +104,7 @@ export async function computeRangeAdherence(
 
   const schedule = await getSleepPlanSettings(userId);
   const cardioSchedule = await getCardioScheduleSettings(userId);
+  const liftSchedule = await getLiftScheduleSettings(userId);
 
   const byDate = new Map<string, typeof rows[0]>();
   for (const r of rows) byDate.set(r.day, r);
@@ -107,6 +127,7 @@ export async function computeRangeAdherence(
   const wakeMeasured: number[] = [];
   const trainScores: (number | null)[] = [];
   const trainOverrun: (number | null)[] = [];
+  const liftOverrun: (number | null)[] = [];
 
   for (const dt of allDates) {
     const r = byDate.get(dt);
@@ -144,9 +165,10 @@ export async function computeRangeAdherence(
     if (!r) {
       trainScores.push(null);
       trainOverrun.push(null);
+      liftOverrun.push(null);
     } else {
       trainScores.push(r.adherence != null ? Number(r.adherence) : null);
-      let overrun: number | null = null;
+      let cardioOverrun: number | null = null;
       let actualCardioMin: number | null = null;
       if (r.cardio_start_time && r.cardio_end_time) {
         const startM = toMin(r.cardio_start_time);
@@ -158,9 +180,25 @@ export async function computeRangeAdherence(
         actualCardioMin = Number(r.cardio_min);
       }
       if (actualCardioMin != null) {
-        overrun = actualCardioMin - cardioSchedule.plannedMin;
+        cardioOverrun = actualCardioMin - cardioSchedule.plannedMin;
       }
-      trainOverrun.push(overrun);
+      trainOverrun.push(cardioOverrun);
+
+      let liftOv: number | null = null;
+      let actualLiftMin: number | null = null;
+      if (r.lift_start_time && r.lift_end_time) {
+        const startM = toMin(r.lift_start_time);
+        const endM = toMin(r.lift_end_time);
+        let dur = endM - startM;
+        if (dur < 0) dur += 1440;
+        actualLiftMin = dur;
+      } else if (r.lift_min != null) {
+        actualLiftMin = Number(r.lift_min);
+      }
+      if (actualLiftMin != null) {
+        liftOv = actualLiftMin - liftSchedule.plannedMin;
+      }
+      liftOverrun.push(liftOv);
     }
   }
 
@@ -188,6 +226,7 @@ export async function computeRangeAdherence(
       trainingAdherenceScore: trainScores[i],
       trainingAdherenceAvg7d: trainAvg7d.get(i) ?? null,
       trainingOverrunMin: trainOverrun[i],
+      liftOverrunMin: liftOverrun[i],
       mealTimingAdherenceScore: null,
       mealTimingAdherenceAvg7d: null,
       mealTimingTracked: false,

@@ -205,6 +205,9 @@ export default function LogScreen() {
   const [cardio, setCardio] = useState("");
   const [cardioStartTime, setCardioStartTime] = useState("");
   const [cardioEndTime, setCardioEndTime] = useState("");
+  const [liftStartTime, setLiftStartTime] = useState("");
+  const [liftEndTime, setLiftEndTime] = useState("");
+  const [liftMin, setLiftMin] = useState("");
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
   const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
   const [perfNote, setPerfNote] = useState("");
@@ -272,6 +275,9 @@ export default function LogScreen() {
       setCardio(existing.cardioMin?.toString() || "");
       setCardioStartTime(existing.cardioStartTime || "");
       setCardioEndTime(existing.cardioEndTime || "");
+      setLiftStartTime(existing.liftStartTime || "");
+      setLiftEndTime(existing.liftEndTime || "");
+      setLiftMin(existing.liftMin?.toString() || "");
       setLiftDone(existing.liftDone);
       setDeloadWeek(existing.deloadWeek);
       setPerfNote(existing.performanceNote || "");
@@ -543,6 +549,9 @@ export default function LogScreen() {
     setCardio("");
     setCardioStartTime("");
     setCardioEndTime("");
+    setLiftStartTime("");
+    setLiftEndTime("");
+    setLiftMin("");
     setLiftDone(undefined);
     setDeloadWeek(undefined);
     setPerfNote("");
@@ -605,6 +614,9 @@ export default function LogScreen() {
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
         cardioStartTime: cardioStartTime || undefined,
         cardioEndTime: cardioEndTime || undefined,
+        liftStartTime: liftStartTime || undefined,
+        liftEndTime: liftEndTime || undefined,
+        liftMin: liftMin ? parseInt(liftMin, 10) : undefined,
         liftDone,
         deloadWeek,
         performanceNote: perfNote || undefined,
@@ -1096,6 +1108,87 @@ export default function LogScreen() {
                     value={cardio}
                     onChangeText={setCardio}
                     placeholder="40"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="number-pad"
+                    keyboardAppearance="dark"
+                  />
+                  <Text style={styles.inputSuffix}>min</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+          <View style={[styles.sectionCard, { borderColor: "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Ionicons name="barbell-outline" size={14} color="#FBBF24" />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Lift Session</Text>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>15:45-17:00</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="play-outline" size={14} color="#60A5FA" />
+                  <Text style={styles.inputLabelText}>Start</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={liftStartTime}
+                    onChangeText={(t) => {
+                      setLiftStartTime(t);
+                      if (t && liftEndTime) {
+                        const [sh, sm] = t.split(":").map(Number);
+                        const [eh, em] = liftEndTime.split(":").map(Number);
+                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                          let dur = (eh * 60 + em) - (sh * 60 + sm);
+                          if (dur < 0) dur += 1440;
+                          setLiftMin(dur.toString());
+                        }
+                      }
+                    }}
+                    placeholder="15:45"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="stop-outline" size={14} color="#EF4444" />
+                  <Text style={styles.inputLabelText}>End</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={liftEndTime}
+                    onChangeText={(t) => {
+                      setLiftEndTime(t);
+                      if (liftStartTime && t) {
+                        const [sh, sm] = liftStartTime.split(":").map(Number);
+                        const [eh, em] = t.split(":").map(Number);
+                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                          let dur = (eh * 60 + em) - (sh * 60 + sm);
+                          if (dur < 0) dur += 1440;
+                          setLiftMin(dur.toString());
+                        }
+                      }
+                    }}
+                    placeholder="17:00"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="time-outline" size={14} color="#FBBF24" />
+                  <Text style={styles.inputLabelText}>Duration</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={liftMin}
+                    onChangeText={setLiftMin}
+                    placeholder="75"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardType="number-pad"
                     keyboardAppearance="dark"

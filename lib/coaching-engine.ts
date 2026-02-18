@@ -48,6 +48,9 @@ export interface DailyEntry {
   trainingLoad?: string;
   cardioStartTime?: string;
   cardioEndTime?: string;
+  liftStartTime?: string;
+  liftEndTime?: string;
+  liftMin?: number;
 }
 
 export interface CardioFuel {

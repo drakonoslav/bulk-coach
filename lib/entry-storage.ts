@@ -150,5 +150,8 @@ function rowToEntry(row: any): DailyEntry {
     trainingLoad: row.trainingLoad ?? undefined,
     cardioStartTime: row.cardioStartTime ?? undefined,
     cardioEndTime: row.cardioEndTime ?? undefined,
+    liftStartTime: row.liftStartTime ?? undefined,
+    liftEndTime: row.liftEndTime ?? undefined,
+    liftMin: row.liftMin != null ? Number(row.liftMin) : undefined,
   };
 }
