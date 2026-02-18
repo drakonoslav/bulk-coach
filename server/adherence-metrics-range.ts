@@ -3,6 +3,23 @@ import { getSleepPlanSettings } from "./sleep-alignment";
 
 const DEFAULT_USER_ID = "local_default";
 
+export async function getCardioScheduleSettings(userId: string = DEFAULT_USER_ID): Promise<{ start: string; end: string; type: string; plannedMin: number }> {
+  const { rows } = await pool.query(
+    `SELECT key, value FROM app_settings WHERE user_id = $1 AND key IN ('cardio_schedule_start', 'cardio_schedule_end', 'cardio_schedule_type')`,
+    [userId]
+  );
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(r.key, r.value);
+  const start = map.get("cardio_schedule_start") || "06:00";
+  const end = map.get("cardio_schedule_end") || "06:40";
+  const type = map.get("cardio_schedule_type") || "Zone 2 Rebounder";
+  const startMin = toMin(start);
+  const endMin = toMin(end);
+  let plannedMin = endMin - startMin;
+  if (plannedMin < 0) plannedMin += 1440;
+  return { start, end, type, plannedMin };
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
@@ -58,7 +75,8 @@ export async function computeRangeAdherence(
   const { rows } = await pool.query(
     `SELECT day, actual_bed_time, actual_wake_time,
             planned_bed_time, planned_wake_time,
-            adherence, training_load, lift_done
+            adherence, training_load, lift_done,
+            cardio_start_time, cardio_end_time, cardio_min
      FROM daily_log
      WHERE day >= $1 AND day <= $2 AND user_id = $3
      ORDER BY day ASC`,
@@ -66,6 +84,7 @@ export async function computeRangeAdherence(
   );
 
   const schedule = await getSleepPlanSettings(userId);
+  const cardioSchedule = await getCardioScheduleSettings(userId);
 
   const byDate = new Map<string, typeof rows[0]>();
   for (const r of rows) byDate.set(r.day, r);
@@ -127,10 +146,19 @@ export async function computeRangeAdherence(
       trainOverrun.push(null);
     } else {
       trainScores.push(r.adherence != null ? Number(r.adherence) : null);
-      let overrun: number | null = 0;
-      if (r.training_load) {
-        const match = r.training_load.match(/overrun[:\s]*(\d+)/i);
-        if (match) overrun = parseInt(match[1], 10);
+      let overrun: number | null = null;
+      let actualCardioMin: number | null = null;
+      if (r.cardio_start_time && r.cardio_end_time) {
+        const startM = toMin(r.cardio_start_time);
+        const endM = toMin(r.cardio_end_time);
+        let dur = endM - startM;
+        if (dur < 0) dur += 1440;
+        actualCardioMin = dur;
+      } else if (r.cardio_min != null) {
+        actualCardioMin = Number(r.cardio_min);
+      }
+      if (actualCardioMin != null) {
+        overrun = actualCardioMin - cardioSchedule.plannedMin;
       }
       trainOverrun.push(overrun);
     }

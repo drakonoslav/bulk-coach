@@ -314,9 +314,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_latency_min, sleep_waso_min, nap_minutes,
           sleep_minutes, hrv, resting_hr,
           calories_in, training_load,
+          cardio_start_time, cardio_end_time,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -356,6 +357,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           resting_hr = COALESCE(EXCLUDED.resting_hr, daily_log.resting_hr),
           calories_in = COALESCE(EXCLUDED.calories_in, daily_log.calories_in),
           training_load = COALESCE(EXCLUDED.training_load, daily_log.training_load),
+          cardio_start_time = EXCLUDED.cardio_start_time,
+          cardio_end_time = EXCLUDED.cardio_end_time,
           updated_at = NOW()`,
         [
           userId,
@@ -397,6 +400,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.restingHr ?? null,
           b.caloriesIn ?? null,
           b.trainingLoad ?? null,
+          b.cardioStartTime ?? null,
+          b.cardioEndTime ?? null,
         ],
       );
 
@@ -1626,6 +1631,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true, bedtime, wake });
     } catch (err: unknown) {
       console.error("sleep-plan set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/cardio-schedule", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT key, value FROM app_settings WHERE user_id = $1 AND key IN ('cardio_schedule_start', 'cardio_schedule_end', 'cardio_schedule_type')`,
+        [userId]
+      );
+      const map = new Map<string, string>();
+      for (const r of rows) map.set(r.key, r.value);
+      res.json({
+        start: map.get("cardio_schedule_start") || "06:00",
+        end: map.get("cardio_schedule_end") || "06:40",
+        type: map.get("cardio_schedule_type") || "Zone 2 Rebounder",
+        plannedMin: (() => {
+          const s = map.get("cardio_schedule_start") || "06:00";
+          const e = map.get("cardio_schedule_end") || "06:40";
+          const [sh, sm] = s.split(":").map(Number);
+          const [eh, em] = e.split(":").map(Number);
+          let d = (eh * 60 + em) - (sh * 60 + sm);
+          if (d < 0) d += 1440;
+          return d;
+        })(),
+      });
+    } catch (err: unknown) {
+      console.error("cardio-schedule get error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/cardio-schedule", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { start, end, type } = req.body;
+      if (!start || !end) return res.status(400).json({ error: "start and end times required" });
+      const keys = [
+        { key: "cardio_schedule_start", value: start },
+        { key: "cardio_schedule_end", value: end },
+        { key: "cardio_schedule_type", value: type || "Zone 2 Rebounder" },
+      ];
+      for (const { key, value } of keys) {
+        await pool.query(
+          `INSERT INTO app_settings (user_id, key, value) VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, key) DO UPDATE SET value = $3`,
+          [userId, key, value]
+        );
+      }
+      res.json({ ok: true, start, end, type: type || "Zone 2 Rebounder" });
+    } catch (err: unknown) {
+      console.error("cardio-schedule set error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

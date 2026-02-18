@@ -148,5 +148,7 @@ function rowToEntry(row: any): DailyEntry {
     sleepEndLocal: row.sleepEndLocal ?? undefined,
     caloriesIn: row.caloriesIn != null ? Number(row.caloriesIn) : undefined,
     trainingLoad: row.trainingLoad ?? undefined,
+    cardioStartTime: row.cardioStartTime ?? undefined,
+    cardioEndTime: row.cardioEndTime ?? undefined,
   };
 }
