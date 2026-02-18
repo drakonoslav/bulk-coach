@@ -81,26 +81,36 @@ export interface SleepBlock {
 }
 
 export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
-  const { rows } = await pool.query(
-    `SELECT sleep_minutes,
-            planned_bed_time, planned_wake_time,
-            actual_bed_time, actual_wake_time,
-            sleep_latency_min, sleep_waso_min, nap_minutes
-     FROM daily_log WHERE day = $1 AND user_id = $2`,
-    [date, userId]
-  );
-  if (!rows[0]) return null;
+  const [logResult, canonResult] = await Promise.all([
+    pool.query(
+      `SELECT sleep_minutes,
+              planned_bed_time, planned_wake_time,
+              actual_bed_time, actual_wake_time,
+              sleep_latency_min, sleep_waso_min, nap_minutes
+       FROM daily_log WHERE day = $1 AND user_id = $2`,
+      [date, userId]
+    ),
+    pool.query(
+      `SELECT sleep_start, sleep_end, total_sleep_minutes, sleep_efficiency
+       FROM sleep_summary_daily WHERE date = $1 AND user_id = $2`,
+      [date, userId]
+    ),
+  ]);
 
-  const r = rows[0];
+  const r = logResult.rows[0];
+  const canon = canonResult.rows[0];
+
+  if (!r && !canon) return null;
+
   const schedule = await getSleepPlanSettings(userId);
-  const plannedBed: string | null = r.planned_bed_time || schedule.bedtime;
-  const plannedWake: string | null = r.planned_wake_time || schedule.wake;
-  const actualBed: string | null = r.actual_bed_time || null;
-  const actualWake: string | null = r.actual_wake_time || null;
-  const latency: number | null = r.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
-  const waso: number | null = r.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
-  const napMin: number | null = r.nap_minutes != null ? Number(r.nap_minutes) : null;
-  const fitbitMin: number | null = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
+  const plannedBed: string | null = r?.planned_bed_time || schedule.bedtime;
+  const plannedWake: string | null = r?.planned_wake_time || schedule.wake;
+  const actualBed: string | null = r?.actual_bed_time || canon?.sleep_start || null;
+  const actualWake: string | null = r?.actual_wake_time || canon?.sleep_end || null;
+  const latency: number | null = r?.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
+  const waso: number | null = r?.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
+  const napMin: number | null = r?.nap_minutes != null ? Number(r.nap_minutes) : null;
+  const fitbitMin: number | null = r?.sleep_minutes != null ? Number(r.sleep_minutes) : (canon?.total_sleep_minutes != null ? Number(canon.total_sleep_minutes) : null);
 
   let plannedSleepMin: number | null = null;
   if (plannedBed && plannedWake) {
@@ -222,25 +232,49 @@ export async function computeSleepTrending(date: string, userId: string = DEFAUL
   const from28 = d28.toISOString().slice(0, 10);
   const from7 = d7.toISOString().slice(0, 10);
 
-  const { rows } = await pool.query(
-    `SELECT day, planned_bed_time, planned_wake_time,
-            actual_bed_time, actual_wake_time, sleep_minutes
-     FROM daily_log
-     WHERE day BETWEEN $1 AND $2 AND user_id = $3
-     ORDER BY day ASC`,
-    [from28, date, userId]
-  );
+  const [logResult, canonResult] = await Promise.all([
+    pool.query(
+      `SELECT day, planned_bed_time, planned_wake_time,
+              actual_bed_time, actual_wake_time, sleep_minutes
+       FROM daily_log
+       WHERE day BETWEEN $1 AND $2 AND user_id = $3
+       ORDER BY day ASC`,
+      [from28, date, userId]
+    ),
+    pool.query(
+      `SELECT date, sleep_start, sleep_end, total_sleep_minutes
+       FROM sleep_summary_daily
+       WHERE date BETWEEN $1 AND $2 AND user_id = $3
+       ORDER BY date ASC`,
+      [from28, date, userId]
+    ),
+  ]);
+
+  const canonByDate = new Map<string, any>();
+  for (const c of canonResult.rows) {
+    canonByDate.set(c.date, c);
+  }
+
+  const allDates = new Set<string>();
+  for (const r of logResult.rows) allDates.add(r.day);
+  for (const c of canonResult.rows) allDates.add(c.date);
+  const sortedDates = Array.from(allDates).sort();
+
+  const logByDate = new Map<string, any>();
+  for (const r of logResult.rows) logByDate.set(r.day, r);
 
   const blocks: Array<{ day: string; alignment: number | null; adequacy: number | null; debt: number | null }> = [];
 
   const schedule = await getSleepPlanSettings(userId);
 
-  for (const r of rows) {
-    const plannedBed = r.planned_bed_time || schedule.bedtime;
-    const plannedWake = r.planned_wake_time || schedule.wake;
-    const actualBed = r.actual_bed_time || null;
-    const actualWake = r.actual_wake_time || null;
-    const fitbit = r.sleep_minutes != null ? Number(r.sleep_minutes) : null;
+  for (const day of sortedDates) {
+    const r = logByDate.get(day);
+    const canon = canonByDate.get(day);
+    const plannedBed = r?.planned_bed_time || schedule.bedtime;
+    const plannedWake = r?.planned_wake_time || schedule.wake;
+    const actualBed = r?.actual_bed_time || canon?.sleep_start || null;
+    const actualWake = r?.actual_wake_time || canon?.sleep_end || null;
+    const fitbit = r?.sleep_minutes != null ? Number(r.sleep_minutes) : (canon?.total_sleep_minutes != null ? Number(canon.total_sleep_minutes) : null);
 
     let bedDev: number | null = null;
     let wakeDev: number | null = null;
@@ -265,7 +299,7 @@ export async function computeSleepTrending(date: string, userId: string = DEFAUL
       adequacy = clamp(Math.round(ratio * 100), 0, 100);
     }
 
-    blocks.push({ day: r.day, alignment: alignmentVal, adequacy, debt });
+    blocks.push({ day, alignment: alignmentVal, adequacy, debt });
   }
 
   const last7 = blocks.filter(b => b.day >= from7);
