@@ -928,38 +928,34 @@ export default function ChecklistScreen() {
                 </View>
               )}
 
-              {sigRow("Cardio overrun", (() => {
-                const overrun = adh?.trainingOverrunMin;
-                if (overrun == null) return sigText("\u2014 no cardio logged", Colors.textTertiary);
-                const absMin = Math.abs(overrun);
-                const label = overrun > 0 ? `+${absMin} min over` : overrun < 0 ? `${absMin} min under` : "On schedule";
-                const color = overrun > 5 ? "#EF4444" : overrun < -5 ? "#FBBF24" : "#34D399";
+              {sigRow("Cardio adherence", (() => {
+                const actual = adh?.actualCardioMin;
+                const planned = adh?.plannedCardioMin ?? 40;
+                if (actual == null) return sigText("Not logged", Colors.textTertiary);
+                const diff = actual - planned;
+                const diffStr = diff > 0 ? `+${diff}m` : diff < 0 ? `${diff}m` : "0m";
+                const color = Math.abs(diff) <= 5 ? "#34D399" : diff > 0 ? "#EF4444" : "#FBBF24";
                 return (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    {sigText(label, color)}
-                    {overrun > 5 && (
-                      <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                        <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>OVERRUN</Text>
-                      </View>
-                    )}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{actual}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ {planned}m</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color }}>({diffStr})</Text>
                   </View>
                 );
               })())}
 
-              {sigRow("Lift overrun", (() => {
-                const overrun = adh?.liftOverrunMin;
-                if (overrun == null) return sigText("\u2014 no lift logged", Colors.textTertiary);
-                const absMin = Math.abs(overrun);
-                const label = overrun > 0 ? `+${absMin} min over` : overrun < 0 ? `${absMin} min under` : "On schedule";
-                const color = overrun > 5 ? "#EF4444" : overrun < -5 ? "#FBBF24" : "#34D399";
+              {sigRow("Lift adherence", (() => {
+                const actual = adh?.actualLiftMin;
+                const planned = adh?.plannedLiftMin ?? 75;
+                if (actual == null) return sigText("Not logged", Colors.textTertiary);
+                const diff = actual - planned;
+                const diffStr = diff > 0 ? `+${diff}m` : diff < 0 ? `${diff}m` : "0m";
+                const color = Math.abs(diff) <= 5 ? "#34D399" : diff > 0 ? "#EF4444" : "#FBBF24";
                 return (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    {sigText(label, color)}
-                    {overrun > 5 && (
-                      <View style={{ backgroundColor: "#EF444420", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                        <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#EF4444" }}>OVERRUN</Text>
-                      </View>
-                    )}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{actual}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ {planned}m</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color }}>({diffStr})</Text>
                   </View>
                 );
               })())}

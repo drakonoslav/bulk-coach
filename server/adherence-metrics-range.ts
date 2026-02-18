@@ -77,6 +77,10 @@ export interface DayAdherence {
   trainingAdherenceAvg7d: number | null;
   trainingOverrunMin: number | null;
   liftOverrunMin: number | null;
+  actualCardioMin: number | null;
+  plannedCardioMin: number;
+  actualLiftMin: number | null;
+  plannedLiftMin: number;
   mealTimingAdherenceScore: number | null;
   mealTimingAdherenceAvg7d: number | null;
   mealTimingTracked: boolean;
@@ -128,6 +132,8 @@ export async function computeRangeAdherence(
   const trainScores: (number | null)[] = [];
   const trainOverrun: (number | null)[] = [];
   const liftOverrun: (number | null)[] = [];
+  const actualCardioArr: (number | null)[] = [];
+  const actualLiftArr: (number | null)[] = [];
 
   for (const dt of allDates) {
     const r = byDate.get(dt);
@@ -166,6 +172,8 @@ export async function computeRangeAdherence(
       trainScores.push(null);
       trainOverrun.push(null);
       liftOverrun.push(null);
+      actualCardioArr.push(null);
+      actualLiftArr.push(null);
     } else {
       trainScores.push(r.adherence != null ? Number(r.adherence) : null);
       let cardioOverrun: number | null = null;
@@ -183,6 +191,7 @@ export async function computeRangeAdherence(
         cardioOverrun = actualCardioMin - cardioSchedule.plannedMin;
       }
       trainOverrun.push(cardioOverrun);
+      actualCardioArr.push(actualCardioMin);
 
       let liftOv: number | null = null;
       let actualLiftMin: number | null = null;
@@ -199,6 +208,7 @@ export async function computeRangeAdherence(
         liftOv = actualLiftMin - liftSchedule.plannedMin;
       }
       liftOverrun.push(liftOv);
+      actualLiftArr.push(actualLiftMin);
     }
   }
 
@@ -227,6 +237,10 @@ export async function computeRangeAdherence(
       trainingAdherenceAvg7d: trainAvg7d.get(i) ?? null,
       trainingOverrunMin: trainOverrun[i],
       liftOverrunMin: liftOverrun[i],
+      actualCardioMin: actualCardioArr[i],
+      plannedCardioMin: cardioSchedule.plannedMin,
+      actualLiftMin: actualLiftArr[i],
+      plannedLiftMin: liftSchedule.plannedMin,
       mealTimingAdherenceScore: null,
       mealTimingAdherenceAvg7d: null,
       mealTimingTracked: false,
