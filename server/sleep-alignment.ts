@@ -81,7 +81,11 @@ export interface SleepBlock {
 }
 
 export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
-  const [logResult, canonResult] = await Promise.all([
+  const yesterday = new Date(date + "T00:00:00Z");
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  const [logResult, canonResult, logYestResult, canonYestResult] = await Promise.all([
     pool.query(
       `SELECT sleep_minutes,
               planned_bed_time, planned_wake_time,
@@ -95,10 +99,30 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
        FROM sleep_summary_daily WHERE date = $1 AND user_id = $2`,
       [date, userId]
     ),
+    pool.query(
+      `SELECT sleep_minutes,
+              planned_bed_time, planned_wake_time,
+              actual_bed_time, actual_wake_time,
+              sleep_latency_min, sleep_waso_min, nap_minutes
+       FROM daily_log WHERE day = $1 AND user_id = $2`,
+      [yesterdayStr, userId]
+    ),
+    pool.query(
+      `SELECT sleep_start, sleep_end, total_sleep_minutes, sleep_efficiency
+       FROM sleep_summary_daily WHERE date = $1 AND user_id = $2`,
+      [yesterdayStr, userId]
+    ),
   ]);
 
-  const r = logResult.rows[0];
-  const canon = canonResult.rows[0];
+  let r = logResult.rows[0];
+  let canon = canonResult.rows[0];
+
+  const hasSleepToday = !!(r?.actual_bed_time || r?.sleep_minutes || canon?.sleep_start || canon?.total_sleep_minutes);
+
+  if (!hasSleepToday) {
+    r = r || logYestResult.rows[0];
+    canon = canon || canonYestResult.rows[0];
+  }
 
   if (!r && !canon) return null;
 
