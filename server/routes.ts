@@ -143,7 +143,7 @@ const TEXT_FIELDS = new Set([
   "raw_start", "raw_end", "bucket_date", "suspicion_reason",
   "workout_type", "session_type_tag", "hrv_response_flag",
   "gate", "confidence_grade", "readiness_tier", "cortisol_flag",
-  "type_lean", "exercise_bias",
+  "type_lean", "exercise_bias", "sleep_source_mode",
 ]);
 
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
@@ -313,13 +313,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actual_bed_time, actual_wake_time,
           sleep_latency_min, sleep_waso_min, nap_minutes,
           sleep_awake_min, sleep_rem_min, sleep_core_min, sleep_deep_min,
+          sleep_source_mode,
           sleep_minutes, hrv, resting_hr,
           calories_in, training_load,
           cardio_start_time, cardio_end_time,
           lift_start_time, lift_end_time, lift_min,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -358,6 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleep_rem_min = EXCLUDED.sleep_rem_min,
           sleep_core_min = EXCLUDED.sleep_core_min,
           sleep_deep_min = EXCLUDED.sleep_deep_min,
+          sleep_source_mode = EXCLUDED.sleep_source_mode,
           sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, daily_log.sleep_minutes),
           hrv = COALESCE(EXCLUDED.hrv, daily_log.hrv),
           resting_hr = COALESCE(EXCLUDED.resting_hr, daily_log.resting_hr),
@@ -408,6 +410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.sleepRemMin ?? null,
           b.sleepCoreMin ?? null,
           b.sleepDeepMin ?? null,
+          b.sleepSourceMode ?? null,
           b.sleepMinutes ?? null,
           b.hrv ?? null,
           b.restingHr ?? null,

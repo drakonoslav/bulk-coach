@@ -130,6 +130,7 @@ function rowToEntry(row: any): DailyEntry {
     sleepRemMin: row.sleepRemMin != null ? Number(row.sleepRemMin) : undefined,
     sleepCoreMin: row.sleepCoreMin != null ? Number(row.sleepCoreMin) : undefined,
     sleepDeepMin: row.sleepDeepMin != null ? Number(row.sleepDeepMin) : undefined,
+    sleepSourceMode: row.sleepSourceMode ?? undefined,
     waterLiters: row.waterLiters != null ? Number(row.waterLiters) : undefined,
     steps: row.steps != null ? Number(row.steps) : undefined,
     cardioMin: row.cardioMin != null ? Number(row.cardioMin) : undefined,

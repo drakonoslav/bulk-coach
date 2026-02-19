@@ -28,6 +28,7 @@ export interface DailyEntry {
   sleepRemMin?: number;
   sleepCoreMin?: number;
   sleepDeepMin?: number;
+  sleepSourceMode?: string;
   waterLiters?: number;
   steps?: number;
   cardioMin?: number;

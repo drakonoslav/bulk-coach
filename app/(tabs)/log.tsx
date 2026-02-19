@@ -33,6 +33,21 @@ function parseMinuteInput(raw: string): string {
   return trimmed;
 }
 
+function hhmmToMin(hhmm: string): number | null {
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function clockTibMin(bed: string, wake: string): number | null {
+  const b = hhmmToMin(bed);
+  const w = hhmmToMin(wake);
+  if (b == null || w == null) return null;
+  let diff = w - b;
+  if (diff <= 0) diff += 24 * 60;
+  return diff;
+}
+
 function handleMinuteSetter(setter: (v: string) => void) {
   return (raw: string) => setter(parseMinuteInput(raw));
 }
@@ -268,12 +283,22 @@ export default function LogScreen() {
   const isFuture = selectedDate > todayStr();
 
   const stagesComplete = !!(sleepAwakeMin && sleepRemMin && sleepCoreMin && sleepDeepMin);
-  const derivedTIB = stagesComplete
+  const stageSumTIB = stagesComplete
     ? parseInt(sleepAwakeMin, 10) + parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
     : null;
   const derivedTST = stagesComplete
     ? parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
     : null;
+
+  const clockTIB = (actualBedTime && actualWakeTime)
+    ? clockTibMin(actualBedTime, actualWakeTime)
+    : null;
+  const derivedTIB = clockTIB ?? stageSumTIB;
+
+  const sleepSourceModeVal: "clock" | "stages" | null = stagesComplete
+    ? (clockTIB != null ? "clock" : "stages")
+    : null;
+
   const derivedAwakeInBed = (derivedTIB != null && derivedTST != null)
     ? Math.max(0, derivedTIB - derivedTST)
     : null;
@@ -672,6 +697,7 @@ export default function LogScreen() {
         sleepRemMin: sleepRemMin ? parseInt(sleepRemMin, 10) : undefined,
         sleepCoreMin: sleepCoreMin ? parseInt(sleepCoreMin, 10) : undefined,
         sleepDeepMin: sleepDeepMin ? parseInt(sleepDeepMin, 10) : undefined,
+        sleepSourceMode: sleepSourceModeVal ?? undefined,
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,

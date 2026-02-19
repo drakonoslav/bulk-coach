@@ -135,6 +135,7 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_rem_min INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_core_min INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_deep_min INTEGER`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_source_mode TEXT`);
 
   await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP NOT NULL`);
   await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP DEFAULT`);
