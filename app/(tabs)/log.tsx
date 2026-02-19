@@ -1231,7 +1231,7 @@ export default function LogScreen() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <Ionicons name="barbell-outline" size={14} color="#FBBF24" />
               <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Lift Session</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>15:45-17:00</Text>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>17:00-18:15</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <View style={[styles.inputGroup, { flex: 1 }]}>
@@ -1255,7 +1255,7 @@ export default function LogScreen() {
                         }
                       }
                     }}
-                    placeholder="15:45"
+                    placeholder="17:00"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardAppearance="dark"
                   />
@@ -1282,7 +1282,7 @@ export default function LogScreen() {
                         }
                       }
                     }}
-                    placeholder="17:00"
+                    placeholder="18:15"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardAppearance="dark"
                   />

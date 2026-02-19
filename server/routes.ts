@@ -1751,12 +1751,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const map = new Map<string, string>();
       for (const r of rows) map.set(r.key, r.value);
       res.json({
-        start: map.get("lift_schedule_start") || "15:45",
-        end: map.get("lift_schedule_end") || "17:00",
+        start: map.get("lift_schedule_start") || "17:00",
+        end: map.get("lift_schedule_end") || "18:15",
         type: map.get("lift_schedule_type") || "Lift Session",
         plannedMin: (() => {
-          const s = map.get("lift_schedule_start") || "15:45";
-          const e = map.get("lift_schedule_end") || "17:00";
+          const s = map.get("lift_schedule_start") || "17:00";
+          const e = map.get("lift_schedule_end") || "18:15";
           const [sh, sm] = s.split(":").map(Number);
           const [eh, em] = e.split(":").map(Number);
           let d = (eh * 60 + em) - (sh * 60 + sm);

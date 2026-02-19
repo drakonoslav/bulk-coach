@@ -27,8 +27,8 @@ export async function getLiftScheduleSettings(userId: string = DEFAULT_USER_ID):
   );
   const map = new Map<string, string>();
   for (const r of rows) map.set(r.key, r.value);
-  const start = map.get("lift_schedule_start") || "15:45";
-  const end = map.get("lift_schedule_end") || "17:00";
+  const start = map.get("lift_schedule_start") || "17:00";
+  const end = map.get("lift_schedule_end") || "18:15";
   const type = map.get("lift_schedule_type") || "Lift Session";
   const startMin = toMin(start);
   const endMin = toMin(end);
