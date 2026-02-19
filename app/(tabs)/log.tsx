@@ -200,6 +200,10 @@ export default function LogScreen() {
   const [sleepLatency, setSleepLatency] = useState("");
   const [sleepWaso, setSleepWaso] = useState("");
   const [napMinutes, setNapMinutes] = useState("");
+  const [sleepAwakeMin, setSleepAwakeMin] = useState("");
+  const [sleepRemMin, setSleepRemMin] = useState("");
+  const [sleepCoreMin, setSleepCoreMin] = useState("");
+  const [sleepDeepMin, setSleepDeepMin] = useState("");
   const [water, setWater] = useState("");
   const [steps, setSteps] = useState("");
   const [cardio, setCardio] = useState("");
@@ -283,6 +287,10 @@ export default function LogScreen() {
       setSleepLatency(existing.sleepLatencyMin?.toString() || "");
       setSleepWaso(existing.sleepWasoMin?.toString() || "");
       setNapMinutes(existing.napMinutes?.toString() || "");
+      setSleepAwakeMin(existing.sleepAwakeMin?.toString() || "");
+      setSleepRemMin(existing.sleepRemMin?.toString() || "");
+      setSleepCoreMin(existing.sleepCoreMin?.toString() || "");
+      setSleepDeepMin(existing.sleepDeepMin?.toString() || "");
       setWater(existing.waterLiters?.toString() || "");
       setSteps(existing.steps?.toString() || "");
       setCardio(existing.cardioMin?.toString() || "");
@@ -557,6 +565,10 @@ export default function LogScreen() {
     setSleepLatency("");
     setSleepWaso("");
     setNapMinutes("");
+    setSleepAwakeMin("");
+    setSleepRemMin("");
+    setSleepCoreMin("");
+    setSleepDeepMin("");
     setWater("");
     setSteps("");
     setCardio("");
@@ -622,6 +634,10 @@ export default function LogScreen() {
         sleepLatencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
         sleepWasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
         napMinutes: napMinutes ? parseInt(napMinutes, 10) : undefined,
+        sleepAwakeMin: sleepAwakeMin ? parseInt(sleepAwakeMin, 10) : undefined,
+        sleepRemMin: sleepRemMin ? parseInt(sleepRemMin, 10) : undefined,
+        sleepCoreMin: sleepCoreMin ? parseInt(sleepCoreMin, 10) : undefined,
+        sleepDeepMin: sleepDeepMin ? parseInt(sleepDeepMin, 10) : undefined,
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
@@ -963,6 +979,68 @@ export default function LogScreen() {
                 style={styles.input}
                 value={sleepWaso}
                 onChangeText={setSleepWaso}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="eye-off-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Awake</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepAwakeMin}
+                onChangeText={setSleepAwakeMin}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="cloudy-night-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>REM</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepRemMin}
+                onChangeText={setSleepRemMin}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="moon-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Core</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepCoreMin}
+                onChangeText={setSleepCoreMin}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="bed-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Deep</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepDeepMin}
+                onChangeText={setSleepDeepMin}
                 placeholder="min"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="numeric"
