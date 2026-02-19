@@ -24,6 +24,10 @@ export interface DailyEntry {
   sleepLatencyMin?: number;
   sleepWasoMin?: number;
   napMinutes?: number;
+  sleepAwakeMin?: number;
+  sleepRemMin?: number;
+  sleepCoreMin?: number;
+  sleepDeepMin?: number;
   waterLiters?: number;
   steps?: number;
   cardioMin?: number;
