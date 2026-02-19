@@ -1140,11 +1140,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await persistReadiness(result, userId);
         }
       }
-      const [sleepBlock, sleepTrending, drift] = await Promise.all([
+      const [sleepBlock, sleepTrending, drift, rangeAdh] = await Promise.all([
         computeSleepBlock(date, userId),
         computeSleepTrending(date, userId),
         computeDrift7d(date, userId),
+        computeRangeAdherence(date, date, userId),
       ]);
+      const dayAdh = rangeAdh.get(date);
 
       const sa = sleepBlock?.sleepAlignment;
       const primaryDriver = computePrimaryDriver(
@@ -1169,6 +1171,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           measuredNights7d: drift.measuredNights7d,
           bedtimeDriftNote: drift.bedtimeDriftNote,
           wakeDriftNote: drift.wakeDriftNote,
+          trainingOverrunMin: dayAdh?.trainingOverrunMin ?? null,
+          liftOverrunMin: dayAdh?.liftOverrunMin ?? null,
+          actualCardioMin: dayAdh?.actualCardioMin ?? null,
+          plannedCardioMin: dayAdh?.plannedCardioMin ?? 40,
+          actualLiftMin: dayAdh?.actualLiftMin ?? null,
+          plannedLiftMin: dayAdh?.plannedLiftMin ?? 75,
         },
         primaryDriver,
         placeholders: {
@@ -2658,6 +2666,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             trainingAdherenceAvg7d: null,
             trainingOverrunMin: null,
             liftOverrunMin: null,
+            actualCardioMin: null,
+            plannedCardioMin: 40,
+            actualLiftMin: null,
+            plannedLiftMin: 75,
             mealTimingAdherenceScore: null,
             mealTimingAdherenceAvg7d: null,
             mealTimingTracked: false,
