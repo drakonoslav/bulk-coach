@@ -980,9 +980,17 @@ export default function ChecklistScreen() {
                 insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
               ))}
 
-              {sb?.sleepEfficiencyEst != null && sigRow("Efficiency", sigText(
-                `${Math.round(sb.sleepEfficiencyEst * 100)}%${sb.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb.fitbitVsReportedDeltaMin > 0 ? "+" : ""}${sb.fitbitVsReportedDeltaMin}m)` : ""}`,
-                sb.sleepEfficiencyEst >= 0.85 ? "#34D399" : sb.sleepEfficiencyEst >= 0.70 ? "#FBBF24" : "#EF4444",
+              {(() => {
+                const eff = sb?.sleepEfficiency ?? sb?.sleepEfficiencyEst ?? null;
+                return eff != null ? sigRow("Efficiency", sigText(
+                  `${Math.round(eff * 100)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
+                  eff >= 0.85 ? "#34D399" : eff >= 0.70 ? "#FBBF24" : "#EF4444",
+                ), sb?.awakeInBedMin == null) : null;
+              })()}
+
+              {sb?.awakeInBedMin != null && sigRow("Awake in bed", sigText(
+                `${sb.awakeInBedMin}m`,
+                sb.awakeInBedMin <= 30 ? "#34D399" : sb.awakeInBedMin <= 60 ? "#FBBF24" : "#EF4444",
               ), true)}
 
               {sectionHeader("System State", "pulse-outline", "#34D399")}

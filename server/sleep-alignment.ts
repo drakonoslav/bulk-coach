@@ -78,6 +78,17 @@ export interface SleepBlock {
   timeInBedMin: number | null;
   estimatedSleepMin: number | null;
   fitbitVsReportedDeltaMin: number | null;
+
+  // --- NEW (derived / resolved sleep-structure fields) ---
+  // Manual fields (from daily_log) after resolution; do NOT invent values.
+  sleepLatencyMin: number | null;
+  sleepWASOMin: number | null;
+  // Derived: time spent awake while in bed (latency + WASO), only when at least
+  // one awake component is known. Otherwise null (unknown).
+  awakeInBedMin: number | null;
+  // Derived: prefer canonical device efficiency if present; else estimatedSleepMin / timeInBedMin.
+  // Ratio 0..1 (clamped).
+  sleepEfficiency: number | null;
 }
 
 export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
@@ -207,6 +218,27 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
   }
 
+  const sleepLatencyMin = latency ?? null;
+  const sleepWASOMin = waso ?? null;
+
+  let awakeInBedMin: number | null = null;
+  if (timeInBedMin != null) {
+    if (sleepLatencyMin != null || sleepWASOMin != null) {
+      awakeInBedMin = (sleepLatencyMin ?? 0) + (sleepWASOMin ?? 0);
+    }
+  }
+
+  let sleepEfficiency: number | null = null;
+  if (canon?.sleep_efficiency != null) {
+    const raw = Number(canon.sleep_efficiency);
+    sleepEfficiency = raw > 1 ? raw / 100 : raw;
+  } else if (estimatedSleepMin != null && timeInBedMin != null && timeInBedMin > 0) {
+    sleepEfficiency = estimatedSleepMin / timeInBedMin;
+  }
+  if (sleepEfficiency != null) {
+    sleepEfficiency = Math.max(0, Math.min(1, sleepEfficiency));
+  }
+
   return {
     sleepAlignment,
     plannedSleepMin,
@@ -218,6 +250,10 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     timeInBedMin,
     estimatedSleepMin,
     fitbitVsReportedDeltaMin,
+    sleepLatencyMin,
+    sleepWASOMin,
+    awakeInBedMin,
+    sleepEfficiency,
   };
 }
 
