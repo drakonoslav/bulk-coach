@@ -118,11 +118,11 @@ export const DAILY_CHECKLIST: ChecklistItem[] = [
   { time: "06:00-06:40", label: "Zone 2 rebounder", detail: "Steady Zone 2" },
   { time: "06:45", label: "Post-cardio shake", detail: "Oats 120g + Whey 25g + MCT 10g" },
   { time: "07:00-15:00", label: "Work", detail: "Anchor block" },
-  { time: "10:30", label: "Mid-morning shake", detail: "Greek yogurt 1 cup + Flax 30g + Whey 15g" },
+  { time: "11:30-12:00", label: "Mid-morning shake", detail: "Greek yogurt 1 cup + Flax 30g + Whey 15g" },
   { time: "15:45-16:00", label: "Pre-lift shake", detail: "Dextrin 80g + Whey 20g" },
   { time: "17:00-18:15", label: "Lift", detail: "Push/Pull" },
   { time: "18:20-18:35", label: "Post-lift shake", detail: "Dextrin 40g + Whey 30g" },
-  { time: "20:30-20:45", label: "Evening recovery meal", detail: "Oats 124g + Flax 30g + MCT 20g + Eggs 2 + Banana 1" },
+  { time: "20:00-20:15", label: "Evening recovery meal", detail: "Oats 124g + Flax 30g + MCT 20g + Eggs 2 + Banana 1" },
   { time: "21:30", label: "Wind down", detail: "Evening protein + downshift" },
   { time: "21:45", label: "Sleep", detail: "Lights out" },
 ];
@@ -512,10 +512,10 @@ export interface MealSlot {
 export const MEAL_SLOTS: MealSlot[] = [
   { time: "05:30", label: "Pre-cardio", ingredients: { bananas: 1 }, prepZone: "home" },
   { time: "06:45", label: "Post-cardio shake", ingredients: { oats_g: 120, whey_g: 25, mct_g: 10 }, prepZone: "home" },
-  { time: "10:30", label: "Mid-morning shake", ingredients: { yogurt_cups: 1, flax_g: 30, whey_g: 15 }, prepZone: "prep" },
+  { time: "11:30-12:00", label: "Mid-morning shake", ingredients: { yogurt_cups: 1, flax_g: 30, whey_g: 15 }, prepZone: "prep" },
   { time: "15:45-16:00", label: "Pre-lift shake", ingredients: { dextrin_g: 80, whey_g: 20 }, prepZone: "prep" },
   { time: "18:20-18:35", label: "Post-lift shake", ingredients: { dextrin_g: 40, whey_g: 30 }, prepZone: "home" },
-  { time: "20:30-20:45", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home" },
+  { time: "20:00-20:15", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home" },
   { time: "21:30", label: "Evening protein", ingredients: { whey_g: 0 }, prepZone: "home" },
 ];
 
