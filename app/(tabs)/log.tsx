@@ -22,6 +22,7 @@ import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
 import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
+import { deriveSleep } from "@/lib/sleep-derivation";
 
 function parseMinuteInput(raw: string): string {
   const trimmed = raw.trim();
@@ -31,21 +32,6 @@ function parseMinuteInput(raw: string): string {
     return (parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10)).toString();
   }
   return trimmed;
-}
-
-function hhmmToMin(hhmm: string): number | null {
-  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-}
-
-function clockTibMin(bed: string, wake: string): number | null {
-  const b = hhmmToMin(bed);
-  const w = hhmmToMin(wake);
-  if (b == null || w == null) return null;
-  let diff = w - b;
-  if (diff <= 0) diff += 24 * 60;
-  return diff;
 }
 
 function handleMinuteSetter(setter: (v: string) => void) {
@@ -283,47 +269,24 @@ export default function LogScreen() {
   const isFuture = selectedDate > todayStr();
 
   const stagesComplete = !!(sleepAwakeMin && sleepRemMin && sleepCoreMin && sleepDeepMin);
-  const stageSumTIB = stagesComplete
-    ? parseInt(sleepAwakeMin, 10) + parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
-    : null;
-  const derivedTST = stagesComplete
-    ? parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
-    : null;
 
-  const clockTIB = (actualBedTime && actualWakeTime)
-    ? clockTibMin(actualBedTime, actualWakeTime)
-    : null;
-  const derivedTIB = clockTIB ?? stageSumTIB;
+  const sleepDerived = deriveSleep({
+    actualBedTime: actualBedTime || null,
+    actualWakeTime: actualWakeTime || null,
+    timeAsleepMin: sleepMinutesManual ? parseInt(sleepMinutesManual, 10) : null,
+    awakeStageMin: sleepAwakeMin ? parseInt(sleepAwakeMin, 10) : null,
+    remMin: sleepRemMin ? parseInt(sleepRemMin, 10) : null,
+    coreMin: sleepCoreMin ? parseInt(sleepCoreMin, 10) : null,
+    deepMin: sleepDeepMin ? parseInt(sleepDeepMin, 10) : null,
+  });
 
-  const sleepSourceModeVal: "clock" | "stages" | null = stagesComplete
-    ? (clockTIB != null ? "clock" : "stages")
-    : null;
-
-  const derivedAwakeInBed = (derivedTIB != null && derivedTST != null)
-    ? Math.max(0, derivedTIB - derivedTST)
-    : null;
-  const derivedWASO = stagesComplete ? parseInt(sleepAwakeMin, 10) : null;
-  const derivedLatency = (derivedAwakeInBed != null && derivedWASO != null)
-    ? Math.max(0, derivedAwakeInBed - derivedWASO)
-    : null;
-
+  const hasStagesTST = !!(sleepRemMin && sleepCoreMin && sleepDeepMin);
   useEffect(() => {
-    if (derivedTST != null && !isNaN(derivedTST)) {
-      setSleepMinutesManual(derivedTST.toString());
+    if (hasStagesTST) {
+      const stageTST = parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10);
+      if (!isNaN(stageTST)) setSleepMinutesManual(stageTST.toString());
     }
-  }, [derivedTST]);
-
-  useEffect(() => {
-    if (derivedWASO != null) {
-      setSleepWaso(derivedWASO.toString());
-    }
-  }, [derivedWASO]);
-
-  useEffect(() => {
-    if (derivedLatency != null) {
-      setSleepLatency(derivedLatency.toString());
-    }
-  }, [derivedLatency]);
+  }, [sleepRemMin, sleepCoreMin, sleepDeepMin, hasStagesTST]);
 
   const populateForm = (existing: DailyEntry | null) => {
     if (existing) {
@@ -690,14 +653,14 @@ export default function LogScreen() {
         plannedWakeTime: scheduleWake,
         actualBedTime: actualBedTime || undefined,
         actualWakeTime: actualWakeTime || undefined,
-        sleepLatencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
-        sleepWasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
+        sleepLatencyMin: sleepDerived.sleepSourceMode ? (sleepDerived.latencyProxy ?? undefined) : undefined,
+        sleepWasoMin: sleepDerived.sleepSourceMode ? (sleepDerived.wasoEst ?? undefined) : undefined,
         napMinutes: napMinutes ? parseInt(napMinutes, 10) : undefined,
         sleepAwakeMin: sleepAwakeMin ? parseInt(sleepAwakeMin, 10) : undefined,
         sleepRemMin: sleepRemMin ? parseInt(sleepRemMin, 10) : undefined,
         sleepCoreMin: sleepCoreMin ? parseInt(sleepCoreMin, 10) : undefined,
         sleepDeepMin: sleepDeepMin ? parseInt(sleepDeepMin, 10) : undefined,
-        sleepSourceMode: sleepSourceModeVal ?? undefined,
+        sleepSourceMode: sleepDerived.sleepSourceMode ?? undefined,
         waterLiters: water ? parseFloat(water) : undefined,
         steps: steps ? parseInt(steps, 10) : undefined,
         cardioMin: cardio ? parseInt(cardio, 10) : undefined,
@@ -1014,36 +977,39 @@ export default function LogScreen() {
               />
             </View>
           </View>
-          {stagesComplete && derivedTIB != null && derivedTST != null && (
+          {sleepDerived.sleepSourceMode != null && sleepDerived.tib != null && sleepDerived.tst != null && (
             <View style={{ backgroundColor: Colors.surface, borderRadius: 10, padding: 10, gap: 6 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1, alignItems: "center" }}>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TIB</Text>
-                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(derivedTIB / 60)}h {derivedTIB % 60}m</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(sleepDerived.tib / 60)}h {sleepDerived.tib % 60}m</Text>
                 </View>
                 <View style={{ flex: 1, alignItems: "center" }}>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TST</Text>
-                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{Math.floor(derivedTST / 60)}h {derivedTST % 60}m</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{Math.floor(sleepDerived.tst / 60)}h {sleepDerived.tst % 60}m</Text>
                 </View>
                 <View style={{ flex: 1, alignItems: "center" }}>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Eff</Text>
-                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: derivedTST / derivedTIB >= 0.85 ? "#34D399" : derivedTST / derivedTIB >= 0.7 ? "#FBBF24" : "#EF4444" }}>{Math.round((derivedTST / derivedTIB) * 100)}%</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: (sleepDerived.efficiency ?? 0) >= 85 ? "#34D399" : (sleepDerived.efficiency ?? 0) >= 70 ? "#FBBF24" : "#EF4444" }}>{sleepDerived.efficiency ?? 0}%</Text>
                 </View>
               </View>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>WASO</Text>
-                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedWASO != null && derivedWASO <= 30 ? "#34D399" : derivedWASO != null && derivedWASO <= 60 ? "#FBBF24" : "#EF4444" }}>{derivedWASO ?? 0}m</Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>WASO est</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: sleepDerived.wasoEst != null && sleepDerived.wasoEst <= 30 ? "#34D399" : sleepDerived.wasoEst != null && sleepDerived.wasoEst <= 60 ? "#FBBF24" : "#EF4444" }}>{sleepDerived.wasoEst != null ? `${sleepDerived.wasoEst}m` : "—"}</Text>
                 </View>
                 <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Latency</Text>
-                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedLatency != null && derivedLatency <= 15 ? "#34D399" : derivedLatency != null && derivedLatency <= 30 ? "#FBBF24" : "#EF4444" }}>{derivedLatency ?? 0}m</Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Latency est</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: sleepDerived.latencyProxy != null && sleepDerived.latencyProxy <= 15 ? "#34D399" : sleepDerived.latencyProxy != null && sleepDerived.latencyProxy <= 30 ? "#FBBF24" : "#EF4444" }}>{sleepDerived.latencyProxy != null ? `${sleepDerived.latencyProxy}m` : "—"}</Text>
                 </View>
                 <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Awake</Text>
-                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedAwakeInBed != null && derivedAwakeInBed <= 30 ? "#34D399" : derivedAwakeInBed != null && derivedAwakeInBed <= 60 ? "#FBBF24" : "#EF4444" }}>{derivedAwakeInBed ?? 0}m</Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Awake in bed</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: sleepDerived.awakeInBed != null && sleepDerived.awakeInBed <= 30 ? "#34D399" : sleepDerived.awakeInBed != null && sleepDerived.awakeInBed <= 60 ? "#FBBF24" : "#EF4444" }}>{sleepDerived.awakeInBed != null ? `${sleepDerived.awakeInBed}m` : "—"}</Text>
                 </View>
               </View>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, textAlign: "center" as const, marginTop: 2 }}>
+                source: {sleepDerived.sleepSourceMode}
+              </Text>
             </View>
           )}
           <View style={{ flexDirection: "row", gap: 8 }}>
@@ -1136,8 +1102,8 @@ export default function LogScreen() {
               srBed: actualBedTime || null,
               srWake: actualWakeTime || null,
               fitbitSleepMin: undefined,
-              latencyMin: sleepLatency ? parseInt(sleepLatency, 10) : undefined,
-              wasoMin: sleepWaso ? parseInt(sleepWaso, 10) : undefined,
+              latencyMin: sleepDerived.latencyProxy ?? undefined,
+              wasoMin: sleepDerived.wasoEst ?? undefined,
             });
             const humanLabel = deviationHumanLabel(dev.classification);
             if (!humanLabel) return null;
@@ -1363,14 +1329,14 @@ export default function LogScreen() {
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
                 <Ionicons name="moon-outline" size={16} color="#60A5FA" />
-                <Text style={styles.inputLabelText}>{stagesComplete ? "TST" : "Sleep"}</Text>
+                <Text style={styles.inputLabelText}>{hasStagesTST ? "TST" : "Sleep"}</Text>
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={[styles.input, stagesComplete ? { color: Colors.textTertiary } : undefined]}
+                  style={[styles.input, hasStagesTST ? { color: Colors.textTertiary } : undefined]}
                   value={sleepMinutesManual}
-                  onChangeText={stagesComplete ? undefined : handleMinuteSetter(setSleepMinutesManual)}
-                  editable={!stagesComplete}
+                  onChangeText={hasStagesTST ? undefined : handleMinuteSetter(setSleepMinutesManual)}
+                  editable={!hasStagesTST}
                   placeholder="420 or 7:00"
                   placeholderTextColor={Colors.textTertiary}
                   keyboardAppearance="dark"
