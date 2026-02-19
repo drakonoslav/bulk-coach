@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from "react";
+import React, { useCallback, useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -248,6 +248,19 @@ export default function LogScreen() {
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
+
+  useEffect(() => {
+    if (sleepLatency || sleepWaso) return;
+    if (!actualBedTime || !actualWakeTime || !sleepMinutesManual) return;
+    const toM = (t: string) => { const m = t.trim().match(/^(\d{1,2}):(\d{2})/); return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0; };
+    let tib = toM(actualWakeTime) - toM(actualBedTime);
+    if (tib < 0) tib += 1440;
+    const tst = parseInt(sleepMinutesManual, 10);
+    if (isNaN(tst) || tib < tst) return;
+    const totalAwake = tib - tst;
+    setSleepLatency("0");
+    setSleepWaso(totalAwake.toString());
+  }, [actualBedTime, actualWakeTime, sleepMinutesManual, sleepLatency, sleepWaso]);
 
   const populateForm = (existing: DailyEntry | null) => {
     if (existing) {
@@ -925,90 +938,38 @@ export default function LogScreen() {
               />
             </View>
           </View>
-          {(() => {
-            const toMinHelper = (t: string): number => {
-              const hm = t.trim().match(/^(\d{1,2}):(\d{2})/);
-              return hm ? parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10) : 0;
-            };
-            const spanHelper = (a: number, b: number): number => {
-              let d = b - a;
-              if (d < 0) d += 1440;
-              return d;
-            };
-
-            const hasBedWake = !!(actualBedTime && actualWakeTime);
-            const tib = hasBedWake ? spanHelper(toMinHelper(actualBedTime), toMinHelper(actualWakeTime)) : null;
-            const tst = sleepMinutesManual ? parseInt(sleepMinutesManual, 10) : null;
-            const totalAwake = (tib != null && tst != null && tib >= tst) ? tib - tst : null;
-
-            const latencyNum = sleepLatency ? parseInt(sleepLatency, 10) : null;
-            const wasoNum = sleepWaso ? parseInt(sleepWaso, 10) : null;
-
-            const derivedWaso = (totalAwake != null && latencyNum != null)
-              ? Math.max(0, totalAwake - latencyNum) : null;
-            const derivedLatency = (totalAwake != null && wasoNum != null)
-              ? Math.max(0, totalAwake - wasoNum) : null;
-            const showTotalAwakeHint = totalAwake != null && latencyNum == null && wasoNum == null;
-
-            return (
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <View style={styles.inputLabel}>
-                    <Ionicons name="time-outline" size={16} color={Colors.secondary} />
-                    <Text style={styles.inputLabelText}>Latency (min)</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={sleepLatency}
-                    onChangeText={setSleepLatency}
-                    placeholder="min"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="numeric"
-                    keyboardAppearance="dark"
-                  />
-                  {!sleepLatency && derivedLatency != null && (
-                    <Pressable onPress={() => setSleepLatency(derivedLatency.toString())}>
-                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 3 }}>
-                        Derived: {derivedLatency}m  (tap to use)
-                      </Text>
-                    </Pressable>
-                  )}
-                  {!sleepLatency && showTotalAwakeHint && (
-                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 3 }}>
-                      Total awake: {totalAwake}m
-                    </Text>
-                  )}
-                </View>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <View style={styles.inputLabel}>
-                    <Ionicons name="alert-circle-outline" size={16} color={Colors.secondary} />
-                    <Text style={styles.inputLabelText}>WASO (min)</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={sleepWaso}
-                    onChangeText={setSleepWaso}
-                    placeholder="min"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="numeric"
-                    keyboardAppearance="dark"
-                  />
-                  {!sleepWaso && derivedWaso != null && (
-                    <Pressable onPress={() => setSleepWaso(derivedWaso.toString())}>
-                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 3 }}>
-                        Derived: {derivedWaso}m  (tap to use)
-                      </Text>
-                    </Pressable>
-                  )}
-                  {!sleepWaso && showTotalAwakeHint && (
-                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 3 }}>
-                      Total awake: {totalAwake}m
-                    </Text>
-                  )}
-                </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="time-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>Latency (min)</Text>
               </View>
-            );
-          })()}
+              <TextInput
+                style={styles.input}
+                value={sleepLatency}
+                onChangeText={setSleepLatency}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="alert-circle-outline" size={16} color={Colors.secondary} />
+                <Text style={styles.inputLabelText}>WASO (min)</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={sleepWaso}
+                onChangeText={setSleepWaso}
+                placeholder="min"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                keyboardAppearance="dark"
+              />
+            </View>
+          </View>
           <View style={{ flexDirection: "row", gap: 8 }}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
