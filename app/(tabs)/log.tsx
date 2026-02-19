@@ -23,6 +23,20 @@ import { getApiUrl, authFetch } from "@/lib/query-client";
 import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
 import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
 
+function parseMinuteInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const hm = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (hm) {
+    return (parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10)).toString();
+  }
+  return trimmed;
+}
+
+function handleMinuteSetter(setter: (v: string) => void) {
+  return (raw: string) => setter(parseMinuteInput(raw));
+}
+
 function formatDateLabel(dateStr: string): string {
   const today = todayStr();
   const yesterday = (() => {
@@ -980,10 +994,9 @@ export default function LogScreen() {
               <TextInput
                 style={styles.input}
                 value={sleepAwakeMin}
-                onChangeText={setSleepAwakeMin}
-                placeholder="min"
+                onChangeText={handleMinuteSetter(setSleepAwakeMin)}
+                placeholder="30 or 0:30"
                 placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
                 keyboardAppearance="dark"
               />
             </View>
@@ -995,10 +1008,9 @@ export default function LogScreen() {
               <TextInput
                 style={styles.input}
                 value={sleepRemMin}
-                onChangeText={setSleepRemMin}
-                placeholder="min"
+                onChangeText={handleMinuteSetter(setSleepRemMin)}
+                placeholder="94 or 1:34"
                 placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
                 keyboardAppearance="dark"
               />
             </View>
@@ -1010,10 +1022,9 @@ export default function LogScreen() {
               <TextInput
                 style={styles.input}
                 value={sleepCoreMin}
-                onChangeText={setSleepCoreMin}
-                placeholder="min"
+                onChangeText={handleMinuteSetter(setSleepCoreMin)}
+                placeholder="210 or 3:30"
                 placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
                 keyboardAppearance="dark"
               />
             </View>
@@ -1025,10 +1036,9 @@ export default function LogScreen() {
               <TextInput
                 style={styles.input}
                 value={sleepDeepMin}
-                onChangeText={setSleepDeepMin}
-                placeholder="min"
+                onChangeText={handleMinuteSetter(setSleepDeepMin)}
+                placeholder="60 or 1:00"
                 placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
                 keyboardAppearance="dark"
               />
             </View>
@@ -1042,10 +1052,9 @@ export default function LogScreen() {
               <TextInput
                 style={styles.input}
                 value={napMinutes}
-                onChangeText={setNapMinutes}
-                placeholder="0"
+                onChangeText={handleMinuteSetter(setNapMinutes)}
+                placeholder="0 or 0:20"
                 placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
                 keyboardAppearance="dark"
               />
             </View>
@@ -1092,10 +1101,9 @@ export default function LogScreen() {
             <TextInput
               style={styles.input}
               value={tossedMinutes}
-              onChangeText={setTossedMinutes}
-              placeholder="0"
+              onChangeText={handleMinuteSetter(setTossedMinutes)}
+              placeholder="0 or 0:15"
               placeholderTextColor={Colors.textTertiary}
-              keyboardType="numeric"
               keyboardAppearance="dark"
             />
           </View>
@@ -1182,10 +1190,9 @@ export default function LogScreen() {
                   <TextInput
                     style={styles.input}
                     value={cardio}
-                    onChangeText={setCardio}
-                    placeholder="40"
+                    onChangeText={handleMinuteSetter(setCardio)}
+                    placeholder="40 or 0:40"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="number-pad"
                     keyboardAppearance="dark"
                   />
                   <Text style={styles.inputSuffix}>min</Text>
@@ -1263,10 +1270,9 @@ export default function LogScreen() {
                   <TextInput
                     style={styles.input}
                     value={liftMin}
-                    onChangeText={setLiftMin}
-                    placeholder="75"
+                    onChangeText={handleMinuteSetter(setLiftMin)}
+                    placeholder="75 or 1:15"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="number-pad"
                     keyboardAppearance="dark"
                   />
                   <Text style={styles.inputSuffix}>min</Text>
@@ -1302,11 +1308,10 @@ export default function LogScreen() {
                 <TextInput
                   style={[styles.input, stagesComplete ? { color: Colors.textTertiary } : undefined]}
                   value={sleepMinutesManual}
-                  onChangeText={stagesComplete ? undefined : setSleepMinutesManual}
+                  onChangeText={stagesComplete ? undefined : handleMinuteSetter(setSleepMinutesManual)}
                   editable={!stagesComplete}
-                  placeholder="420"
+                  placeholder="420 or 7:00"
                   placeholderTextColor={Colors.textTertiary}
-                  keyboardType="number-pad"
                   keyboardAppearance="dark"
                 />
                 <Text style={styles.inputSuffix}>min</Text>
@@ -1649,10 +1654,9 @@ export default function LogScreen() {
                   <TextInput
                     style={styles.input}
                     value={nocturnalDuration}
-                    onChangeText={setNocturnalDuration}
-                    placeholder="0"
+                    onChangeText={handleMinuteSetter(setNocturnalDuration)}
+                    placeholder="0 or 0:15"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
                     keyboardAppearance="dark"
                   />
                   <Text style={styles.inputSuffix}>min</Text>
