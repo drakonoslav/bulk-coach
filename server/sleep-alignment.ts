@@ -89,6 +89,11 @@ export interface SleepBlock {
   // Derived: prefer canonical device efficiency if present; else estimatedSleepMin / timeInBedMin.
   // Ratio 0..1 (clamped).
   sleepEfficiency: number | null;
+
+  sleepAwakeMin: number | null;
+  sleepRemMin: number | null;
+  sleepCoreMin: number | null;
+  sleepDeepMin: number | null;
 }
 
 export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
@@ -101,7 +106,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
       `SELECT sleep_minutes,
               planned_bed_time, planned_wake_time,
               actual_bed_time, actual_wake_time,
-              sleep_latency_min, sleep_waso_min, nap_minutes
+              sleep_latency_min, sleep_waso_min, nap_minutes,
+              sleep_awake_min, sleep_rem_min, sleep_core_min, sleep_deep_min
        FROM daily_log WHERE day = $1 AND user_id = $2`,
       [date, userId]
     ),
@@ -114,7 +120,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
       `SELECT sleep_minutes,
               planned_bed_time, planned_wake_time,
               actual_bed_time, actual_wake_time,
-              sleep_latency_min, sleep_waso_min, nap_minutes
+              sleep_latency_min, sleep_waso_min, nap_minutes,
+              sleep_awake_min, sleep_rem_min, sleep_core_min, sleep_deep_min
        FROM daily_log WHERE day = $1 AND user_id = $2`,
       [yesterdayStr, userId]
     ),
@@ -195,22 +202,31 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepAdequacyScore = clamp(Math.round(ratio * 100), 0, 100);
   }
 
+  const stageAwake: number | null = r?.sleep_awake_min != null ? Number(r.sleep_awake_min) : null;
+  const stageRem: number | null = r?.sleep_rem_min != null ? Number(r.sleep_rem_min) : null;
+  const stageCore: number | null = r?.sleep_core_min != null ? Number(r.sleep_core_min) : null;
+  const stageDeep: number | null = r?.sleep_deep_min != null ? Number(r.sleep_deep_min) : null;
+  const hasStages = stageAwake != null && stageRem != null && stageCore != null && stageDeep != null;
+
   let timeInBedMin: number | null = null;
   let sleepEfficiencyEst: number | null = null;
   let estimatedSleepMin: number | null = null;
 
-  if (actualBed && actualWake) {
+  if (hasStages) {
+    timeInBedMin = stageAwake + stageRem + stageCore + stageDeep;
+    estimatedSleepMin = stageRem + stageCore + stageDeep;
+  } else if (actualBed && actualWake) {
     timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
 
     if (latency != null || waso != null) {
       estimatedSleepMin = timeInBedMin - (latency ?? 0) - (waso ?? 0);
       if (estimatedSleepMin < 0) estimatedSleepMin = 0;
     }
+  }
 
-    if (fitbitMin != null && timeInBedMin > 0) {
-      sleepEfficiencyEst = Math.round((fitbitMin / timeInBedMin) * 100) / 100;
-      if (sleepEfficiencyEst > 1.0) sleepEfficiencyEst = 1.0;
-    }
+  if (fitbitMin != null && timeInBedMin != null && timeInBedMin > 0) {
+    sleepEfficiencyEst = Math.round((fitbitMin / timeInBedMin) * 100) / 100;
+    if (sleepEfficiencyEst > 1.0) sleepEfficiencyEst = 1.0;
   }
 
   let fitbitVsReportedDeltaMin: number | null = null;
@@ -222,14 +238,18 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   const sleepWASOMin = waso ?? null;
 
   let awakeInBedMin: number | null = null;
-  if (timeInBedMin != null) {
+  if (hasStages) {
+    awakeInBedMin = stageAwake;
+  } else if (timeInBedMin != null) {
     if (sleepLatencyMin != null || sleepWASOMin != null) {
       awakeInBedMin = (sleepLatencyMin ?? 0) + (sleepWASOMin ?? 0);
     }
   }
 
   let sleepEfficiency: number | null = null;
-  if (canon?.sleep_efficiency != null) {
+  if (hasStages && timeInBedMin != null && timeInBedMin > 0) {
+    sleepEfficiency = estimatedSleepMin! / timeInBedMin;
+  } else if (canon?.sleep_efficiency != null) {
     const raw = Number(canon.sleep_efficiency);
     sleepEfficiency = raw > 1 ? raw / 100 : raw;
   } else if (estimatedSleepMin != null && timeInBedMin != null && timeInBedMin > 0) {
@@ -254,6 +274,10 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepWASOMin,
     awakeInBedMin,
     sleepEfficiency,
+    sleepAwakeMin: stageAwake,
+    sleepRemMin: stageRem,
+    sleepCoreMin: stageCore,
+    sleepDeepMin: stageDeep,
   };
 }
 
