@@ -991,6 +991,16 @@ export default function ChecklistScreen() {
               {sb?.awakeInBedMin != null && sigRow("Awake in bed", sigText(
                 `${sb.awakeInBedMin}m`,
                 sb.awakeInBedMin <= 30 ? "#34D399" : sb.awakeInBedMin <= 60 ? "#FBBF24" : "#EF4444",
+              ))}
+
+              {sb?.remMin != null && sigRow("REM", sigText(
+                `${sb.remMin}m${sb.remDeltaMin != null ? ` (${sb.remDeltaMin >= 0 ? "+" : ""}${Math.round(sb.remDeltaMin)}m)` : ""}`,
+                sb.remDeltaMin == null ? "#9CA3AF" : sb.remDeltaMin >= -5 ? "#34D399" : sb.remDeltaMin >= -15 ? "#FBBF24" : "#EF4444",
+              ))}
+
+              {sb?.deepMin != null && sigRow("Deep", sigText(
+                `${sb.deepMin}m${sb.deepDeltaMin != null ? ` (${sb.deepDeltaMin >= 0 ? "+" : ""}${Math.round(sb.deepDeltaMin)}m)` : ""}`,
+                sb.deepDeltaMin == null ? "#9CA3AF" : sb.deepDeltaMin >= -5 ? "#34D399" : sb.deepDeltaMin >= -15 ? "#FBBF24" : "#EF4444",
               ), true)}
 
               {sectionHeader("System State", "pulse-outline", "#34D399")}
