@@ -961,7 +961,7 @@ export default function LogScreen() {
                     style={styles.input}
                     value={sleepLatency}
                     onChangeText={setSleepLatency}
-                    placeholder="10"
+                    placeholder="min"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardType="numeric"
                     keyboardAppearance="dark"
@@ -988,7 +988,7 @@ export default function LogScreen() {
                     style={styles.input}
                     value={sleepWaso}
                     onChangeText={setSleepWaso}
-                    placeholder="0"
+                    placeholder="min"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardType="numeric"
                     keyboardAppearance="dark"
