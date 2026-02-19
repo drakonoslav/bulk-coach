@@ -274,12 +274,31 @@ export default function LogScreen() {
   const derivedTST = stagesComplete
     ? parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
     : null;
+  const derivedAwakeInBed = (derivedTIB != null && derivedTST != null)
+    ? Math.max(0, derivedTIB - derivedTST)
+    : null;
+  const derivedWASO = stagesComplete ? parseInt(sleepAwakeMin, 10) : null;
+  const derivedLatency = (derivedAwakeInBed != null && derivedWASO != null)
+    ? Math.max(0, derivedAwakeInBed - derivedWASO)
+    : null;
 
   useEffect(() => {
     if (derivedTST != null && !isNaN(derivedTST)) {
       setSleepMinutesManual(derivedTST.toString());
     }
   }, [derivedTST]);
+
+  useEffect(() => {
+    if (derivedWASO != null) {
+      setSleepWaso(derivedWASO.toString());
+    }
+  }, [derivedWASO]);
+
+  useEffect(() => {
+    if (derivedLatency != null) {
+      setSleepLatency(derivedLatency.toString());
+    }
+  }, [derivedLatency]);
 
   const populateForm = (existing: DailyEntry | null) => {
     if (existing) {
@@ -970,18 +989,34 @@ export default function LogScreen() {
             </View>
           </View>
           {stagesComplete && derivedTIB != null && derivedTST != null && (
-            <View style={{ flexDirection: "row", gap: 8, backgroundColor: Colors.surface, borderRadius: 10, padding: 10 }}>
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TIB</Text>
-                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(derivedTIB / 60)}h {derivedTIB % 60}m</Text>
+            <View style={{ backgroundColor: Colors.surface, borderRadius: 10, padding: 10, gap: 6 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TIB</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(derivedTIB / 60)}h {derivedTIB % 60}m</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TST</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{Math.floor(derivedTST / 60)}h {derivedTST % 60}m</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Eff</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: derivedTST / derivedTIB >= 0.85 ? "#34D399" : derivedTST / derivedTIB >= 0.7 ? "#FBBF24" : "#EF4444" }}>{Math.round((derivedTST / derivedTIB) * 100)}%</Text>
+                </View>
               </View>
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TST</Text>
-                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{Math.floor(derivedTST / 60)}h {derivedTST % 60}m</Text>
-              </View>
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Eff</Text>
-                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: derivedTST / derivedTIB >= 0.85 ? "#34D399" : derivedTST / derivedTIB >= 0.7 ? "#FBBF24" : "#EF4444" }}>{Math.round((derivedTST / derivedTIB) * 100)}%</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>WASO</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedWASO != null && derivedWASO <= 30 ? "#34D399" : derivedWASO != null && derivedWASO <= 60 ? "#FBBF24" : "#EF4444" }}>{derivedWASO ?? 0}m</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Latency</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedLatency != null && derivedLatency <= 15 ? "#34D399" : derivedLatency != null && derivedLatency <= 30 ? "#FBBF24" : "#EF4444" }}>{derivedLatency ?? 0}m</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Awake</Text>
+                  <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: derivedAwakeInBed != null && derivedAwakeInBed <= 30 ? "#34D399" : derivedAwakeInBed != null && derivedAwakeInBed <= 60 ? "#FBBF24" : "#EF4444" }}>{derivedAwakeInBed ?? 0}m</Text>
+                </View>
               </View>
             </View>
           )}
@@ -1302,7 +1337,7 @@ export default function LogScreen() {
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
                 <Ionicons name="moon-outline" size={16} color="#60A5FA" />
-                <Text style={styles.inputLabelText}>Sleep</Text>
+                <Text style={styles.inputLabelText}>{stagesComplete ? "TST" : "Sleep"}</Text>
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
