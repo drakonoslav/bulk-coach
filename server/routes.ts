@@ -1189,6 +1189,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         result.deltas?.hrv_pct ?? null,
         result.deltas?.rhr_bpm ?? null,
         result.deltas?.proxy_pct ?? null,
+        sleepBlock?.awakeInBedMin ?? null,
+        sleepBlock?.awakeInBedDeltaMin ?? null,
       );
 
       res.json({
