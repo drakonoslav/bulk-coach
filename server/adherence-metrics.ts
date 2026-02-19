@@ -142,12 +142,11 @@ export function computePrimaryDriver(
   }
 
   if (bedDevMin != null && bedDevMin > 30) {
+    const absBed = Math.round(bedDevMin);
     candidates.push({
       driver: "Late bedtime",
       severity: bedDevMin * 0.7,
-      recommendation: bedDevMin > 60
-        ? "Bedtime drift: start wind-down earlier."
-        : `Bedtime ${bedDevMin}m late — tightening schedule will help.`,
+      recommendation: `Circadian Drift: +${absBed}m past anchor (21:45)\nRecommendation: compress bedtime window by 10–15m nightly`,
     });
   }
 
