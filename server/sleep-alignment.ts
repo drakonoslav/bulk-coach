@@ -9,7 +9,7 @@ import {
 } from "../lib/sleep-timing";
 
 const DEFAULT_USER_ID = 'local_default';
-const DEFAULT_PLAN_BED = "21:45";
+const DEFAULT_PLAN_BED = "22:30";
 const DEFAULT_PLAN_WAKE = "05:30";
 
 function toMin(t: string): number {
@@ -66,11 +66,19 @@ export interface SleepAlignment {
   classification: SleepClassification;
 }
 
+export interface StageBaseline {
+  avg7d: number | null;
+  avg28d: number | null;
+  deltaVs7d: number | null;
+  deltaVs28d: number | null;
+}
+
 export interface SleepBlock {
   sleepAlignment: SleepAlignment;
 
   plannedSleepMin: number | null;
   sleepDebtMin: number | null;
+  sleepDeltaMin: number | null;
   sleepAdequacyScore: number | null;
   sleepEfficiencyEst: number | null;
   fitbitSleepMinutes: number | null;
@@ -79,21 +87,61 @@ export interface SleepBlock {
   estimatedSleepMin: number | null;
   fitbitVsReportedDeltaMin: number | null;
 
-  // --- NEW (derived / resolved sleep-structure fields) ---
-  // Manual fields (from daily_log) after resolution; do NOT invent values.
   sleepLatencyMin: number | null;
   sleepWASOMin: number | null;
-  // Derived: time spent awake while in bed (latency + WASO), only when at least
-  // one awake component is known. Otherwise null (unknown).
+  tossAndTurnMin: number | null;
   awakeInBedMin: number | null;
-  // Derived: prefer canonical device efficiency if present; else estimatedSleepMin / timeInBedMin.
-  // Ratio 0..1 (clamped).
   sleepEfficiency: number | null;
 
   sleepAwakeMin: number | null;
   sleepRemMin: number | null;
   sleepCoreMin: number | null;
   sleepDeepMin: number | null;
+
+  remPct: number | null;
+  deepPct: number | null;
+
+  stageBaselines: {
+    awake: StageBaseline;
+    rem: StageBaseline;
+    core: StageBaseline;
+    deep: StageBaseline;
+    asleep: StageBaseline;
+  } | null;
+}
+
+function buildStageBaselines(
+  rows: any[],
+  todayAwake: number, todayRem: number, todayCore: number, todayDeep: number
+): SleepBlock["stageBaselines"] {
+  if (rows.length === 0) return null;
+
+  const mk = (vals: number[], today: number): StageBaseline => {
+    const last7 = vals.slice(0, Math.min(7, vals.length));
+    const avg7 = last7.length > 0 ? Math.round(last7.reduce((a, b) => a + b, 0) / last7.length) : null;
+    const avg28 = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    return {
+      avg7d: avg7,
+      avg28d: avg28,
+      deltaVs7d: avg7 != null ? today - avg7 : null,
+      deltaVs28d: avg28 != null ? today - avg28 : null,
+    };
+  };
+
+  const awakes = rows.map(r => Number(r.sleep_awake_min));
+  const rems = rows.map(r => Number(r.sleep_rem_min));
+  const cores = rows.map(r => Number(r.sleep_core_min));
+  const deeps = rows.map(r => Number(r.sleep_deep_min));
+  const asleeps = rows.map((r, i) => rems[i] + cores[i] + deeps[i]);
+  const todayAsleep = todayRem + todayCore + todayDeep;
+
+  return {
+    awake: mk(awakes, todayAwake),
+    rem: mk(rems, todayRem),
+    core: mk(cores, todayCore),
+    deep: mk(deeps, todayDeep),
+    asleep: mk(asleeps, todayAsleep),
+  };
 }
 
 export async function computeSleepBlock(date: string, userId: string = DEFAULT_USER_ID): Promise<SleepBlock | null> {
@@ -101,7 +149,7 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-  const [logResult, canonResult, logYestResult, canonYestResult] = await Promise.all([
+  const [logResult, canonResult, logYestResult, canonYestResult, baselineResult] = await Promise.all([
     pool.query(
       `SELECT sleep_minutes,
               planned_bed_time, planned_wake_time,
@@ -129,13 +177,24 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
       `SELECT sleep_start, sleep_end, total_sleep_minutes, sleep_efficiency
        FROM sleep_summary_daily WHERE date = $1 AND user_id = $2`,
       [yesterdayStr, userId]
+    ),
+    pool.query(
+      `SELECT sleep_awake_min, sleep_rem_min, sleep_core_min, sleep_deep_min
+       FROM daily_log
+       WHERE user_id = $1 AND day < $2 AND day >= ($2::date - 28)::text
+         AND sleep_awake_min IS NOT NULL
+         AND sleep_rem_min IS NOT NULL
+         AND sleep_core_min IS NOT NULL
+         AND sleep_deep_min IS NOT NULL
+       ORDER BY day DESC`,
+      [userId, date]
     ),
   ]);
 
   let r = logResult.rows[0];
   let canon = canonResult.rows[0];
 
-  const hasSleepToday = !!(r?.actual_bed_time || r?.sleep_minutes || canon?.sleep_start || canon?.total_sleep_minutes);
+  const hasSleepToday = !!(r?.actual_bed_time || r?.sleep_minutes || r?.sleep_awake_min != null || canon?.sleep_start || canon?.total_sleep_minutes);
 
   if (!hasSleepToday) {
     r = r || logYestResult.rows[0];
@@ -145,40 +204,123 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   if (!r && !canon) return null;
 
   const schedule = await getSleepPlanSettings(userId);
-  const plannedBed: string | null = r?.planned_bed_time || schedule.bedtime;
-  const plannedWake: string | null = r?.planned_wake_time || schedule.wake;
+  const plannedBed: string = schedule.bedtime;
+  const plannedWake: string = schedule.wake;
   const actualBed: string | null = r?.actual_bed_time || canon?.sleep_start || null;
   const actualWake: string | null = r?.actual_wake_time || canon?.sleep_end || null;
-  const latency: number | null = r?.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
-  const waso: number | null = r?.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
   const napMin: number | null = r?.nap_minutes != null ? Number(r.nap_minutes) : null;
   const fitbitMin: number | null = r?.sleep_minutes != null ? Number(r.sleep_minutes) : (canon?.total_sleep_minutes != null ? Number(canon.total_sleep_minutes) : null);
 
-  let plannedSleepMin: number | null = null;
-  if (plannedBed && plannedWake) {
-    plannedSleepMin = spanMinutes(toMin(plannedBed), toMin(plannedWake));
-  }
+  const plannedSleepMin: number = spanMinutes(toMin(plannedBed), toMin(plannedWake));
+
+  const stageAwake: number | null = r?.sleep_awake_min != null ? Number(r.sleep_awake_min) : null;
+  const stageRem: number | null = r?.sleep_rem_min != null ? Number(r.sleep_rem_min) : null;
+  const stageCore: number | null = r?.sleep_core_min != null ? Number(r.sleep_core_min) : null;
+  const stageDeep: number | null = r?.sleep_deep_min != null ? Number(r.sleep_deep_min) : null;
+  const hasStages = stageAwake != null && stageRem != null && stageCore != null && stageDeep != null;
 
   let bedDevMin: number | null = null;
   let wakeDevMin: number | null = null;
 
-  if (plannedBed && actualBed) {
-    bedDevMin = noiseFloorMinutes(circularDeltaMinutes(toMin(actualBed), toMin(plannedBed)));
+  if (actualBed) {
+    bedDevMin = circularDeltaMinutes(toMin(actualBed), toMin(plannedBed));
   }
-  if (plannedWake && actualWake) {
-    wakeDevMin = noiseFloorMinutes(circularDeltaMinutes(toMin(actualWake), toMin(plannedWake)));
+  if (actualWake) {
+    wakeDevMin = circularDeltaMinutes(toMin(actualWake), toMin(plannedWake));
   }
 
-  const score = sleepAlignmentScore(bedDevMin, wakeDevMin);
+  let alignmentScore: number | null = null;
+  if (bedDevMin != null && wakeDevMin != null) {
+    const penalty = clamp(Math.abs(bedDevMin) + Math.abs(wakeDevMin), 0, 180);
+    alignmentScore = Math.round(100 - (penalty * (100 / 180)));
+  }
+
   const devLabel = formatBedWakeDeviation(bedDevMin, wakeDevMin);
 
+  let timeInBedMin: number | null = null;
+  let estimatedSleepMin: number | null = null;
+  let sleepEfficiency: number | null = null;
+  let awakeInBedMin: number | null = null;
+  let sleepLatencyMin: number | null = null;
+  let sleepWASOMin: number | null = null;
+  let tossAndTurnMin: number | null = null;
+  let sleepDeltaMin: number | null = null;
   let shortfallMin: number | null = null;
-  if (plannedSleepMin != null && fitbitMin != null) {
-    const raw = Math.max(0, plannedSleepMin - fitbitMin);
-    shortfallMin = noiseFloorMinutes(raw);
+  let sleepDebtMin: number | null = null;
+  let sleepAdequacyScore: number | null = null;
+  let sleepEfficiencyEst: number | null = null;
+  let fitbitVsReportedDeltaMin: number | null = null;
+  let remPct: number | null = null;
+  let deepPct: number | null = null;
+
+  if (hasStages) {
+    timeInBedMin = stageAwake + stageRem + stageCore + stageDeep;
+    estimatedSleepMin = stageRem + stageCore + stageDeep;
+    awakeInBedMin = stageAwake;
+
+    sleepLatencyMin = Math.min(10, awakeInBedMin);
+    sleepWASOMin = Math.max(0, awakeInBedMin - sleepLatencyMin);
+    tossAndTurnMin = sleepWASOMin;
+
+    if (timeInBedMin > 0) {
+      sleepEfficiency = clamp(estimatedSleepMin / timeInBedMin, 0, 1);
+    }
+
+    sleepDeltaMin = estimatedSleepMin - plannedSleepMin;
+    shortfallMin = Math.max(0, -sleepDeltaMin);
+    sleepDebtMin = -sleepDeltaMin;
+    sleepAdequacyScore = clamp(Math.round(100 * estimatedSleepMin / plannedSleepMin), 0, 110);
+
+    if (estimatedSleepMin > 0) {
+      remPct = Math.round((stageRem / estimatedSleepMin) * 1000) / 10;
+      deepPct = Math.round((stageDeep / estimatedSleepMin) * 1000) / 10;
+    }
+  } else {
+    if (actualBed && actualWake) {
+      timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
+    }
+
+    const manualLatency: number | null = r?.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
+    const manualWaso: number | null = r?.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
+
+    if (timeInBedMin != null && (manualLatency != null || manualWaso != null)) {
+      estimatedSleepMin = timeInBedMin - (manualLatency ?? 0) - (manualWaso ?? 0);
+      if (estimatedSleepMin < 0) estimatedSleepMin = 0;
+      sleepLatencyMin = manualLatency;
+      sleepWASOMin = manualWaso;
+      awakeInBedMin = (manualLatency ?? 0) + (manualWaso ?? 0);
+      tossAndTurnMin = manualWaso;
+    }
+
+    const asleepVal = estimatedSleepMin ?? fitbitMin;
+    if (asleepVal != null) {
+      sleepDeltaMin = asleepVal - plannedSleepMin;
+      shortfallMin = Math.max(0, -sleepDeltaMin);
+      sleepDebtMin = -sleepDeltaMin;
+      sleepAdequacyScore = clamp(Math.round(100 * asleepVal / plannedSleepMin), 0, 110);
+    }
+
+    if (fitbitMin != null && timeInBedMin != null && timeInBedMin > 0) {
+      sleepEfficiencyEst = Math.round((fitbitMin / timeInBedMin) * 100) / 100;
+      if (sleepEfficiencyEst > 1.0) sleepEfficiencyEst = 1.0;
+    }
+
+    if (canon?.sleep_efficiency != null) {
+      const raw = Number(canon.sleep_efficiency);
+      sleepEfficiency = raw > 1 ? raw / 100 : raw;
+    } else if (estimatedSleepMin != null && timeInBedMin != null && timeInBedMin > 0) {
+      sleepEfficiency = estimatedSleepMin / timeInBedMin;
+    }
+    if (sleepEfficiency != null) {
+      sleepEfficiency = clamp(sleepEfficiency, 0, 1);
+    }
+
+    if (estimatedSleepMin != null && fitbitMin != null) {
+      fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
+    }
   }
 
-  const classification = classifySleepDeviation({ bedDevMin, wakeDevMin, shortfallMin });
+  const classification = classifySleepDeviation({ bedDevMin, wakeDevMin, shortfallMin: shortfallMin != null ? noiseFloorMinutes(shortfallMin) : null });
 
   const sleepAlignment: SleepAlignment = {
     plannedBedTime: plannedBed,
@@ -187,82 +329,21 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     observedWakeLocal: actualWake,
     bedDeviationMin: bedDevMin,
     wakeDeviationMin: wakeDevMin,
-    alignmentScore: score,
+    alignmentScore,
     deviationLabel: devLabel,
-    shortfallMin,
+    shortfallMin: shortfallMin != null ? noiseFloorMinutes(shortfallMin) : null,
     classification,
   };
 
-  let sleepDebtMin: number | null = null;
-  let sleepAdequacyScore: number | null = null;
-
-  if (plannedSleepMin != null && fitbitMin != null) {
-    sleepDebtMin = plannedSleepMin - fitbitMin;
-    const ratio = fitbitMin / plannedSleepMin;
-    sleepAdequacyScore = clamp(Math.round(ratio * 100), 0, 100);
-  }
-
-  const stageAwake: number | null = r?.sleep_awake_min != null ? Number(r.sleep_awake_min) : null;
-  const stageRem: number | null = r?.sleep_rem_min != null ? Number(r.sleep_rem_min) : null;
-  const stageCore: number | null = r?.sleep_core_min != null ? Number(r.sleep_core_min) : null;
-  const stageDeep: number | null = r?.sleep_deep_min != null ? Number(r.sleep_deep_min) : null;
-  const hasStages = stageAwake != null && stageRem != null && stageCore != null && stageDeep != null;
-
-  let timeInBedMin: number | null = null;
-  let sleepEfficiencyEst: number | null = null;
-  let estimatedSleepMin: number | null = null;
-
-  if (hasStages) {
-    timeInBedMin = stageAwake + stageRem + stageCore + stageDeep;
-    estimatedSleepMin = stageRem + stageCore + stageDeep;
-  } else if (actualBed && actualWake) {
-    timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
-
-    if (latency != null || waso != null) {
-      estimatedSleepMin = timeInBedMin - (latency ?? 0) - (waso ?? 0);
-      if (estimatedSleepMin < 0) estimatedSleepMin = 0;
-    }
-  }
-
-  if (fitbitMin != null && timeInBedMin != null && timeInBedMin > 0) {
-    sleepEfficiencyEst = Math.round((fitbitMin / timeInBedMin) * 100) / 100;
-    if (sleepEfficiencyEst > 1.0) sleepEfficiencyEst = 1.0;
-  }
-
-  let fitbitVsReportedDeltaMin: number | null = null;
-  if (estimatedSleepMin != null && fitbitMin != null) {
-    fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
-  }
-
-  const sleepLatencyMin = latency ?? null;
-  const sleepWASOMin = waso ?? null;
-
-  let awakeInBedMin: number | null = null;
-  if (hasStages) {
-    awakeInBedMin = stageAwake;
-  } else if (timeInBedMin != null) {
-    if (sleepLatencyMin != null || sleepWASOMin != null) {
-      awakeInBedMin = (sleepLatencyMin ?? 0) + (sleepWASOMin ?? 0);
-    }
-  }
-
-  let sleepEfficiency: number | null = null;
-  if (hasStages && timeInBedMin != null && timeInBedMin > 0) {
-    sleepEfficiency = estimatedSleepMin! / timeInBedMin;
-  } else if (canon?.sleep_efficiency != null) {
-    const raw = Number(canon.sleep_efficiency);
-    sleepEfficiency = raw > 1 ? raw / 100 : raw;
-  } else if (estimatedSleepMin != null && timeInBedMin != null && timeInBedMin > 0) {
-    sleepEfficiency = estimatedSleepMin / timeInBedMin;
-  }
-  if (sleepEfficiency != null) {
-    sleepEfficiency = Math.max(0, Math.min(1, sleepEfficiency));
-  }
+  const stageBaselines = hasStages
+    ? buildStageBaselines(baselineResult.rows, stageAwake, stageRem, stageCore, stageDeep)
+    : null;
 
   return {
     sleepAlignment,
     plannedSleepMin,
     sleepDebtMin,
+    sleepDeltaMin,
     sleepAdequacyScore,
     sleepEfficiencyEst,
     fitbitSleepMinutes: fitbitMin,
@@ -272,12 +353,16 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     fitbitVsReportedDeltaMin,
     sleepLatencyMin,
     sleepWASOMin,
+    tossAndTurnMin,
     awakeInBedMin,
     sleepEfficiency,
     sleepAwakeMin: stageAwake,
     sleepRemMin: stageRem,
     sleepCoreMin: stageCore,
     sleepDeepMin: stageDeep,
+    remPct,
+    deepPct,
+    stageBaselines,
   };
 }
 

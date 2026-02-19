@@ -253,18 +253,19 @@ export default function LogScreen() {
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
 
+  const stagesComplete = !!(sleepAwakeMin && sleepRemMin && sleepCoreMin && sleepDeepMin);
+  const derivedTIB = stagesComplete
+    ? parseInt(sleepAwakeMin, 10) + parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
+    : null;
+  const derivedTST = stagesComplete
+    ? parseInt(sleepRemMin, 10) + parseInt(sleepCoreMin, 10) + parseInt(sleepDeepMin, 10)
+    : null;
+
   useEffect(() => {
-    if (sleepLatency || sleepWaso) return;
-    if (!actualBedTime || !actualWakeTime || !sleepMinutesManual) return;
-    const toM = (t: string) => { const m = t.trim().match(/^(\d{1,2}):(\d{2})/); return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0; };
-    let tib = toM(actualWakeTime) - toM(actualBedTime);
-    if (tib < 0) tib += 1440;
-    const tst = parseInt(sleepMinutesManual, 10);
-    if (isNaN(tst) || tib < tst) return;
-    const totalAwake = tib - tst;
-    setSleepLatency("0");
-    setSleepWaso(totalAwake.toString());
-  }, [actualBedTime, actualWakeTime, sleepMinutesManual, sleepLatency, sleepWaso]);
+    if (derivedTST != null && !isNaN(derivedTST)) {
+      setSleepMinutesManual(derivedTST.toString());
+    }
+  }, [derivedTST]);
 
   const populateForm = (existing: DailyEntry | null) => {
     if (existing) {
@@ -954,38 +955,22 @@ export default function LogScreen() {
               />
             </View>
           </View>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="time-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Latency (min)</Text>
+          {stagesComplete && derivedTIB != null && derivedTST != null && (
+            <View style={{ flexDirection: "row", gap: 8, backgroundColor: Colors.surface, borderRadius: 10, padding: 10 }}>
+              <View style={{ flex: 1, alignItems: "center" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TIB</Text>
+                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(derivedTIB / 60)}h {derivedTIB % 60}m</Text>
               </View>
-              <TextInput
-                style={styles.input}
-                value={sleepLatency}
-                onChangeText={setSleepLatency}
-                placeholder="min"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
-                keyboardAppearance="dark"
-              />
-            </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="alert-circle-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>WASO (min)</Text>
+              <View style={{ flex: 1, alignItems: "center" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TST</Text>
+                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>{Math.floor(derivedTST / 60)}h {derivedTST % 60}m</Text>
               </View>
-              <TextInput
-                style={styles.input}
-                value={sleepWaso}
-                onChangeText={setSleepWaso}
-                placeholder="min"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="numeric"
-                keyboardAppearance="dark"
-              />
+              <View style={{ flex: 1, alignItems: "center" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Eff</Text>
+                <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: derivedTST / derivedTIB >= 0.85 ? "#34D399" : derivedTST / derivedTIB >= 0.7 ? "#FBBF24" : "#EF4444" }}>{Math.round((derivedTST / derivedTIB) * 100)}%</Text>
+              </View>
             </View>
-          </View>
+          )}
           <View style={{ flexDirection: "row", gap: 8 }}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
@@ -1315,9 +1300,10 @@ export default function LogScreen() {
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, stagesComplete ? { color: Colors.textTertiary } : undefined]}
                   value={sleepMinutesManual}
-                  onChangeText={setSleepMinutesManual}
+                  onChangeText={stagesComplete ? undefined : setSleepMinutesManual}
+                  editable={!stagesComplete}
                   placeholder="420"
                   placeholderTextColor={Colors.textTertiary}
                   keyboardType="number-pad"
