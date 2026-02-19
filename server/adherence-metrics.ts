@@ -115,6 +115,8 @@ export function computePrimaryDriver(
   hrvPct: number | null,
   rhrBpm: number | null,
   proxyPct: number | null,
+  awakeInBedMin: number | null = null,
+  awakeInBedDeltaMin: number | null = null,
 ): PrimaryDriver | null {
   const candidates: PrimaryDriver[] = [];
 
@@ -147,6 +149,17 @@ export function computePrimaryDriver(
       driver: "Late bedtime",
       severity: bedDevMin * 0.7,
       recommendation: `Circadian Drift: +${absBed}m past anchor (21:45)\nRecommendation: compress bedtime window by 10–15m nightly`,
+    });
+  }
+
+  const awakeInBedTriggered = awakeInBedMin != null && (awakeInBedMin >= 45 || (awakeInBedDeltaMin != null && awakeInBedDeltaMin > 20));
+  if (awakeInBedTriggered) {
+    candidates.push({
+      driver: "Awake in bed",
+      severity: (awakeInBedMin! >= 60 ? awakeInBedMin! : awakeInBedMin! * 0.65),
+      recommendation: awakeInBedMin! >= 60
+        ? `${awakeInBedMin}m awake in bed — review sleep environment and evening routine.`
+        : `${awakeInBedMin}m awake in bed${awakeInBedDeltaMin != null ? ` (+${Math.round(awakeInBedDeltaMin)}m vs baseline)` : ""} — monitor for pattern.`,
     });
   }
 
