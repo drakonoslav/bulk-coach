@@ -1140,13 +1140,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await persistReadiness(result, userId);
         }
       }
+      const adhLookbackStart = (() => {
+        const d = new Date(date + "T12:00:00Z");
+        d.setUTCDate(d.getUTCDate() - 7);
+        return d.toISOString().slice(0, 10);
+      })();
       const [sleepBlock, sleepTrending, drift, rangeAdh] = await Promise.all([
         computeSleepBlock(date, userId),
         computeSleepTrending(date, userId),
         computeDrift7d(date, userId),
-        computeRangeAdherence(date, date, userId),
+        computeRangeAdherence(adhLookbackStart, date, userId),
       ]);
-      const dayAdh = rangeAdh.get(date);
+      let dayAdh = rangeAdh.get(date) ?? null;
+      const hasCardioLift = dayAdh?.actualCardioMin != null || dayAdh?.actualLiftMin != null;
+      if (!hasCardioLift) {
+        const sortedDates = Array.from(rangeAdh.keys()).sort().reverse();
+        for (const d of sortedDates) {
+          const a = rangeAdh.get(d)!;
+          if (a.actualCardioMin != null || a.actualLiftMin != null) {
+            dayAdh = {
+              ...(dayAdh ?? a),
+              trainingOverrunMin: a.trainingOverrunMin,
+              liftOverrunMin: a.liftOverrunMin,
+              actualCardioMin: a.actualCardioMin,
+              actualLiftMin: a.actualLiftMin,
+              plannedCardioMin: a.plannedCardioMin,
+              plannedLiftMin: a.plannedLiftMin,
+            };
+            break;
+          }
+        }
+      }
 
       const sa = sleepBlock?.sleepAlignment;
       const primaryDriver = computePrimaryDriver(
