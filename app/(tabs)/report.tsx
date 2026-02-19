@@ -1002,7 +1002,7 @@ export default function ReportScreen() {
 
                   return (
                   <View style={[styles.lgrCard, { marginTop: 12 }]}>
-                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>
                       Signal Breakdown
                     </Text>
 
@@ -1135,6 +1135,16 @@ export default function ReportScreen() {
                     {sb?.awakeInBedMin != null && sigRow("Awake in bed", sigText(
                       `${sb.awakeInBedMin}m`,
                       sb.awakeInBedMin <= 30 ? "#34D399" : sb.awakeInBedMin <= 60 ? "#FBBF24" : "#EF4444",
+                    ))}
+
+                    {sb?.remMin != null && sigRow("REM", sigText(
+                      `${sb.remMin}m${sb.remDeltaMin != null ? ` (${sb.remDeltaMin >= 0 ? "+" : ""}${Math.round(sb.remDeltaMin)}m)` : ""}`,
+                      sb.remDeltaMin == null ? "#9CA3AF" : sb.remDeltaMin >= -5 ? "#34D399" : sb.remDeltaMin >= -15 ? "#FBBF24" : "#EF4444",
+                    ))}
+
+                    {sb?.deepMin != null && sigRow("Deep", sigText(
+                      `${sb.deepMin}m${sb.deepDeltaMin != null ? ` (${sb.deepDeltaMin >= 0 ? "+" : ""}${Math.round(sb.deepDeltaMin)}m)` : ""}`,
+                      sb.deepDeltaMin == null ? "#9CA3AF" : sb.deepDeltaMin >= -5 ? "#34D399" : sb.deepDeltaMin >= -15 ? "#FBBF24" : "#EF4444",
                     ), true)}
 
                     {sectionHeader("System State", "pulse-outline", "#34D399")}
@@ -1183,7 +1193,7 @@ export default function ReportScreen() {
                   }
                   return (
                     <View style={[styles.lgrCard, { marginTop: 12, borderColor: ruleColor + "30" }]}>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 10 }}>
                         Today's Training Rule
                       </Text>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
