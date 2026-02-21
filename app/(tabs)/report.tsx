@@ -38,7 +38,7 @@ import {
   type MealGuideEntry,
   type Diagnosis,
 } from "@/lib/coaching-engine";
-import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex } from "@/lib/strength-index";
+import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
 
 function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
@@ -115,6 +115,129 @@ function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: numb
               backgroundColor: i === points.length - 1 ? chartColor : Colors.cardBgElevated,
               borderWidth: 1.5,
               borderColor: chartColor,
+            }}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function StrengthLineChart({
+  data,
+  lineColor,
+  markers,
+  yFormat,
+  zeroLine,
+}: {
+  data: Array<{ day: string; value: number }>;
+  lineColor: string;
+  markers?: Array<{ day: string; label: string; color: string }>;
+  yFormat?: (v: number) => string;
+  zeroLine?: boolean;
+}) {
+  if (data.length < 2) return null;
+  const values = data.map((d) => d.value);
+  const absMax = Math.max(Math.abs(Math.min(...values)), Math.abs(Math.max(...values)), 0.01);
+  const min = zeroLine ? -absMax * 1.2 : Math.min(...values) - (Math.max(...values) - Math.min(...values)) * 0.1 - 0.001;
+  const max = zeroLine ? absMax * 1.2 : Math.max(...values) + (Math.max(...values) - Math.min(...values)) * 0.1 + 0.001;
+  const range = max - min || 1;
+  const height = 120;
+  const width = 300;
+  const step = width / (data.length - 1);
+  const fmt = yFormat || ((v: number) => v.toFixed(2));
+
+  const points = values.map((v, i) => ({
+    x: i * step,
+    y: height - ((v - min) / range) * height,
+  }));
+
+  const markerPositions = (markers || []).map((m) => {
+    const idx = data.findIndex((d) => d.day === m.day);
+    if (idx < 0) return null;
+    return { x: idx * step, label: m.label, color: m.color };
+  }).filter(Boolean) as Array<{ x: number; label: string; color: string }>;
+
+  return (
+    <View style={styles.chartContainer}>
+      <View style={styles.chartYAxis}>
+        <Text style={styles.chartAxisLabel}>{fmt(max)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmt((max + min) / 2)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmt(min)}</Text>
+      </View>
+      <View style={{ width, height, position: "relative" }}>
+        {[0, 0.5, 1].map((pct) => (
+          <View
+            key={pct}
+            style={{
+              position: "absolute",
+              left: 0, right: 0,
+              top: pct * height,
+              height: 1,
+              backgroundColor: Colors.border,
+            }}
+          />
+        ))}
+        {zeroLine && (
+          <View
+            style={{
+              position: "absolute",
+              left: 0, right: 0,
+              top: height - ((0 - min) / range) * height,
+              height: 1,
+              backgroundColor: "#FBBF2440",
+            }}
+          />
+        )}
+        {markerPositions.map((m, idx) => (
+          <View key={`marker-${idx}`}>
+            <View
+              style={{
+                position: "absolute",
+                left: m.x,
+                top: 0,
+                width: 2,
+                height: height,
+                backgroundColor: m.color + "80",
+              }}
+            />
+            <View style={{ position: "absolute", left: m.x - 3, top: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: m.color }} />
+            <Text style={{ position: "absolute", left: m.x + 4, top: -4, fontSize: 8, fontFamily: "Rubik_500Medium", color: m.color }}>
+              {m.label}
+            </Text>
+          </View>
+        ))}
+        {points.map((p, i) => {
+          if (i === 0) return null;
+          const prev = points[i - 1];
+          const dx = p.x - prev.x;
+          const dy = p.y - prev.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          return (
+            <View
+              key={i}
+              style={{
+                position: "absolute",
+                left: prev.x, top: prev.y,
+                width: len, height: 2.5,
+                backgroundColor: lineColor,
+                borderRadius: 1,
+                transform: [{ rotate: `${angle}deg` }],
+                transformOrigin: "left center",
+              }}
+            />
+          );
+        })}
+        {points.map((p, i) => (
+          <View
+            key={`dot-${i}`}
+            style={{
+              position: "absolute",
+              left: p.x - 3, top: p.y - 3,
+              width: 6, height: 6, borderRadius: 3,
+              backgroundColor: i === points.length - 1 ? lineColor : Colors.cardBgElevated,
+              borderWidth: 1.5, borderColor: lineColor,
             }}
           />
         ))}
@@ -590,6 +713,24 @@ export default function ReportScreen() {
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
 
+  const siRa = strengthIndexRollingAvg(entries, strengthBaselines, 7);
+  const siChartData = siRa.slice(-28).map(d => ({ day: d.day, value: d.avg }));
+  const siFirst = siRa.length > 0 ? siRa[0].avg : null;
+  const siNormalized = siFirst != null && siFirst > 0
+    ? siRa.slice(-28).map(d => ({ day: d.day, value: ((d.avg - siFirst) / siFirst) * 100 }))
+    : [];
+
+  const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
+  const svChartData = svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
+
+  const phaseTransitions = detectPhaseTransitions(entries, strengthBaselines);
+
+  const phaseMarkers = phaseTransitions.map(t => ({
+    day: t.day,
+    label: t.to === "hypertrophy" ? "H" : "N",
+    color: t.to === "hypertrophy" ? "#34D399" : "#FBBF24",
+  }));
+
   const strengthDaysInWindow = (() => {
     const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
     const last7 = sorted.slice(-7);
@@ -979,6 +1120,74 @@ export default function ReportScreen() {
                 </View>
               </View>
             ) : null}
+
+            {(siChartData.length >= 2 || svChartData.length >= 2) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
+                <View style={styles.lgrCard}>
+                  <View style={styles.lgrContent}>
+                    {siChartData.length >= 2 && (
+                      <View>
+                        <Text style={[styles.lgrLabel, { marginBottom: 4 }]}>StrengthIndex (7d Rolling Avg)</Text>
+                        <View style={{ flexDirection: "row", gap: 12, marginBottom: 8 }}>
+                          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                            Current: {siChartData[siChartData.length - 1].value.toFixed(4)}
+                          </Text>
+                          {siFirst != null && (
+                            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                              vs First: {siFirst.toFixed(4)} ({siNormalized.length > 0 ? (siNormalized[siNormalized.length - 1].value >= 0 ? "+" : "") + siNormalized[siNormalized.length - 1].value.toFixed(1) + "%" : "--"})
+                            </Text>
+                          )}
+                        </View>
+                        <StrengthLineChart
+                          data={siChartData}
+                          lineColor="#F59E0B"
+                          markers={phaseMarkers}
+                          yFormat={(v) => v.toFixed(3)}
+                        />
+                      </View>
+                    )}
+                    {siNormalized.length >= 2 && (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Normalized StrengthIndex (% change from first day)</Text>
+                        <StrengthLineChart
+                          data={siNormalized}
+                          lineColor="#A78BFA"
+                          markers={phaseMarkers}
+                          yFormat={(v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%"}
+                          zeroLine
+                        />
+                      </View>
+                    )}
+                    {svChartData.length >= 2 && (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>StrengthVelocity (%/wk over time)</Text>
+                        <StrengthLineChart
+                          data={svChartData}
+                          lineColor="#34D399"
+                          markers={phaseMarkers}
+                          yFormat={(v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%"}
+                          zeroLine
+                        />
+                      </View>
+                    )}
+                    {phaseTransitions.length > 0 && (
+                      <View style={{ marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border }}>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>Phase Transitions</Text>
+                        {phaseTransitions.map((t, i) => (
+                          <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.to === "hypertrophy" ? "#34D399" : "#FBBF24" }} />
+                            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                              {t.day}: {t.from} → {t.to}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Diagnosis</Text>

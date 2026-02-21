@@ -1,4 +1,5 @@
 import type { DailyEntry } from "./coaching-engine";
+import { ffmVelocity14d } from "./coaching-engine";
 
 export interface StrengthBaselines {
   pushups: number | null;
@@ -188,6 +189,73 @@ export function strengthVelocity14d(
     label,
     pctPerWeek: Math.round(pctPerWeek * 100) / 100,
   };
+}
+
+export function strengthVelocityOverTime(
+  entries: DailyEntry[],
+  baselines: StrengthBaselines,
+): Array<{ day: string; pctPerWeek: number }> {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  if (sorted.length < 14) return [];
+
+  const out: Array<{ day: string; pctPerWeek: number }> = [];
+  for (let i = 13; i < sorted.length; i++) {
+    const window = sorted.slice(0, i + 1);
+    const sv = strengthVelocity14d(window, baselines);
+    if (sv != null) {
+      out.push({ day: sorted[i].day, pctPerWeek: sv.pctPerWeek });
+    }
+  }
+  return out;
+}
+
+export interface PhaseTransition {
+  day: string;
+  from: "neural" | "hypertrophy";
+  to: "neural" | "hypertrophy";
+}
+
+export function detectPhaseTransitions(
+  entries: DailyEntry[],
+  baselines: StrengthBaselines,
+): PhaseTransition[] {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  if (sorted.length < 14) return [];
+
+  const transitions: PhaseTransition[] = [];
+  let phase: "neural" | "hypertrophy" = "neural";
+  let hypertrophyStreak = 0;
+  let revertStreak = 0;
+
+  for (let i = 13; i < sorted.length; i++) {
+    const window = sorted.slice(0, i + 1);
+    const sV = strengthVelocity14d(window, baselines);
+    const ffmV = ffmVelocity14d(window);
+    const penalty = swapPenaltyMultiplier(window);
+
+    if (phase === "neural") {
+      const met =
+        sV != null && sV.pctPerWeek >= 0.02 &&
+        ffmV != null && ffmV.velocityLbPerWeek >= 0 &&
+        penalty >= 0.90;
+      if (met) { hypertrophyStreak++; } else { hypertrophyStreak = 0; }
+      if (hypertrophyStreak >= 14) {
+        phase = "hypertrophy";
+        revertStreak = 0;
+        transitions.push({ day: sorted[i].day, from: "neural", to: "hypertrophy" });
+      }
+    } else {
+      const shouldRevert = sV != null && sV.pctPerWeek < 0;
+      if (shouldRevert) { revertStreak++; } else { revertStreak = 0; }
+      if (revertStreak >= 14) {
+        phase = "neural";
+        hypertrophyStreak = 0;
+        transitions.push({ day: sorted[i].day, from: "hypertrophy", to: "neural" });
+      }
+    }
+  }
+
+  return transitions;
 }
 
 export function countSwapsInWindow(
