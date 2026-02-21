@@ -80,7 +80,8 @@ import {
   chooseFinalCalorieDelta,
 } from "./calorie-decisions-storage";
 import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
-import { classifyMode, type StrengthBaselines } from "../lib/structural-confidence";
+import { classifyMode } from "../lib/structural-confidence";
+import type { StrengthBaselines } from "../lib/strength-index";
 import {
   computeReadiness,
   persistReadiness,
@@ -728,6 +729,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           appliedCalorieDelta = final.delta;
           policySource = final.source;
           modeInsightReason = modeClass.calorieAction.reason;
+
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[CALORIE POLICY DEBUG]", {
+              wkGain,
+              weightDelta,
+              modeDelta: modeClass.calorieAction.delta,
+              modePriority: modeClass.calorieAction.priority,
+              applied: final.delta,
+              source: final.source,
+            });
+          }
 
           const today = new Date().toISOString().slice(0, 10);
           await upsertCalorieDecision(userId, {
