@@ -237,12 +237,12 @@ export function waistDelta(entries: DailyEntry[], days: number = 14): number | n
 
 // NOTE: calorie adjustments must remain weight-only. Do not add readiness/strength inputs here.
 export function suggestCalorieAdjustment(wkGainLb: number): number {
-  if (wkGainLb < 0.1) return 100;
-  if (wkGainLb > 0.75) return -100;
-  if (wkGainLb >= 0.1 && wkGainLb < 0.25) return 75;
-  if (wkGainLb >= 0.25 && wkGainLb <= 0.5) return 0;
-  if (wkGainLb > 0.5 && wkGainLb <= 0.75) return -50;
-  return 0;
+  if (wkGainLb <= -0.50) return 200;
+  if (wkGainLb < 0.10) return 100;
+  if (wkGainLb < 0.25) return 75;
+  if (wkGainLb <= 0.50) return 0;
+  if (wkGainLb <= 0.75) return -50;
+  return -100;
 }
 
 export interface AdjustmentItem {
