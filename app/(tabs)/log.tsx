@@ -281,6 +281,17 @@ export default function LogScreen() {
     label: string | null;
     notes: string | null;
   }
+  const TAG_DEFINITIONS: Record<string, string> = {
+    travel: "Any day involving travel, time-zone shifts, disrupted routine, or sleeping outside your normal environment.",
+    schedule_shift: "A meaningful change to your normal sleep, wake, work, or training schedule.",
+    work_stress: "Elevated cognitive load, deadlines, performance pressure, or prolonged mental strain related to work.",
+    social_load: "Extended social activity, gatherings, or emotionally demanding social interaction (positive or negative).",
+    illness_symptoms: "Acute sickness signs such as fever, congestion, sore throat, fatigue, or systemic discomfort.",
+    injury_pain: "Musculoskeletal pain, inflammation, strain, or physical limitation affecting normal movement or training.",
+    supplement_change: "Starting, stopping, or significantly adjusting the dose of a supplement.",
+    med_change: "Starting, stopping, or adjusting a prescription or medically supervised treatment.",
+    early_dating: "New or evolving romantic involvement that may affect sleep, stress, or emotional load.",
+  };
   const PRESET_CONTEXT_TAGS = [
     { key: "travel", label: "Travel", icon: "airplane-outline" as const },
     { key: "schedule_shift", label: "Schedule Shift", icon: "swap-horizontal-outline" as const },
@@ -1946,7 +1957,7 @@ export default function LogScreen() {
             <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
               {contextEditing && (
                 <>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
                       {contextEditing.tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     </Text>
@@ -1954,6 +1965,11 @@ export default function LogScreen() {
                       <Ionicons name="close" size={22} color={Colors.textTertiary} />
                     </Pressable>
                   </View>
+                  {TAG_DEFINITIONS[contextEditing.tag] && (
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 16, lineHeight: 17 }}>
+                      {TAG_DEFINITIONS[contextEditing.tag]}
+                    </Text>
+                  )}
 
                   <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Intensity</Text>
                   <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
