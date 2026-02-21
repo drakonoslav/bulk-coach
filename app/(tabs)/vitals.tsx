@@ -897,19 +897,31 @@ export default function VitalsScreen() {
                 <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Archived</Text>
                 {lensArchives.map((ar) => {
                   const tagColor = CONTEXT_TAG_COLORS[ar.tag] || "#8B5CF6";
-                  const s = ar.summaryJson || {};
-                  const duration = s.durationDays || "?";
-                  const tr = s.terminalRolling;
-                  const ew = s.episodeWide;
-                  const distScore = tr?.disturbanceScore ?? s.disturbanceScore;
-                  const phase = (tr?.phase ?? s.phase ?? "")?.replace(/_/g, " ")?.toLowerCase();
+                  const sm = ar.summaryJson || {};
+                  const duration = sm.durationDays || "?";
+                  const tr = sm.terminalRolling;
+                  const ew = sm.episodeWide;
+                  const distScore = tr?.disturbanceScore ?? sm.disturbanceScore;
+                  const phaseRaw = tr?.phase ?? sm.phase ?? "";
+                  const phaseLabel = phaseRaw.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
                   const isExpanded = expandedArchiveId === ar.id;
 
+                  const phaseColors: Record<string, { color: string; bg: string; icon: string }> = {
+                    NOVELTY_DISTURBANCE: { color: "#F59E0B", bg: "#F59E0B20", icon: "flash" },
+                    ADAPTIVE_STABILIZATION: { color: "#34D399", bg: "#34D39920", icon: "trending-down" },
+                    CHRONIC_SUPPRESSION: { color: "#F87171", bg: "#F8717120", icon: "warning" },
+                    INSUFFICIENT_DATA: { color: "#94A3B8", bg: "#94A3B820", icon: "time" },
+                  };
+                  const pc = phaseColors[phaseRaw] || phaseColors.INSUFFICIENT_DATA;
+
+                  const scoreColor = (sc: number) => sc >= 70 ? "#F87171" : sc >= 62 ? "#F59E0B" : sc >= 56 ? "#FCD34D" : "#34D399";
+                  const scaleLabel = (sc: number) => sc >= 60 ? "High disturbance" : sc >= 40 ? "Moderate" : sc >= 20 ? "Mild" : "Minimal";
                   const interpColor = (i: string) => i === "improving" ? "#34D399" : i === "worsening" ? "#F87171" : i === "flat" ? "#FBBF24" : Colors.textTertiary;
                   const fmtDelta = (v: number | null | undefined) => v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+                  const compBarColor = (v: number) => v > 0.3 ? "#F87171" : v > 0 ? "#F59E0B" : "#34D399";
 
                   return (
-                    <Pressable key={ar.id} onPress={() => setExpandedArchiveId(isExpanded ? null : ar.id)}>
+                    <Pressable key={ar.id} onPress={() => { setExpandedArchiveId(isExpanded ? null : ar.id); setArchiveTab("terminal"); }}>
                       <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
                           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor + "60", marginRight: 10 }} />
@@ -923,39 +935,85 @@ export default function VitalsScreen() {
                           </View>
                           <View style={{ alignItems: "flex-end" }}>
                             {distScore != null && (
-                              <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: distScore >= 62 ? "#F87171" : distScore >= 56 ? "#FBBF24" : "#34D399" }}>
+                              <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: scoreColor(distScore) }}>
                                 {distScore.toFixed(0)}
                               </Text>
                             )}
-                            {phase ? (
-                              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                                {phase}
-                              </Text>
-                            ) : null}
+                            <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={12} color={Colors.textTertiary} />
                           </View>
                         </View>
 
-                        {isExpanded && tr && (
-                          <View style={{ marginTop: 10, paddingLeft: 18 }}>
-                            <View style={{ flexDirection: "row", marginBottom: 8 }}>
+                        {isExpanded && (
+                          <View style={{ marginTop: 10, backgroundColor: Colors.cardBgElevated || Colors.cardBg, borderRadius: 10, padding: 12, gap: 8 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: pc.bg }}>
+                                <Ionicons name={pc.icon as any} size={14} color={pc.color} />
+                                <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: pc.color }}>{phaseLabel}</Text>
+                              </View>
+                              {distScore != null && (
+                                <View style={{ alignItems: "center" }}>
+                                  <Text style={{ fontSize: 18, fontFamily: "Rubik_700Bold", color: scoreColor(distScore) }}>
+                                    {distScore.toFixed(0)}
+                                  </Text>
+                                  <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{scaleLabel(distScore)}</Text>
+                                </View>
+                              )}
+                            </View>
+
+                            {tr?.components && (
+                              <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                                {(["hrv", "rhr", "sleep", "proxy", "drift"] as const).map((k) => {
+                                  const compKeys: Record<string, string> = { hrv: "hrv", rhr: "rhr", sleep: "sleep", proxy: "proxy", drift: "drift" };
+                                  const compLabels: Record<string, string> = { hrv: "HRV", rhr: "RHR", sleep: "SLP", proxy: "PRX", drift: "DRF" };
+                                  const val = tr.components[compKeys[k]] ?? 0;
+                                  const pct = Math.min(100, Math.round(Math.abs(val) * 100));
+                                  const bColor = compBarColor(val);
+                                  return (
+                                    <View key={k} style={{ flex: 1, alignItems: "center", gap: 3 }}>
+                                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary, letterSpacing: 0.5 }}>{compLabels[k]}</Text>
+                                      <View style={{ width: "100%", height: 4, borderRadius: 2, backgroundColor: Colors.border, overflow: "hidden", opacity: Math.min(1, Math.abs(val) + 0.15) }}>
+                                        <View style={{ height: "100%", borderRadius: 2, width: `${pct}%`, backgroundColor: bColor }} />
+                                      </View>
+                                      <Text style={{ fontSize: 8, fontFamily: "Rubik_500Medium", color: bColor }}>{pct}%</Text>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            )}
+
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                {duration}d episode
+                              </Text>
+                              {tr?.cortisolFlagRate21d != null && tr.cortisolFlagRate21d > 0 && (
+                                <>
+                                  <Text style={{ fontSize: 11, color: Colors.textTertiary }}>·</Text>
+                                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: tr.cortisolFlagRate21d >= 0.3 ? "#F87171" : Colors.textTertiary }}>
+                                    cortisol {(tr.cortisolFlagRate21d * 100).toFixed(0)}%
+                                  </Text>
+                                </>
+                              )}
+                            </View>
+
+                            <View style={{ flexDirection: "row", marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8 }}>
                               <Pressable
-                                onPress={() => setArchiveTab("terminal")}
+                                onPress={(e) => { e.stopPropagation(); setArchiveTab("terminal"); }}
                                 style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: archiveTab === "terminal" ? tagColor + "30" : "transparent", marginRight: 6 }}
                               >
                                 <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: archiveTab === "terminal" ? tagColor : Colors.textTertiary }}>End-of-Episode</Text>
                               </Pressable>
                               <Pressable
-                                onPress={() => setArchiveTab("episode")}
+                                onPress={(e) => { e.stopPropagation(); setArchiveTab("episode"); }}
                                 style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: archiveTab === "episode" ? tagColor + "30" : "transparent" }}
                               >
                                 <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: archiveTab === "episode" ? tagColor : Colors.textTertiary }}>Genesis → Terminus</Text>
                               </Pressable>
                             </View>
 
-                            {archiveTab === "terminal" && (
-                              <View>
-                                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 4 }}>
-                                  Rolling baseline at {tr.day} · Disturbance: {tr.disturbanceScore?.toFixed(1)}
+                            {archiveTab === "terminal" && tr && (
+                              <View style={{ gap: 6 }}>
+                                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                  7d vs 28d rolling deltas at {tr.day}
                                 </Text>
                                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                                   {[
@@ -973,23 +1031,18 @@ export default function VitalsScreen() {
                                     </View>
                                   ))}
                                 </View>
-                                {tr.cortisolFlagRate21d != null && (
-                                  <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 4 }}>
-                                    Cortisol flag rate: {(tr.cortisolFlagRate21d * 100).toFixed(0)}%
-                                  </Text>
-                                )}
                               </View>
                             )}
 
                             {archiveTab === "episode" && ew && (
-                              <View>
+                              <View style={{ gap: 6 }}>
                                 {ew.interpretation === "insufficient_data" ? (
                                   <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
                                     Insufficient tagged days for episode-wide comparison
                                   </Text>
                                 ) : (
                                   <>
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                                       <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
                                         Start: {ew.windowStart?.start} → {ew.windowStart?.end}
                                       </Text>
@@ -997,7 +1050,7 @@ export default function VitalsScreen() {
                                         End: {ew.windowEnd?.start} → {ew.windowEnd?.end}
                                       </Text>
                                     </View>
-                                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                                       {[
                                         { label: "ΔHRV", val: ew.deltaChange?.hrv_pct },
                                         { label: "ΔSleep", val: ew.deltaChange?.sleep_pct },
