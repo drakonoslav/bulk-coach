@@ -235,6 +235,7 @@ export function waistDelta(entries: DailyEntry[], days: number = 14): number | n
   return Math.round((recent.waistIn - older.waistIn) * 100) / 100;
 }
 
+// NOTE: calorie adjustments must remain weight-only. Do not add readiness/strength inputs here.
 export function suggestCalorieAdjustment(wkGainLb: number): number {
   if (wkGainLb < 0.1) return 100;
   if (wkGainLb > 0.75) return -100;
