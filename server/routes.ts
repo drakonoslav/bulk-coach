@@ -79,6 +79,15 @@ import {
   getCalorieDecisions,
   chooseFinalCalorieDelta,
 } from "./calorie-decisions-storage";
+import {
+  upsertContextEvent,
+  updateContextEvent,
+  deleteContextEvent,
+  getContextEvents,
+  getDistinctTags,
+  markAdjustmentAttempted,
+  computeContextLens,
+} from "./context-lens";
 import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
 import { classifyMode } from "../lib/structural-confidence";
 import type { StrengthBaselines } from "../lib/strength-index";
@@ -3180,6 +3189,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("calorie-decisions fetch error:", err);
       res.status(500).json({ ok: false, error: "Failed to fetch calorie decisions" });
+    }
+  });
+
+  // ───── Context Lens routes ─────
+
+  app.post("/api/context-events", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { day, tag, intensity, notes, adjustmentAttempted, adjustmentAttemptedDay } = req.body;
+      if (!day || !tag) {
+        return res.status(400).json({ ok: false, error: "day and tag are required" });
+      }
+      const event = await upsertContextEvent(
+        { day, tag, intensity, notes, adjustmentAttempted, adjustmentAttemptedDay },
+        userId,
+      );
+      res.json({ ok: true, event });
+    } catch (err) {
+      console.error("context-events create error:", err);
+      res.status(500).json({ ok: false, error: "Failed to create context event" });
+    }
+  });
+
+  app.put("/api/context-events/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ ok: false, error: "Invalid id" });
+      const event = await updateContextEvent(id, req.body, userId);
+      if (!event) return res.status(404).json({ ok: false, error: "Not found" });
+      res.json({ ok: true, event });
+    } catch (err) {
+      console.error("context-events update error:", err);
+      res.status(500).json({ ok: false, error: "Failed to update context event" });
+    }
+  });
+
+  app.delete("/api/context-events/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ ok: false, error: "Invalid id" });
+      const ok = await deleteContextEvent(id, userId);
+      res.json({ ok });
+    } catch (err) {
+      console.error("context-events delete error:", err);
+      res.status(500).json({ ok: false, error: "Failed to delete context event" });
+    }
+  });
+
+  app.get("/api/context-events", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const tag = req.query.tag as string | undefined;
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+      const events = await getContextEvents(userId, { tag, from, to });
+      res.json({ ok: true, events });
+    } catch (err) {
+      console.error("context-events list error:", err);
+      res.status(500).json({ ok: false, error: "Failed to list context events" });
+    }
+  });
+
+  app.get("/api/context-events/tags", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const tags = await getDistinctTags(userId);
+      res.json({ ok: true, tags });
+    } catch (err) {
+      console.error("context-events tags error:", err);
+      res.status(500).json({ ok: false, error: "Failed to get tags" });
+    }
+  });
+
+  app.post("/api/context-events/adjustment", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { tag, day } = req.body;
+      if (!tag || !day) return res.status(400).json({ ok: false, error: "tag and day required" });
+      await markAdjustmentAttempted(tag, day, userId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("context-events adjustment error:", err);
+      res.status(500).json({ ok: false, error: "Failed to mark adjustment" });
+    }
+  });
+
+  app.get("/api/context-lens", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const tag = req.query.tag as string;
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      if (!tag) return res.status(400).json({ ok: false, error: "tag query param required" });
+      const result = await computeContextLens(tag, date, userId);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error("context-lens error:", err);
+      res.status(500).json({ ok: false, error: "Failed to compute context lens" });
     }
   });
 
