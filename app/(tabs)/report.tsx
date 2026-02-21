@@ -41,6 +41,19 @@ import {
 import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
 
+type CalorieSource = "weight_only" | "mode_override";
+
+function chooseFinalCalorieDelta(
+  kcalAdjWeightOnly: number,
+  modeDelta: number,
+  modePriority: "high" | "medium" | "low"
+): { delta: number; source: CalorieSource } {
+  if (modeDelta !== 0 && modePriority === "high") {
+    return { delta: modeDelta, source: "mode_override" };
+  }
+  return { delta: kcalAdjWeightOnly, source: "weight_only" };
+}
+
 function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
   const chartColor = lineColor || Colors.primary;
   if (data.length < 2) return null;
@@ -695,8 +708,7 @@ export default function ReportScreen() {
 
   const wkGain = weeklyDelta(entries);
   const wDelta = waistDelta(entries);
-  const kcalAdj = wkGain != null ? suggestCalorieAdjustment(wkGain) : null;
-  const adjustments = kcalAdj != null ? proposeMacroSafeAdjustment(kcalAdj, BASELINE) : [];
+  const kcalAdjWeightOnly = wkGain != null ? suggestCalorieAdjustment(wkGain) : 0;
   const diagnosis = diagnoseDietVsTraining(entries);
   const ra = rollingAvg(entries, 7);
   const chartData = ra.slice(-21);
@@ -710,6 +722,13 @@ export default function ReportScreen() {
   const ffmLgr = ffmLeanGainRatio(entries);
   const scs = computeSCS(entries, strengthBaselines);
   const modeClass = classifyMode(entries, strengthBaselines);
+
+  const finalKcal = chooseFinalCalorieDelta(
+    kcalAdjWeightOnly,
+    modeClass.calorieAction.delta,
+    modeClass.calorieAction.priority
+  );
+  const adjustments = finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
   const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
@@ -912,10 +931,13 @@ export default function ReportScreen() {
                   </Text>
                 </View>
               )}
-              {modeClass.calorieAction.delta !== 0 && (
+              {finalKcal.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <Text testID="mode-banner-calorie-action" style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
-                    {modeClass.calorieAction.delta > 0 ? "+" : ""}{modeClass.calorieAction.delta} kcal — {modeClass.calorieAction.reason}
+                    {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal —{" "}
+                    {finalKcal.source === "mode_override"
+                      ? modeClass.calorieAction.reason
+                      : "Weight policy (weekly rate)"}
                   </Text>
                 </View>
               )}
@@ -1660,17 +1682,17 @@ export default function ReportScreen() {
               </View>
             )}
 
-            {kcalAdj != null ? (
+            {finalKcal.delta !== 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Calorie Recommendation</Text>
-                <AdjustmentCard adjustments={adjustments} kcalChange={kcalAdj} />
+                <AdjustmentCard adjustments={adjustments} kcalChange={finalKcal.delta} />
               </View>
             ) : null}
 
-            {kcalAdj != null ? (
+            {finalKcal.delta !== 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Meal Adjustment Guide</Text>
-                <MealAdjustmentGuide adjustments={adjustments} kcalChange={kcalAdj} />
+                <MealAdjustmentGuide adjustments={adjustments} kcalChange={finalKcal.delta} />
               </View>
             ) : null}
 
