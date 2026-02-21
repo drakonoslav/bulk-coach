@@ -666,6 +666,17 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_context_events_user_day ON context_events(user_id, day);
     CREATE INDEX IF NOT EXISTS idx_context_events_user_tag ON context_events(user_id, tag);
   `);
+
+  await runMigration('010_context_events_label_unique', `
+    ALTER TABLE context_events ADD COLUMN IF NOT EXISTS label TEXT;
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_context_events_user_day_tag'
+      ) THEN
+        ALTER TABLE context_events ADD CONSTRAINT uq_context_events_user_day_tag UNIQUE (user_id, day, tag);
+      END IF;
+    END $$;
+  `);
 }
 
 export { pool };

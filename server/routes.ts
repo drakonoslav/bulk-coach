@@ -3197,12 +3197,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/context-events", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { day, tag, intensity, notes, adjustmentAttempted, adjustmentAttemptedDay } = req.body;
+      const { day, tag, intensity, label, notes, adjustmentAttempted, adjustmentAttemptedDay } = req.body;
       if (!day || !tag) {
         return res.status(400).json({ ok: false, error: "day and tag are required" });
       }
       const event = await upsertContextEvent(
-        { day, tag, intensity, notes, adjustmentAttempted, adjustmentAttemptedDay },
+        { day, tag, intensity, label, notes, adjustmentAttempted, adjustmentAttemptedDay },
         userId,
       );
       res.json({ ok: true, event });
@@ -3243,8 +3243,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const tag = req.query.tag as string | undefined;
-      const from = req.query.from as string | undefined;
-      const to = req.query.to as string | undefined;
+      const day = req.query.day as string | undefined;
+      const from = day || (req.query.from as string | undefined);
+      const to = day || (req.query.to as string | undefined);
       const events = await getContextEvents(userId, { tag, from, to });
       res.json({ ok: true, events });
     } catch (err) {

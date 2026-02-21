@@ -261,6 +261,7 @@ export interface ContextEvent {
   day: string;
   tag: string;
   intensity: number;
+  label: string | null;
   notes: string | null;
   adjustmentAttempted: boolean;
   adjustmentAttemptedDay: string | null;
@@ -271,6 +272,7 @@ export async function upsertContextEvent(
     day: string;
     tag: string;
     intensity?: number;
+    label?: string | null;
     notes?: string | null;
     adjustmentAttempted?: boolean;
     adjustmentAttemptedDay?: string | null;
@@ -278,14 +280,22 @@ export async function upsertContextEvent(
   userId: string = DEFAULT_USER_ID,
 ): Promise<ContextEvent> {
   const { rows } = await pool.query(
-    `INSERT INTO context_events (user_id, day, tag, intensity, notes, adjustment_attempted, adjustment_attempted_day, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    `INSERT INTO context_events (user_id, day, tag, intensity, label, notes, adjustment_attempted, adjustment_attempted_day, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+     ON CONFLICT (user_id, day, tag) DO UPDATE SET
+       intensity = EXCLUDED.intensity,
+       label = EXCLUDED.label,
+       notes = EXCLUDED.notes,
+       adjustment_attempted = EXCLUDED.adjustment_attempted,
+       adjustment_attempted_day = EXCLUDED.adjustment_attempted_day,
+       updated_at = NOW()
      RETURNING *`,
     [
       userId,
       event.day,
       event.tag,
-      event.intensity ?? 0,
+      event.intensity ?? 1,
+      event.label ?? null,
       event.notes ?? null,
       event.adjustmentAttempted ?? false,
       event.adjustmentAttemptedDay ?? null,
@@ -299,6 +309,7 @@ export async function updateContextEvent(
   updates: Partial<{
     tag: string;
     intensity: number;
+    label: string | null;
     notes: string | null;
     adjustmentAttempted: boolean;
     adjustmentAttemptedDay: string | null;
@@ -311,6 +322,7 @@ export async function updateContextEvent(
 
   if (updates.tag !== undefined) { sets.push(`tag = $${idx++}`); vals.push(updates.tag); }
   if (updates.intensity !== undefined) { sets.push(`intensity = $${idx++}`); vals.push(updates.intensity); }
+  if (updates.label !== undefined) { sets.push(`label = $${idx++}`); vals.push(updates.label); }
   if (updates.notes !== undefined) { sets.push(`notes = $${idx++}`); vals.push(updates.notes); }
   if (updates.adjustmentAttempted !== undefined) { sets.push(`adjustment_attempted = $${idx++}`); vals.push(updates.adjustmentAttempted); }
   if (updates.adjustmentAttemptedDay !== undefined) { sets.push(`adjustment_attempted_day = $${idx++}`); vals.push(updates.adjustmentAttemptedDay); }
@@ -553,6 +565,7 @@ function rowToEvent(r: any): ContextEvent {
     day: r.day,
     tag: r.tag,
     intensity: Number(r.intensity),
+    label: r.label ?? null,
     notes: r.notes ?? null,
     adjustmentAttempted: !!r.adjustment_attempted,
     adjustmentAttemptedDay: r.adjustment_attempted_day ?? null,
