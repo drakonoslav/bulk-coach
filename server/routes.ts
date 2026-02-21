@@ -87,6 +87,12 @@ import {
   getDistinctTags,
   markAdjustmentAttempted,
   computeContextLens,
+  startEpisode,
+  concludeEpisode,
+  updateEpisode,
+  getActiveEpisodes,
+  getActiveEpisodesOnDay,
+  getArchivedEpisodes,
 } from "./context-lens";
 import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
 import { classifyMode } from "../lib/structural-confidence";
@@ -3289,6 +3295,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("context-lens error:", err);
       res.status(500).json({ ok: false, error: "Failed to compute context lens" });
+    }
+  });
+
+  // ───── Context Lens Episode routes ─────
+
+  app.post("/api/context-lens/episodes/start", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { tag, startDay, intensity, label, notes } = req.body;
+      if (!tag || !startDay) return res.status(400).json({ ok: false, error: "tag and startDay required" });
+      const episode = await startEpisode({ tag, startDay, intensity, label, notes }, userId);
+      res.json({ ok: true, episode });
+    } catch (err: any) {
+      if (err.message?.includes("already exists")) {
+        return res.status(409).json({ ok: false, error: err.message });
+      }
+      console.error("episode start error:", err);
+      res.status(500).json({ ok: false, error: "Failed to start episode" });
+    }
+  });
+
+  app.post("/api/context-lens/episodes/:id/conclude", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const id = parseInt(req.params.id);
+      const { endDay } = req.body;
+      if (!endDay) return res.status(400).json({ ok: false, error: "endDay required" });
+      const episode = await concludeEpisode(id, endDay, userId);
+      if (!episode) return res.status(404).json({ ok: false, error: "Episode not found or already concluded" });
+      res.json({ ok: true, episode });
+    } catch (err) {
+      console.error("episode conclude error:", err);
+      res.status(500).json({ ok: false, error: "Failed to conclude episode" });
+    }
+  });
+
+  app.put("/api/context-lens/episodes/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const id = parseInt(req.params.id);
+      const { intensity, label, notes } = req.body;
+      const episode = await updateEpisode(id, { intensity, label, notes }, userId);
+      if (!episode) return res.status(404).json({ ok: false, error: "Episode not found" });
+      res.json({ ok: true, episode });
+    } catch (err) {
+      console.error("episode update error:", err);
+      res.status(500).json({ ok: false, error: "Failed to update episode" });
+    }
+  });
+
+  app.get("/api/context-lens/episodes/active", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const day = req.query.day as string | undefined;
+      const episodes = day ? await getActiveEpisodesOnDay(day, userId) : await getActiveEpisodes(userId);
+      res.json({ ok: true, episodes });
+    } catch (err) {
+      console.error("episodes active error:", err);
+      res.status(500).json({ ok: false, error: "Failed to get active episodes" });
+    }
+  });
+
+  app.get("/api/context-lens/episodes/archive", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const tag = req.query.tag as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const episodes = await getArchivedEpisodes(userId, { tag, limit });
+      res.json({ ok: true, episodes });
+    } catch (err) {
+      console.error("episodes archive error:", err);
+      res.status(500).json({ ok: false, error: "Failed to get archived episodes" });
     }
   });
 

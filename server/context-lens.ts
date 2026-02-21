@@ -558,6 +558,152 @@ export async function computeContextLens(
   return { ...phase, disturbance };
 }
 
+export interface LensEpisode {
+  id: number;
+  userId: string;
+  tag: string;
+  startDay: string;
+  endDay: string | null;
+  intensity: number;
+  label: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToEpisode(r: any): LensEpisode {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    tag: r.tag,
+    startDay: r.start_day,
+    endDay: r.end_day ?? null,
+    intensity: Number(r.intensity),
+    label: r.label ?? null,
+    notes: r.notes ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export async function startEpisode(
+  args: { tag: string; startDay: string; intensity?: number; label?: string | null; notes?: string | null },
+  userId: string = DEFAULT_USER_ID,
+): Promise<LensEpisode> {
+  const { rows: existing } = await pool.query(
+    `SELECT id FROM context_lens_episodes WHERE user_id = $1 AND tag = $2 AND end_day IS NULL`,
+    [userId, args.tag],
+  );
+  if (existing.length > 0) {
+    throw new Error(`An active episode for "${args.tag}" already exists. Conclude it first.`);
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO context_lens_episodes (user_id, tag, start_day, intensity, label, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [userId, args.tag, args.startDay, args.intensity ?? 1, args.label ?? null, args.notes ?? null],
+  );
+
+  const episode = rowToEpisode(rows[0]);
+
+  await pool.query(
+    `INSERT INTO context_events (user_id, day, tag, intensity, label, notes, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+     ON CONFLICT (user_id, day, tag) DO UPDATE SET
+       intensity = EXCLUDED.intensity, label = EXCLUDED.label, notes = EXCLUDED.notes, updated_at = NOW()`,
+    [userId, args.startDay, args.tag, args.intensity ?? 1, args.label ?? null, args.notes ?? null],
+  );
+
+  return episode;
+}
+
+export async function concludeEpisode(
+  episodeId: number,
+  endDay: string,
+  userId: string = DEFAULT_USER_ID,
+): Promise<LensEpisode | null> {
+  const { rows } = await pool.query(
+    `UPDATE context_lens_episodes SET end_day = $1, updated_at = NOW()
+     WHERE id = $2 AND user_id = $3 AND end_day IS NULL
+     RETURNING *`,
+    [endDay, episodeId, userId],
+  );
+  if (rows.length === 0) return null;
+
+  const episode = rowToEpisode(rows[0]);
+
+  await pool.query(
+    `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4`,
+    [userId, episode.tag, episode.startDay, endDay],
+  );
+
+  return episode;
+}
+
+export async function updateEpisode(
+  episodeId: number,
+  updates: Partial<{ intensity: number; label: string | null; notes: string | null }>,
+  userId: string = DEFAULT_USER_ID,
+): Promise<LensEpisode | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+
+  if (updates.intensity !== undefined) { sets.push(`intensity = $${idx++}`); vals.push(updates.intensity); }
+  if (updates.label !== undefined) { sets.push(`label = $${idx++}`); vals.push(updates.label); }
+  if (updates.notes !== undefined) { sets.push(`notes = $${idx++}`); vals.push(updates.notes); }
+
+  if (sets.length === 0) return null;
+  sets.push(`updated_at = NOW()`);
+  vals.push(episodeId, userId);
+
+  const { rows } = await pool.query(
+    `UPDATE context_lens_episodes SET ${sets.join(", ")} WHERE id = $${idx++} AND user_id = $${idx} RETURNING *`,
+    vals,
+  );
+  return rows.length > 0 ? rowToEpisode(rows[0]) : null;
+}
+
+export async function getActiveEpisodes(
+  userId: string = DEFAULT_USER_ID,
+): Promise<LensEpisode[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM context_lens_episodes WHERE user_id = $1 AND end_day IS NULL ORDER BY start_day ASC`,
+    [userId],
+  );
+  return rows.map(rowToEpisode);
+}
+
+export async function getActiveEpisodesOnDay(
+  day: string,
+  userId: string = DEFAULT_USER_ID,
+): Promise<LensEpisode[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM context_lens_episodes
+     WHERE user_id = $1 AND start_day <= $2 AND (end_day IS NULL OR end_day >= $2)
+     ORDER BY start_day ASC`,
+    [userId, day],
+  );
+  return rows.map(rowToEpisode);
+}
+
+export async function getArchivedEpisodes(
+  userId: string = DEFAULT_USER_ID,
+  opts?: { tag?: string; limit?: number },
+): Promise<LensEpisode[]> {
+  let q = `SELECT * FROM context_lens_episodes WHERE user_id = $1 AND end_day IS NOT NULL`;
+  const vals: unknown[] = [userId];
+  let idx = 2;
+
+  if (opts?.tag) { q += ` AND tag = $${idx++}`; vals.push(opts.tag); }
+  q += ` ORDER BY end_day DESC`;
+  if (opts?.limit) { q += ` LIMIT $${idx++}`; vals.push(opts.limit); }
+
+  const { rows } = await pool.query(q, vals);
+  return rows.map(rowToEpisode);
+}
+
 function rowToEvent(r: any): ContextEvent {
   return {
     id: r.id,
