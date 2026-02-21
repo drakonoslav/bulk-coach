@@ -495,6 +495,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("readiness recompute error:", err)
       );
 
+      const hasStrength = b.pushupsReps != null || b.pullupsReps != null || b.benchReps != null || b.ohpReps != null;
+      if (hasStrength) {
+        (async () => {
+          try {
+            const { rows: allRows } = await pool.query(
+              `SELECT * FROM daily_log WHERE user_id = $1 ORDER BY day ASC`,
+              [userId],
+            );
+            const allEntries = allRows.map(snakeToCamel);
+            const sorted = [...allEntries].sort((a: any, b: any) => a.day.localeCompare(b.day));
+            const first7 = sorted.slice(0, 7);
+            const avgFn = (vals: number[]) => vals.length > 0 ? vals.reduce((s: number, v: number) => s + v, 0) / vals.length : null;
+            const pushups = avgFn(first7.filter((e: any) => e.pushupsReps != null).map((e: any) => e.pushupsReps));
+            const pullups = avgFn(first7.filter((e: any) => e.pullupsReps != null).map((e: any) => e.pullupsReps));
+            const benchBarReps = avgFn(first7.filter((e: any) => e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)).map((e: any) => e.benchReps));
+            const ohpBarReps = avgFn(first7.filter((e: any) => e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)).map((e: any) => e.ohpReps));
+            const exercises = [
+              { name: "pushups", val: pushups, type: "reps" },
+              { name: "pullups", val: pullups, type: "reps" },
+              { name: "bench_bar_reps", val: benchBarReps, type: "reps" },
+              { name: "ohp_bar_reps", val: ohpBarReps, type: "reps" },
+            ];
+            for (const ex of exercises) {
+              if (ex.val != null) {
+                await pool.query(
+                  `INSERT INTO strength_baselines (user_id, exercise, baseline_value, baseline_type, computed_from_days, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, NOW())
+                   ON CONFLICT (user_id, exercise) DO UPDATE SET
+                     baseline_value = EXCLUDED.baseline_value,
+                     baseline_type = EXCLUDED.baseline_type,
+                     computed_from_days = EXCLUDED.computed_from_days,
+                     updated_at = NOW()`,
+                  [userId, ex.name, Math.round(ex.val * 10) / 10, ex.type, first7.length],
+                );
+              }
+            }
+          } catch (err) {
+            console.error("auto-compute strength baselines error:", err);
+          }
+        })();
+      }
+
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("upsert error:", err);
