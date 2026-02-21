@@ -626,35 +626,33 @@ export async function startEpisode(
     );
   }
 
-  if (daysToFill.length > 1) {
-    await backfillDailyLogForEpisode(daysToFill, userId);
-  }
+  await ensureTodayDailyLog(userId);
 
   return episode;
 }
 
-async function backfillDailyLogForEpisode(days: string[], userId: string): Promise<void> {
-  for (const day of days) {
-    const { rows: existingLog } = await pool.query(
-      `SELECT day FROM daily_log WHERE day = $1 AND user_id = $2`,
-      [day, userId],
-    );
-    if (existingLog.length > 0) continue;
+async function ensureTodayDailyLog(userId: string): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
 
-    const { rows: prevLog } = await pool.query(
-      `SELECT morning_weight_lb FROM daily_log WHERE user_id = $1 AND day < $2 AND morning_weight_lb IS NOT NULL ORDER BY day DESC LIMIT 1`,
-      [userId, day],
-    );
-    const weight = prevLog.length > 0 ? prevLog[0].morning_weight_lb : null;
-    if (weight == null) continue;
+  const { rows: existingLog } = await pool.query(
+    `SELECT day FROM daily_log WHERE day = $1 AND user_id = $2`,
+    [today, userId],
+  );
+  if (existingLog.length > 0) return;
 
-    await pool.query(
-      `INSERT INTO daily_log (user_id, day, morning_weight_lb, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())
-       ON CONFLICT (user_id, day) DO NOTHING`,
-      [userId, day, weight],
-    );
-  }
+  const { rows: prevLog } = await pool.query(
+    `SELECT morning_weight_lb FROM daily_log WHERE user_id = $1 AND day < $2 AND morning_weight_lb IS NOT NULL ORDER BY day DESC LIMIT 1`,
+    [userId, today],
+  );
+  const weight = prevLog.length > 0 ? prevLog[0].morning_weight_lb : null;
+  if (weight == null) return;
+
+  await pool.query(
+    `INSERT INTO daily_log (user_id, day, morning_weight_lb, created_at, updated_at)
+     VALUES ($1, $2, $3, NOW(), NOW())
+     ON CONFLICT (user_id, day) DO NOTHING`,
+    [userId, today, weight],
+  );
 }
 
 export async function concludeEpisode(
