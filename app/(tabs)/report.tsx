@@ -40,6 +40,7 @@ import {
 } from "@/lib/coaching-engine";
 import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
+import ContextLensCard from "@/components/ContextLensCard";
 
 type CalorieSource = "weight_only" | "mode_override";
 
@@ -1045,6 +1046,8 @@ export default function ReportScreen() {
                 </View>
               </View>
             )}
+
+            <ContextLensCard />
 
             {chartData.length >= 2 ? (
               <View style={styles.section}>
