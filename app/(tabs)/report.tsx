@@ -933,14 +933,23 @@ export default function ReportScreen() {
               )}
               {finalKcal.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
-                  <Text testID="mode-banner-calorie-action" style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
-                    {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal —{" "}
+                  <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textPrimary }}>
+                    {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal — Applied adjustment
+                  </Text>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
                     {finalKcal.source === "mode_override"
                       ? modeClass.calorieAction.reason
                       : "Weight policy (weekly rate)"}
                   </Text>
                 </View>
               )}
+              {modeClass.calorieAction.reason ? (
+                <View style={{ marginTop: 6 }}>
+                  <Text testID="mode-banner-insight" style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, opacity: 0.9 }}>
+                    Insight: {modeClass.calorieAction.reason}
+                  </Text>
+                </View>
+              ) : null}
               {modeClass.mode === "UNCERTAIN" && modeClass.reasons.length > 1 && !rampUpMessage && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
