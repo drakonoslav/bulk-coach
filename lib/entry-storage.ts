@@ -158,5 +158,12 @@ function rowToEntry(row: any): DailyEntry {
     liftStartTime: row.liftStartTime ?? undefined,
     liftEndTime: row.liftEndTime ?? undefined,
     liftMin: row.liftMin != null ? Number(row.liftMin) : undefined,
+    fatFreeMassLb: row.fatFreeMassLb != null ? Number(row.fatFreeMassLb) : undefined,
+    pushupsReps: row.pushupsReps != null ? Number(row.pushupsReps) : undefined,
+    pullupsReps: row.pullupsReps != null ? Number(row.pullupsReps) : undefined,
+    benchReps: row.benchReps != null ? Number(row.benchReps) : undefined,
+    benchWeightLb: row.benchWeightLb != null ? Number(row.benchWeightLb) : undefined,
+    ohpReps: row.ohpReps != null ? Number(row.ohpReps) : undefined,
+    ohpWeightLb: row.ohpWeightLb != null ? Number(row.ohpWeightLb) : undefined,
   };
 }
