@@ -879,7 +879,7 @@ export default function ReportScreen() {
                       today7dAvg: {sV.si7dToday.toFixed(4)}  prior7dAvg: {sV.si7d14dAgo.toFixed(4)}  delta: {(sV.si7dToday - sV.si7d14dAgo) >= 0 ? "+" : ""}{(sV.si7dToday - sV.si7d14dAgo).toFixed(4)}
                     </Text>
                     <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                      pctPerWeek: {sV.pctPerWeek >= 0 ? "+" : ""}{sV.pctPerWeek.toFixed(2)}%  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.spanDays}d
+                      pctPerWeek: {sV.pctPerWeek >= 0 ? "+" : ""}{sV.pctPerWeek.toFixed(2)}%  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.totalSpanDays}d
                     </Text>
                   </View>
                 ) : (

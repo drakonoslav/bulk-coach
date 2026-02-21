@@ -24,6 +24,7 @@ export interface StrengthVelocityResult {
   si7dToday: number;
   si7d14dAgo: number;
   spanDays: number;
+  totalSpanDays: number;
   label: string;
   pctPerWeek: number;
 }
@@ -170,6 +171,8 @@ export function strengthVelocity14d(
   const spanDays = daysBetween(parseDate(best.day), todayDate);
   if (spanDays < 7) return null;
 
+  const totalSpanDays = daysBetween(parseDate(ra[0].day), todayDate);
+
   const velocity7dPerWeek = ((today.avg - best.avg) / spanDays) * 7;
   const pctPerWeek = best.avg > 0 ? (velocity7dPerWeek / best.avg) * 100 : 0;
 
@@ -186,6 +189,7 @@ export function strengthVelocity14d(
     si7dToday: today.avg,
     si7d14dAgo: best.avg,
     spanDays,
+    totalSpanDays,
     label,
     pctPerWeek: Math.round(pctPerWeek * 100) / 100,
   };
