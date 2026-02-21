@@ -483,13 +483,18 @@ export function ffmRollingAvg(entries: DailyEntry[], days: number = 7): Array<{ 
   return out;
 }
 
+export const FFM_VELOCITY_NOISE_FLOOR = 0.15;
+export const WEIGHT_VELOCITY_RATIO_FLOOR = 0.15;
+
 export interface FfmVelocityResult {
+  rawVelocityLbPerWeek: number;
   velocityLbPerDay: number;
   velocityLbPerWeek: number;
   ffm7dToday: number;
   ffm7d14dAgo: number;
   spanDays: number;
   label: string;
+  clampedToNoise: boolean;
 }
 
 export function ffmVelocity14d(entries: DailyEntry[]): FfmVelocityResult | null {
@@ -523,21 +528,27 @@ export function ffmVelocity14d(entries: DailyEntry[]): FfmVelocityResult | null 
   const spanDays = daysBetween(parseDate(best.day), todayDate);
   if (spanDays < 7) return null;
 
-  const velocityLbPerDay = (today.avg - best.avg) / spanDays;
-  const velocityLbPerWeek = velocityLbPerDay * 7;
+  const rawVelocityLbPerDay = (today.avg - best.avg) / spanDays;
+  const rawVelocityLbPerWeek = rawVelocityLbPerDay * 7;
+
+  const clampedToNoise = Math.abs(rawVelocityLbPerWeek) < FFM_VELOCITY_NOISE_FLOOR;
+  const velocityLbPerWeek = clampedToNoise ? 0 : Math.round(rawVelocityLbPerWeek * 100) / 100;
+  const velocityLbPerDay = clampedToNoise ? 0 : rawVelocityLbPerDay;
 
   let label: string;
-  if (velocityLbPerWeek < -0.15) label = "Lean tissue declining";
-  else if (velocityLbPerWeek > 0.15) label = "Lean tissue increasing";
-  else label = "Lean tissue stable (recomp)";
+  if (clampedToNoise) label = "Stable (within noise)";
+  else if (rawVelocityLbPerWeek < -FFM_VELOCITY_NOISE_FLOOR) label = "Lean tissue declining";
+  else label = "Lean tissue increasing";
 
   return {
+    rawVelocityLbPerWeek: Math.round(rawVelocityLbPerWeek * 100) / 100,
     velocityLbPerDay,
-    velocityLbPerWeek: Math.round(velocityLbPerWeek * 100) / 100,
+    velocityLbPerWeek,
     ffm7dToday: today.avg,
     ffm7d14dAgo: best.avg,
     spanDays,
     label,
+    clampedToNoise,
   };
 }
 
@@ -575,12 +586,22 @@ export function weightVelocity14d(entries: DailyEntry[]): number | null {
   return ((today.avg - best.avg) / spanDays) * 7;
 }
 
-export function ffmLeanGainRatio(entries: DailyEntry[]): number | null {
+export interface FfmLeanGainRatioResult {
+  ratio: number | null;
+  insufficientWeight: boolean;
+  label: string;
+}
+
+export function ffmLeanGainRatio(entries: DailyEntry[]): FfmLeanGainRatioResult {
   const ffmV = ffmVelocity14d(entries);
   const wV = weightVelocity14d(entries);
-  if (!ffmV || wV == null) return null;
-  if (Math.abs(wV) < 0.05) return null;
-  return Math.max(-1.0, Math.min(2.0, ffmV.velocityLbPerWeek / wV));
+  if (!ffmV || wV == null) return { ratio: null, insufficientWeight: false, label: "Insufficient data" };
+  if (Math.abs(wV) < WEIGHT_VELOCITY_RATIO_FLOOR) {
+    return { ratio: null, insufficientWeight: true, label: "Insufficient weight movement for ratio" };
+  }
+  const r = Math.max(-1.0, Math.min(2.0, ffmV.velocityLbPerWeek / wV));
+  const label = r >= 0.6 ? "Mostly lean gains" : r >= 0.3 ? "Mixed gains" : r < 0 ? "Lean tissue loss" : "Mostly fat";
+  return { ratio: r, insufficientWeight: false, label };
 }
 
 export function leanGainRatioRolling(

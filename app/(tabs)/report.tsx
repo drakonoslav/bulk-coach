@@ -872,11 +872,17 @@ export default function ReportScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{ffmV.spanDays}d ago: {ffmV.ffm7d14dAgo.toFixed(1)} lb</Text>
                         </View>
                       </View>
-                      {ffmLgr != null ? (
+                      {ffmLgr.ratio != null ? (
                         <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#A78BFA20" }}>
                           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
-                            FFM-based LGR: <Text style={{ fontFamily: "Rubik_600SemiBold", color: ffmLgr >= 0.6 ? Colors.success : ffmLgr >= 0.3 ? Colors.warning : Colors.danger }}>{ffmLgr.toFixed(2)}</Text>
-                            {ffmLgr >= 0.6 ? " — mostly lean gains" : ffmLgr >= 0.3 ? " — mixed gains" : ffmLgr < 0 ? " — lean tissue loss" : " — mostly fat"}
+                            FFM-based LGR: <Text style={{ fontFamily: "Rubik_600SemiBold", color: ffmLgr.ratio >= 0.6 ? Colors.success : ffmLgr.ratio >= 0.3 ? Colors.warning : Colors.danger }}>{ffmLgr.ratio.toFixed(2)}</Text>
+                            {" — "}{ffmLgr.label}
+                          </Text>
+                        </View>
+                      ) : ffmLgr.insufficientWeight ? (
+                        <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#A78BFA20" }}>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                            FFM-based LGR: {ffmLgr.label}
                           </Text>
                         </View>
                       ) : null}
