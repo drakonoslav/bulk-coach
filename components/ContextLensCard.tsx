@@ -150,6 +150,13 @@ export default function ContextLensCard() {
     return "#34D399";
   };
 
+  const scoreLabel = (score: number) => {
+    if (score >= 60) return "High disturbance";
+    if (score >= 40) return "Moderate";
+    if (score >= 20) return "Mild";
+    return "Minimal";
+  };
+
   const allTags = Array.from(new Set([...tags, ...PRESET_TAGS]));
   const activeTags = tags;
 
@@ -241,7 +248,7 @@ export default function ContextLensCard() {
                   <Text style={[s.scoreValue, { color: scoreColor(lensResult.metrics.disturbanceScore) }]}>
                     {lensResult.metrics.disturbanceScore.toFixed(0)}
                   </Text>
-                  <Text style={s.scoreLabel}>disturb</Text>
+                  <Text style={s.scoreLabelText}>{scoreLabel(lensResult.metrics.disturbanceScore)}</Text>
                 </View>
 
                 {lensResult.metrics.disturbanceSlope14d !== 0 && (
@@ -283,7 +290,9 @@ export default function ContextLensCard() {
                 <View style={s.componentRow}>
                   {(["hrv", "rhr", "slp", "prx", "drf"] as const).map((k) => {
                     const val = lensResult.disturbance.components[k];
+                    const pct = Math.min(100, Math.round(Math.abs(val) * 100));
                     const labels = { hrv: "HRV", rhr: "RHR", slp: "SLP", prx: "PRX", drf: "DRF" };
+                    const barColor = val > 0.3 ? "#F87171" : val > 0 ? "#F59E0B" : "#34D399";
                     return (
                       <View key={k} style={s.compItem}>
                         <Text style={s.compLabel}>{labels[k]}</Text>
@@ -291,11 +300,12 @@ export default function ContextLensCard() {
                           <View style={[
                             s.compFill,
                             {
-                              width: `${Math.min(100, Math.abs(val) * 100)}%`,
-                              backgroundColor: val > 0.3 ? "#F87171" : val > 0 ? "#F59E0B" : "#34D399",
+                              width: `${pct}%`,
+                              backgroundColor: barColor,
                             },
                           ]} />
                         </View>
+                        <Text style={[s.compPct, { color: barColor }]}>{pct}%</Text>
                       </View>
                     );
                   })}
@@ -464,12 +474,11 @@ const s = StyleSheet.create({
     fontSize: 18,
     fontFamily: "Rubik_700Bold",
   },
-  scoreLabel: {
+  scoreLabelText: {
     fontSize: 9,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   slopeBox: {
     flexDirection: "row",
@@ -526,6 +535,11 @@ const s = StyleSheet.create({
   compFill: {
     height: "100%",
     borderRadius: 2,
+  },
+  compPct: {
+    fontSize: 8,
+    fontFamily: "Rubik_500Medium",
+    marginTop: 1,
   },
   adjustBtn: {
     flexDirection: "row",
