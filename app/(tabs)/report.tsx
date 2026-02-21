@@ -26,6 +26,9 @@ import {
   leanGainRatio14d,
   leanGainRatioRolling,
   leanMassRollingAvg,
+  ffmRollingAvg,
+  ffmVelocity14d,
+  ffmLeanGainRatio,
   BASELINE,
   ITEM_LABELS,
   ITEM_UNITS,
@@ -559,6 +562,10 @@ export default function ReportScreen() {
   const lgrRolling = leanGainRatioRolling(entries, 14);
   const lmRa = leanMassRollingAvg(entries, 7);
   const lmChartData = lmRa.slice(-21);
+  const ffmRa = ffmRollingAvg(entries, 7);
+  const ffmChartData = ffmRa.slice(-21);
+  const ffmV = ffmVelocity14d(entries);
+  const ffmLgr = ffmLeanGainRatio(entries);
 
   const hasEnoughData = entries.length >= 7;
 
@@ -677,7 +684,7 @@ export default function ReportScreen() {
               </View>
             </View>
 
-            {lgr != null || lmChartData.length >= 2 || lgrRolling.length >= 2 ? (
+            {lgr != null || lmChartData.length >= 2 || lgrRolling.length >= 2 || ffmV != null || ffmChartData.length >= 2 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Lean Gain Analysis</Text>
                 <View style={styles.lgrCard}>
@@ -747,6 +754,40 @@ export default function ReportScreen() {
                     <View style={{ marginTop: 16 }}>
                       <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Lean Mass Trend (7d Avg)</Text>
                       <WeightChart data={lmChartData} lineColor="#A78BFA" />
+                    </View>
+                  ) : null}
+                  {ffmV != null ? (
+                    <View style={{ marginTop: 16, padding: 12, backgroundColor: "#A78BFA10", borderRadius: 8, borderWidth: 1, borderColor: "#A78BFA30" }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="body-outline" size={14} color="#A78BFA" />
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#A78BFA" }}>Fat-Free Mass Velocity (14d)</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                        <View>
+                          <Text style={{ fontSize: 20, fontFamily: "Rubik_600SemiBold", color: ffmV.velocityLbPerWeek > 0.15 ? Colors.success : ffmV.velocityLbPerWeek < -0.15 ? Colors.danger : Colors.warning }}>
+                            {ffmV.velocityLbPerWeek > 0 ? "+" : ""}{ffmV.velocityLbPerWeek.toFixed(2)} lb/wk
+                          </Text>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>{ffmV.label}</Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>7d avg now: {ffmV.ffm7dToday.toFixed(1)} lb</Text>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{ffmV.spanDays}d ago: {ffmV.ffm7d14dAgo.toFixed(1)} lb</Text>
+                        </View>
+                      </View>
+                      {ffmLgr != null ? (
+                        <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#A78BFA20" }}>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+                            FFM-based LGR: <Text style={{ fontFamily: "Rubik_600SemiBold", color: ffmLgr >= 0.6 ? Colors.success : ffmLgr >= 0.3 ? Colors.warning : Colors.danger }}>{ffmLgr.toFixed(2)}</Text>
+                            {ffmLgr >= 0.6 ? " — mostly lean gains" : ffmLgr >= 0.3 ? " — mixed gains" : ffmLgr < 0 ? " — lean tissue loss" : " — mostly fat"}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  {ffmChartData.length >= 2 ? (
+                    <View style={{ marginTop: 16 }}>
+                      <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>Fat-Free Mass Trend (7d Avg)</Text>
+                      <WeightChart data={ffmChartData} lineColor="#C084FC" />
                     </View>
                   ) : null}
                 </View>
