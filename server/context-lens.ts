@@ -708,7 +708,13 @@ export async function applyCarryForward(
   day: string,
   userId: string = DEFAULT_USER_ID,
 ): Promise<ContextEvent[]> {
-  const activeEpisodes = await getActiveEpisodesOnDay(day, userId);
+  const { rows } = await pool.query(
+    `SELECT * FROM context_lens_episodes
+     WHERE user_id = $1 AND start_day <= $2 AND end_day IS NULL
+     ORDER BY start_day ASC`,
+    [userId, day],
+  );
+  const activeEpisodes = rows.map(rowToEpisode);
 
   for (const ep of activeEpisodes) {
     await pool.query(

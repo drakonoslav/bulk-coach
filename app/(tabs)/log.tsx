@@ -1843,7 +1843,7 @@ export default function LogScreen() {
             <Ionicons name="prism-outline" size={16} color="#8B5CF6" />
             <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#8B5CF6" }]}>Context Lenses</Text>
             <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>
-              {activeEpisodes.length > 0 ? `${activeEpisodes.length} active` : "tap to start"}
+              {activeEpisodes.filter(ep => ep.endDay === null).length > 0 ? `${activeEpisodes.filter(ep => ep.endDay === null).length} active` : "tap to start"}
             </Text>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: contextShowCustom ? 8 : 0 }}>
