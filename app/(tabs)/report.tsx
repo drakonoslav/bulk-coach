@@ -741,9 +741,10 @@ export default function ReportScreen() {
   const scs = computeSCS(entries, strengthBaselines);
   const modeClass = classifyMode(entries, strengthBaselines);
 
+  const isLocalFallback = appliedCalorieDelta == null;
   const finalKcal =
-    appliedCalorieDelta != null
-      ? { delta: appliedCalorieDelta, source: (policySource ?? "weight_only") as CalorieSource }
+    !isLocalFallback
+      ? { delta: appliedCalorieDelta!, source: (policySource ?? "weight_only") as CalorieSource }
       : chooseFinalCalorieDelta(
           kcalAdjWeightOnly,
           modeClass.calorieAction.delta,
@@ -964,11 +965,11 @@ export default function ReportScreen() {
                       {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal
                     </Text>
                     <View testID="mode-banner-policy-source" style={{
-                      backgroundColor: finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                      backgroundColor: isLocalFallback ? "#6B728030" : finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
                       borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
                     }}>
-                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
-                        {finalKcal.source === "mode_override" ? "MODE" : "WEIGHT"}
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: isLocalFallback ? "#9CA3AF" : finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                        {isLocalFallback ? "LOCAL" : finalKcal.source === "mode_override" ? "MODE" : "WEIGHT"}
                       </Text>
                     </View>
                   </View>
@@ -1766,13 +1767,13 @@ export default function ReportScreen() {
                     paddingHorizontal: 8,
                     paddingVertical: 4,
                     borderRadius: 999,
-                    backgroundColor: finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                    backgroundColor: isLocalFallback ? "#6B728030" : finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
                     borderWidth: 1,
-                    borderColor: finalKcal.source === "mode_override" ? "#F59E0B60" : "#6366F160",
+                    borderColor: isLocalFallback ? "#6B728060" : finalKcal.source === "mode_override" ? "#F59E0B60" : "#6366F160",
                   }}
                 >
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
-                    {finalKcal.source === "mode_override" ? "Mode Override" : "Weight"}
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: isLocalFallback ? "#9CA3AF" : finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                    {isLocalFallback ? "Local Fallback" : finalKcal.source === "mode_override" ? "Mode Override" : "Weight"}
                   </Text>
                 </View>
               </View>
