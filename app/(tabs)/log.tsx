@@ -206,6 +206,7 @@ export default function LogScreen() {
   const [bfPmR1, setBfPmR1] = useState("");
   const [bfPmR2, setBfPmR2] = useState("");
   const [bfPmR3, setBfPmR3] = useState("");
+  const [fatFreeMass, setFatFreeMass] = useState("");
   const [sleepStart, setSleepStart] = useState("");
   const [sleepEnd, setSleepEnd] = useState("");
   const [sleepQuality, setSleepQuality] = useState<number | undefined>();
@@ -300,6 +301,7 @@ export default function LogScreen() {
       setBfPmR1(existing.bfEveningR1?.toString() || "");
       setBfPmR2(existing.bfEveningR2?.toString() || "");
       setBfPmR3(existing.bfEveningR3?.toString() || "");
+      setFatFreeMass(existing.fatFreeMassLb?.toString() || "");
       setSleepStart(existing.sleepStart || "");
       setSleepEnd(existing.sleepEnd || "");
       setSleepQuality(existing.sleepQuality);
@@ -578,6 +580,7 @@ export default function LogScreen() {
     setBfPmR1("");
     setBfPmR2("");
     setBfPmR3("");
+    setFatFreeMass("");
     setSleepStart("");
     setSleepEnd("");
     setSleepQuality(undefined);
@@ -679,6 +682,7 @@ export default function LogScreen() {
         restingHr: restingHrManual ? parseInt(restingHrManual, 10) : undefined,
         caloriesIn: caloriesIn ? parseInt(caloriesIn, 10) : undefined,
         trainingLoad: trainingLoad || undefined,
+        fatFreeMassLb: fatFreeMass ? parseFloat(fatFreeMass) : undefined,
       };
 
       await saveEntry(entry);
@@ -947,6 +951,30 @@ export default function LogScreen() {
                 </View>
               );
             })()}
+          </View>
+        </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#A78BFA20" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <Ionicons name="body-outline" size={14} color="#A78BFA" />
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#A78BFA" }}>Fat-Free Mass</Text>
+            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>measured only</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={fatFreeMass}
+                  onChangeText={setFatFreeMass}
+                  placeholder="e.g. 145.2"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>lb</Text>
+              </View>
+            </View>
           </View>
         </View>
 
