@@ -591,6 +591,13 @@ export default function ReportScreen() {
   const sV = strengthVelocity14d(entries, strengthBaselines);
 
   const hasEnoughData = entries.length >= 7;
+  const daysWithWeight = entries.filter(e => e.morningWeightLb != null).length;
+  const allVelocitiesNull = modeClass.ffmVelocity == null && modeClass.waistVelocity == null && modeClass.strengthVelocityPct == null;
+  const rampUpMessage = daysWithWeight < 7
+    ? `Need 7 days for rolling averages (${daysWithWeight} so far)`
+    : daysWithWeight < 21 && allVelocitiesNull
+      ? `Need ~21 days for 14d velocities (${daysWithWeight} so far)`
+      : null;
 
   const targetMin = 0.25;
   const targetMax = 0.5;
@@ -718,6 +725,14 @@ export default function ReportScreen() {
                   </View>
                 )}
               </View>
+              {rampUpMessage != null && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, backgroundColor: "#6366F118", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5 }}>
+                  <Ionicons name="time-outline" size={13} color="#818CF8" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#818CF8", flex: 1 }}>
+                    {rampUpMessage}
+                  </Text>
+                </View>
+              )}
               {modeClass.calorieAction.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
@@ -725,7 +740,7 @@ export default function ReportScreen() {
                   </Text>
                 </View>
               )}
-              {modeClass.mode === "UNCERTAIN" && modeClass.reasons.length > 1 && (
+              {modeClass.mode === "UNCERTAIN" && modeClass.reasons.length > 1 && !rampUpMessage && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
                     {modeClass.reasons[1]}
