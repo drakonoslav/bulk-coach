@@ -607,15 +607,54 @@ export async function startEpisode(
 
   const episode = rowToEpisode(rows[0]);
 
-  await pool.query(
-    `INSERT INTO context_events (user_id, day, tag, intensity, label, notes, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())
-     ON CONFLICT (user_id, day, tag) DO UPDATE SET
-       intensity = EXCLUDED.intensity, label = EXCLUDED.label, notes = EXCLUDED.notes, updated_at = NOW()`,
-    [userId, args.startDay, args.tag, args.intensity ?? 1, args.label ?? null, args.notes ?? null],
-  );
+  const today = new Date().toISOString().slice(0, 10);
+  const endDate = args.startDay > today ? args.startDay : today;
+  const daysToFill: string[] = [];
+  let cur = args.startDay;
+  while (cur <= endDate) {
+    daysToFill.push(cur);
+    cur = addDays(cur, 1);
+  }
+
+  for (const d of daysToFill) {
+    await pool.query(
+      `INSERT INTO context_events (user_id, day, tag, intensity, label, notes, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (user_id, day, tag) DO UPDATE SET
+         intensity = EXCLUDED.intensity, label = EXCLUDED.label, notes = EXCLUDED.notes, updated_at = NOW()`,
+      [userId, d, args.tag, args.intensity ?? 1, args.label ?? null, args.notes ?? null],
+    );
+  }
+
+  if (daysToFill.length > 1) {
+    await backfillDailyLogForEpisode(daysToFill, userId);
+  }
 
   return episode;
+}
+
+async function backfillDailyLogForEpisode(days: string[], userId: string): Promise<void> {
+  for (const day of days) {
+    const { rows: existingLog } = await pool.query(
+      `SELECT day FROM daily_log WHERE day = $1 AND user_id = $2`,
+      [day, userId],
+    );
+    if (existingLog.length > 0) continue;
+
+    const { rows: prevLog } = await pool.query(
+      `SELECT morning_weight_lb FROM daily_log WHERE user_id = $1 AND day < $2 AND morning_weight_lb IS NOT NULL ORDER BY day DESC LIMIT 1`,
+      [userId, day],
+    );
+    const weight = prevLog.length > 0 ? prevLog[0].morning_weight_lb : null;
+    if (weight == null) continue;
+
+    await pool.query(
+      `INSERT INTO daily_log (user_id, day, morning_weight_lb, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (user_id, day) DO NOTHING`,
+      [userId, day, weight],
+    );
+  }
 }
 
 export async function concludeEpisode(
@@ -633,28 +672,10 @@ export async function concludeEpisode(
 
   const episode = rowToEpisode(rows[0]);
 
-  const { rows: eventRows } = await pool.query(
-    `SELECT day FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4 ORDER BY day DESC`,
+  await pool.query(
+    `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4`,
     [userId, episode.tag, episode.startDay, endDay],
   );
-
-  const daysToDelete: string[] = [];
-  let expected = endDay;
-  for (const r of eventRows) {
-    if (r.day === expected) {
-      daysToDelete.push(r.day);
-      expected = addDays(expected, -1);
-    } else {
-      break;
-    }
-  }
-
-  if (daysToDelete.length > 0) {
-    await pool.query(
-      `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day = ANY($3::text[])`,
-      [userId, episode.tag, daysToDelete],
-    );
-  }
 
   let summaryJson: any = {};
   try {
