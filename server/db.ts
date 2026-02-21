@@ -649,6 +649,23 @@ async function runMigrations(): Promise<void> {
       PRIMARY KEY (user_id, day)
     );
   `);
+
+  await runMigration('009_add_context_events', `
+    CREATE TABLE IF NOT EXISTS context_events (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      day TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      intensity SMALLINT NOT NULL DEFAULT 0 CHECK (intensity >= 0 AND intensity <= 3),
+      notes TEXT,
+      adjustment_attempted BOOLEAN NOT NULL DEFAULT FALSE,
+      adjustment_attempted_day TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_context_events_user_day ON context_events(user_id, day);
+    CREATE INDEX IF NOT EXISTS idx_context_events_user_tag ON context_events(user_id, tag);
+  `);
 }
 
 export { pool };
