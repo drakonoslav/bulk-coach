@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
-import { loadEntries } from "@/lib/entry-storage";
+import { loadDashboard } from "@/lib/entry-storage";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import {
   DailyEntry,
@@ -642,9 +642,24 @@ export default function ReportScreen() {
     day: string; deltaKcal: number; source: string; priority: string; reason: string; wkGainLb: number | null; mode: string | null;
   }>>([]);
 
-  const fetchEntries = useCallback(async () => {
-    const data = await loadEntries();
-    setEntries(data);
+  const [appliedCalorieDelta, setAppliedCalorieDelta] = useState<number | null>(null);
+  const [policySource, setPolicySource] = useState<string | null>(null);
+  const [modeInsightReason, setModeInsightReason] = useState<string | null>(null);
+
+  const fetchDashboard = useCallback(async () => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 120);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    const dash = await loadDashboard(start, end);
+    setEntries(dash.entries);
+    setAppliedCalorieDelta(dash.appliedCalorieDelta);
+    setPolicySource(dash.policySource);
+    setModeInsightReason(dash.modeInsightReason);
+    setCalorieHistory(dash.decisions14d ?? []);
   }, []);
 
   const fetchProxy = useCallback(async () => {
@@ -693,28 +708,21 @@ export default function ReportScreen() {
           });
         }
       } catch {}
-      try {
-        const chRes = await authFetch(new URL("/api/calorie-decisions?days=14", baseUrl).toString());
-        if (chRes.ok) {
-          const chData = await chRes.json();
-          setCalorieHistory(chData.decisions ?? chData);
-        }
-      } catch {}
     } catch {}
   }, [proxyImputed]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchEntries();
+      fetchDashboard();
       fetchProxy();
-    }, [fetchEntries, fetchProxy])
+    }, [fetchDashboard, fetchProxy])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchEntries(), fetchProxy()]);
+    await Promise.all([fetchDashboard(), fetchProxy()]);
     setRefreshing(false);
-  }, [fetchEntries, fetchProxy]);
+  }, [fetchDashboard, fetchProxy]);
 
   const wkGain = weeklyDelta(entries);
   const wDelta = waistDelta(entries);
@@ -733,11 +741,13 @@ export default function ReportScreen() {
   const scs = computeSCS(entries, strengthBaselines);
   const modeClass = classifyMode(entries, strengthBaselines);
 
-  const finalKcal = chooseFinalCalorieDelta(
-    kcalAdjWeightOnly,
-    modeClass.calorieAction.delta,
-    modeClass.calorieAction.priority
-  );
+  const finalKcal = appliedCalorieDelta != null
+    ? { delta: appliedCalorieDelta, source: (policySource ?? "weight_only") as CalorieSource }
+    : chooseFinalCalorieDelta(
+        kcalAdjWeightOnly,
+        modeClass.calorieAction.delta,
+        modeClass.calorieAction.priority
+      );
   const adjustments = finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
@@ -958,15 +968,15 @@ export default function ReportScreen() {
                   </View>
                   <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
                     {finalKcal.source === "mode_override"
-                      ? modeClass.calorieAction.reason
+                      ? (modeInsightReason ?? modeClass.calorieAction.reason)
                       : "Weight policy (weekly rate)"}
                   </Text>
                 </View>
               )}
-              {modeClass.calorieAction.reason ? (
+              {(modeInsightReason ?? modeClass.calorieAction.reason) ? (
                 <View style={{ marginTop: 6 }}>
                   <Text testID="mode-banner-insight" style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, opacity: 0.9 }}>
-                    Insight: {modeClass.calorieAction.reason}
+                    Insight: {modeInsightReason ?? modeClass.calorieAction.reason}
                   </Text>
                 </View>
               ) : null}

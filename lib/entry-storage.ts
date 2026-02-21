@@ -18,7 +18,15 @@ export async function loadEntries(): Promise<DailyEntry[]> {
   }
 }
 
-export async function loadDashboard(start?: string, end?: string): Promise<DashboardRow[]> {
+export interface DashboardResponse {
+  entries: DailyEntry[];
+  appliedCalorieDelta: number | null;
+  policySource: string | null;
+  modeInsightReason: string | null;
+  decisions14d: any[];
+}
+
+export async function loadDashboard(start?: string, end?: string): Promise<DashboardResponse> {
   try {
     const baseUrl = getApiUrl();
     const url = new URL("/api/dashboard", baseUrl);
@@ -26,10 +34,25 @@ export async function loadDashboard(start?: string, end?: string): Promise<Dashb
     if (end) url.searchParams.set("end", end);
     const res = await authFetch(url.toString());
     if (!res.ok) throw new Error(`${res.status}`);
-    return await res.json();
+    const raw = await res.json();
+    const rows: any[] = Array.isArray(raw?.entries) ? raw.entries : [];
+    const entries = rows.map(rowToEntry).sort((a, b) => a.day.localeCompare(b.day));
+    return {
+      entries,
+      appliedCalorieDelta: raw?.appliedCalorieDelta ?? null,
+      policySource: raw?.policySource ?? null,
+      modeInsightReason: raw?.modeInsightReason ?? null,
+      decisions14d: raw?.decisions14d ?? [],
+    };
   } catch (err) {
     console.error("loadDashboard API error:", err);
-    return [];
+    return {
+      entries: [],
+      appliedCalorieDelta: null,
+      policySource: null,
+      modeInsightReason: null,
+      decisions14d: [],
+    };
   }
 }
 
