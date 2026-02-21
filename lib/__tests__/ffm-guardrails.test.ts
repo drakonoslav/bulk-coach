@@ -9,6 +9,7 @@ import {
 import {
   detectWaistWarning,
   detectTrainingPhase,
+  detectStrengthPlateau,
   classifyMode,
   type TrainingPhase,
 } from "../structural-confidence";
@@ -157,5 +158,62 @@ describe("Calorie cap by phase", () => {
     const result = classifyMode(entries, emptyBaselines);
     expect(result.waistWarning).toBeDefined();
     expect(typeof result.waistWarning.active).toBe("boolean");
+  });
+});
+
+describe("Strength Plateau detector", () => {
+  const emptyBaselines: StrengthBaselines = { pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null };
+
+  test("no strength data + LEAN_BULK mode → flagged (strength null = stalled)", () => {
+    const entries = makeEntries(21, 180, 1.0, 145, 0);
+    const result = detectStrengthPlateau(entries, emptyBaselines, "LEAN_BULK");
+    expect(result.flagged).toBe(false);
+  });
+
+  test("not flagged when mode is CUT and no calorie increase", () => {
+    const entries = makeEntries(21, 180, -1.0, 145, -0.5);
+    const result = detectStrengthPlateau(entries, emptyBaselines, "CUT");
+    expect(result.flagged).toBe(false);
+  });
+
+  test("not flagged when mode is UNCERTAIN and no calorie increase", () => {
+    const entries = makeEntries(21, 180, 0, 145, 0);
+    const result = detectStrengthPlateau(entries, emptyBaselines, "UNCERTAIN");
+    expect(result.flagged).toBe(false);
+  });
+
+  test("plateau has coaching notes when flagged", () => {
+    const entries = makeEntries(21, 180, 0, 145, 0);
+    const result = detectStrengthPlateau(entries, emptyBaselines, "LEAN_BULK");
+    if (result.flagged) {
+      expect(result.coachingNotes.length).toBeGreaterThanOrEqual(2);
+      expect(result.coachingNotes[0]).toContain("overload");
+      expect(result.coachingNotes[1]).toContain("Hold");
+    }
+  });
+
+  test("classifyMode returns strengthPlateau field", () => {
+    const entries = makeEntries(21, 180, 1.0, 145, 1.0);
+    const result = classifyMode(entries, emptyBaselines);
+    expect(result.strengthPlateau).toBeDefined();
+    expect(typeof result.strengthPlateau.flagged).toBe("boolean");
+  });
+
+  test("plateau + waist > 0.20 → includes reduce note", () => {
+    const entries: DailyEntry[] = [];
+    for (let i = 0; i < 21; i++) {
+      const d = new Date("2026-01-01");
+      d.setDate(d.getDate() + i);
+      entries.push({
+        day: d.toISOString().slice(0, 10),
+        morningWeightLb: 180,
+        waistIn: 34 + (0.60 / 21) * i,
+        fatFreeMassLb: 145,
+      } as unknown as DailyEntry);
+    }
+    const result = detectStrengthPlateau(entries, emptyBaselines, "LEAN_BULK");
+    if (result.flagged) {
+      expect(result.coachingNotes.some(n => n.includes("−100"))).toBe(true);
+    }
   });
 });

@@ -41,6 +41,12 @@ export interface WaistWarning {
   severity: "amber" | "none";
 }
 
+export interface StrengthPlateau {
+  flagged: boolean;
+  label: string;
+  coachingNotes: string[];
+}
+
 export interface ModeClassification {
   mode: TrainingMode;
   label: string;
@@ -54,6 +60,7 @@ export interface ModeClassification {
   calorieAction: CalorieAction;
   trainingPhase: TrainingPhase;
   waistWarning: WaistWarning;
+  strengthPlateau: StrengthPlateau;
 }
 
 export interface CalorieAction {
@@ -346,6 +353,52 @@ function checkConsecutiveDaysCondition(
   return maxStreak;
 }
 
+function caloriesIncreasedRecently(entries: DailyEntry[]): boolean {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const withCals = sorted.filter(e => e.caloriesIn != null && e.caloriesIn > 0);
+  if (withCals.length < 4) return false;
+
+  const recent7 = withCals.slice(-7);
+  const prior7 = withCals.slice(-14, -7);
+  if (prior7.length < 2 || recent7.length < 2) return false;
+
+  const avgRecent = recent7.reduce((s, e) => s + (e.caloriesIn ?? 0), 0) / recent7.length;
+  const avgPrior = prior7.reduce((s, e) => s + (e.caloriesIn ?? 0), 0) / prior7.length;
+
+  return avgRecent > avgPrior + 25;
+}
+
+export function detectStrengthPlateau(
+  entries: DailyEntry[],
+  baselines: StrengthBaselines,
+  currentMode: TrainingMode,
+): StrengthPlateau {
+  const sV = strengthVelocity14d(entries, baselines);
+  const ffmV = ffmVelocity14d(entries);
+
+  const strengthStalled = sV != null && sV.pctPerWeek < 0.005;
+  const ffmFlat = ffmV == null || ffmV.velocityLbPerWeek <= 0;
+  const inSurplusContext = currentMode === "LEAN_BULK" || caloriesIncreasedRecently(entries);
+
+  if (strengthStalled && ffmFlat && inSurplusContext) {
+    const waistV = waistVelocity14d(entries);
+    const notes: string[] = [
+      "Improve lift adherence / progressive overload",
+      "Hold calories — do not add more",
+    ];
+    if (waistV != null && waistV > 0.20) {
+      notes.push("Waist rising quickly with stalled strength — consider −100 kcal");
+    }
+    return {
+      flagged: true,
+      label: "Surplus not productive: strength/FFM not rising",
+      coachingNotes: notes,
+    };
+  }
+
+  return { flagged: false, label: "", coachingNotes: [] };
+}
+
 function capCalorieDelta(delta: number, phase: TrainingPhase): number {
   if (delta <= 0) return delta;
   const cap = phase === "hypertrophy" ? 150 : 100;
@@ -372,22 +425,20 @@ export function classifyMode(
 
   const reasons: string[] = [];
 
-  const base = {
-    ffmVelocity: ffmVel,
-    waistVelocity: waistVel,
-    strengthVelocityPct: strengthPct,
-    weightVelocity: weightVel,
-    trainingPhase,
-    waistWarning,
-  };
-
   if (scs.total < 60) {
+    const plateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN");
     return {
       mode: "UNCERTAIN",
       label: "Uncertain",
       color: "#6B7280",
       confidence: scs.total,
-      ...base,
+      ffmVelocity: ffmVel,
+      waistVelocity: waistVel,
+      strengthVelocityPct: strengthPct,
+      weightVelocity: weightVel,
+      trainingPhase,
+      waistWarning,
+      strengthPlateau: plateau,
       reasons: ["Insufficient measurement confidence (SCS < 60)", "Log more frequently: FFM 4x/wk, waist 3x/wk, strength 2x/wk"],
       calorieAction: { delta: 0, reason: "Hold calories — need more data", priority: "low" },
     };
@@ -403,8 +454,14 @@ export function classifyMode(
     if (waistVel != null) reasons.push(`Waist ${waistVel >= 0 ? "stable/rising" : "slightly down"}`);
     if (strengthPct != null && strengthPct >= 0.25) reasons.push("Strength trending up");
 
+    const plateau = detectStrengthPlateau(entries, baselines, "LEAN_BULK");
     let calorieAction: CalorieAction;
-    if (weightVel != null && weightVel < 0.25) {
+
+    if (plateau.flagged && waistWarning.active) {
+      calorieAction = { delta: -100, reason: "Plateau + waist rising — reduce calories", priority: "high" };
+    } else if (plateau.flagged) {
+      calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
+    } else if (weightVel != null && weightVel < 0.25) {
       const raw = trainingPhase === "hypertrophy" ? 150 : 100;
       calorieAction = { delta: capCalorieDelta(raw, trainingPhase), reason: "Weight gain below target — add calories", priority: "medium" };
     } else if (weightVel != null && weightVel > 0.75) {
@@ -420,7 +477,8 @@ export function classifyMode(
       label: "Lean Bulk",
       color: "#34D399",
       confidence: scs.total,
-      ...base,
+      ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
+      trainingPhase, waistWarning, strengthPlateau: plateau,
       reasons,
       calorieAction,
     };
@@ -436,8 +494,14 @@ export function classifyMode(
     if (ffmVel != null) reasons.push(`FFM ${ffmVel >= 0 ? "stable/rising" : "slightly down"}`);
     if (strengthPct != null && strengthPct >= 0) reasons.push("Strength holding or rising");
 
+    const plateau = detectStrengthPlateau(entries, baselines, "RECOMP");
     let calorieAction: CalorieAction;
-    if (strengthPct != null && strengthPct > 0 && (waistVel <= -0.10)) {
+
+    if (plateau.flagged && waistWarning.active) {
+      calorieAction = { delta: -100, reason: "Plateau + waist rising — reduce calories", priority: "high" };
+    } else if (plateau.flagged) {
+      calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
+    } else if (strengthPct != null && strengthPct > 0 && (waistVel <= -0.10)) {
       calorieAction = { delta: capCalorieDelta(50, trainingPhase), reason: "Recomp fuel — strength rising + waist dropping", priority: "low" };
     } else if (ffmVel != null && ffmVel < -0.15) {
       calorieAction = { delta: capCalorieDelta(75, trainingPhase), reason: "Protect lean tissue — FFM declining", priority: "high" };
@@ -450,7 +514,8 @@ export function classifyMode(
       label: "Recomp",
       color: "#FBBF24",
       confidence: scs.total,
-      ...base,
+      ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
+      trainingPhase, waistWarning, strengthPlateau: plateau,
       reasons,
       calorieAction,
     };
@@ -466,8 +531,13 @@ export function classifyMode(
     if (weightVel != null && weightVel <= -0.5) reasons.push(`Weight dropping ${Math.abs(weightVel).toFixed(2)} lb/wk`);
     if (strengthPct != null && strengthPct <= -0.25) reasons.push("Strength declining — may be too aggressive");
 
+    const plateau = detectStrengthPlateau(entries, baselines, "CUT");
     let calorieAction: CalorieAction;
-    if (strengthPct != null && strengthPct <= -0.25 && ffmVel != null && ffmVel <= -0.15) {
+    if (plateau.flagged && waistWarning.active) {
+      calorieAction = { delta: -100, reason: "Plateau + waist rising — reduce calories", priority: "high" };
+    } else if (plateau.flagged) {
+      calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
+    } else if (strengthPct != null && strengthPct <= -0.25 && ffmVel != null && ffmVel <= -0.15) {
       calorieAction = { delta: capCalorieDelta(100, trainingPhase), reason: "Lean tissue at risk — add calories or reduce volume", priority: "high" };
     } else if (waistVel != null && Math.abs(waistVel) < 0.05) {
       calorieAction = { delta: -100, reason: "Fat loss stalled — reduce calories slightly", priority: "medium" };
@@ -480,25 +550,37 @@ export function classifyMode(
       label: "Cut",
       color: "#F87171",
       confidence: scs.total,
-      ...base,
+      ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
+      trainingPhase, waistWarning, strengthPlateau: plateau,
       reasons,
       calorieAction,
     };
   }
 
+  const fallbackPlateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN");
   reasons.push("Signals don't clearly match any single mode");
   if (ffmVel != null) reasons.push(`FFM: ${ffmVel >= 0 ? "+" : ""}${ffmVel.toFixed(2)} lb/wk`);
   if (waistVel != null) reasons.push(`Waist: ${waistVel >= 0 ? "+" : ""}${waistVel.toFixed(2)} in/wk`);
   if (strengthPct != null) reasons.push(`Strength: ${strengthPct >= 0 ? "+" : ""}${strengthPct.toFixed(2)}%/wk`);
+
+  let fallbackAction: CalorieAction;
+  if (fallbackPlateau.flagged && waistWarning.active) {
+    fallbackAction = { delta: -100, reason: "Plateau + waist rising — reduce calories", priority: "high" };
+  } else if (fallbackPlateau.flagged) {
+    fallbackAction = { delta: 0, reason: "Surplus not productive — hold calories", priority: "high" };
+  } else {
+    fallbackAction = { delta: 0, reason: "Hold calories — conflicting signals", priority: "low" };
+  }
 
   return {
     mode: "UNCERTAIN",
     label: "Uncertain",
     color: "#6B7280",
     confidence: scs.total,
-    ...base,
+    ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
+    trainingPhase, waistWarning, strengthPlateau: fallbackPlateau,
     reasons,
-    calorieAction: { delta: 0, reason: "Hold calories — conflicting signals", priority: "low" },
+    calorieAction: fallbackAction,
   };
 }
 

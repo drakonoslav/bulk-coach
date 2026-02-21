@@ -662,6 +662,21 @@ export default function ReportScreen() {
                   </Text>
                 </View>
               )}
+              {modeClass.strengthPlateau.flagged && (
+                <View style={{ marginBottom: 6, backgroundColor: "#F8717118", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <Ionicons name="pause-circle" size={13} color="#F87171" />
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: "#F87171" }}>
+                      {modeClass.strengthPlateau.label}
+                    </Text>
+                  </View>
+                  {modeClass.strengthPlateau.coachingNotes.map((note, idx) => (
+                    <Text key={idx} style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "#F8717199", marginLeft: 19, marginTop: 1 }}>
+                      {idx + 1}. {note}
+                    </Text>
+                  ))}
+                </View>
+              )}
               <View style={{ gap: 4 }}>
                 {modeClass.ffmVelocity != null && (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
