@@ -1,5 +1,5 @@
 import { pool } from "./db";
-import { computeReadinessDeltas } from "./readiness-deltas";
+import { computeReadinessDeltas, type ReadinessDeltas } from "./readiness-deltas";
 import { computeRangeAdherence } from "./adherence-metrics-range";
 
 const DEFAULT_USER_ID = "local_default";
@@ -558,6 +558,230 @@ export async function computeContextLens(
   return { ...phase, disturbance };
 }
 
+export interface TerminalRollingSnapshot {
+  day: string;
+  disturbanceScore: number;
+  components: {
+    hrv: number;
+    rhr: number;
+    sleep: number;
+    proxy: number;
+    drift: number;
+  };
+  deltas: {
+    hrv_pct: number | null;
+    sleep_pct: number | null;
+    proxy_pct: number | null;
+    rhr_bpm: number | null;
+    lateRate: number | null;
+  };
+  cortisolFlagRate21d: number | null;
+  phase: string;
+}
+
+export interface EpisodeWideSnapshot {
+  windowStart: { start: string; end: string };
+  windowEnd: { start: string; end: string };
+  startMeans: {
+    hrv_pct: number | null;
+    sleep_pct: number | null;
+    proxy_pct: number | null;
+    rhr_bpm: number | null;
+    lateRate: number | null;
+    disturbance: number | null;
+  };
+  endMeans: {
+    hrv_pct: number | null;
+    sleep_pct: number | null;
+    proxy_pct: number | null;
+    rhr_bpm: number | null;
+    lateRate: number | null;
+    disturbance: number | null;
+  };
+  deltaChange: {
+    hrv_pct: number | null;
+    sleep_pct: number | null;
+    proxy_pct: number | null;
+    rhr_bpm: number | null;
+    lateRate: number | null;
+  };
+  disturbanceChange: number | null;
+  interpretation: "improving" | "flat" | "worsening" | "insufficient_data";
+}
+
+export interface DualBaselineArchiveSummary {
+  tag: string;
+  start_day: string;
+  end_day: string;
+  durationDays: number;
+  terminalRolling: TerminalRollingSnapshot;
+  episodeWide: EpisodeWideSnapshot;
+}
+
+async function computePerDayMetrics(
+  day: string,
+  userId: string,
+): Promise<{ deltas: ReadinessDeltas; disturbance: DisturbanceResult; lateRate: number | null }> {
+  const from34 = addDays(day, -34);
+
+  const [vitalsRes, sleepRes, proxyRes] = await Promise.all([
+    pool.query(
+      `SELECT date::text as date, hrv_rmssd_ms, resting_hr_bpm
+       FROM vitals_daily WHERE date BETWEEN $1::date AND $2::date AND user_id = $3 ORDER BY date ASC`,
+      [from34, day, userId],
+    ),
+    pool.query(
+      `SELECT date::text as date, total_sleep_minutes
+       FROM sleep_summary_daily WHERE date BETWEEN $1::date AND $2::date AND user_id = $3 ORDER BY date ASC`,
+      [from34, day, userId],
+    ),
+    pool.query(
+      `SELECT date::text as date, proxy_score
+       FROM androgen_proxy_daily WHERE date BETWEEN $1::date AND $2::date AND user_id = $3 AND computed_with_imputed = FALSE ORDER BY date ASC`,
+      [from34, day, userId],
+    ),
+  ]);
+
+  const vitalsMap = new Map<string, { hrv: number | null; rhr: number | null }>();
+  for (const r of vitalsRes.rows) {
+    vitalsMap.set(r.date, {
+      hrv: r.hrv_rmssd_ms != null ? Number(r.hrv_rmssd_ms) : null,
+      rhr: r.resting_hr_bpm != null ? Number(r.resting_hr_bpm) : null,
+    });
+  }
+  const sleepMap = new Map<string, number>();
+  for (const r of sleepRes.rows) {
+    if (r.total_sleep_minutes != null) sleepMap.set(r.date, Number(r.total_sleep_minutes));
+  }
+  const proxyMap = new Map<string, number>();
+  for (const r of proxyRes.rows) {
+    if (r.proxy_score != null) proxyMap.set(r.date, Number(r.proxy_score));
+  }
+
+  const allDates: string[] = [];
+  let cur = from34;
+  while (cur <= day) {
+    allDates.push(cur);
+    cur = addDays(cur, 1);
+  }
+  const len = allDates.length;
+  const hrvAll = allDates.map(d => vitalsMap.get(d)?.hrv ?? null);
+  const rhrAll = allDates.map(d => vitalsMap.get(d)?.rhr ?? null);
+  const sleepAll = allDates.map(d => sleepMap.get(d) ?? null);
+  const proxyAll = allDates.map(d => proxyMap.get(d) ?? null);
+
+  const last7 = (arr: (number | null)[]) => arr.slice(Math.max(0, len - 7));
+  const last28 = (arr: (number | null)[]) => arr.slice(Math.max(0, len - 28));
+
+  const deltas = computeReadinessDeltas({
+    hrvMs_7d: rollingMean(last7(hrvAll)),
+    hrvMs_28d: rollingMean(last28(hrvAll)),
+    rhrBpm_7d: rollingMean(last7(rhrAll)),
+    rhrBpm_28d: rollingMean(last28(rhrAll)),
+    sleepMin_7d: rollingMean(last7(sleepAll)),
+    sleepMin_28d: rollingMean(last28(sleepAll)),
+    proxy_7d: rollingMean(last7(proxyAll)),
+    proxy_28d: rollingMean(last28(proxyAll)),
+  });
+
+  const adherenceMap = await computeRangeAdherence(day, day, userId);
+  const dayAdherence = adherenceMap.get(day);
+
+  const lateRate =
+    dayAdherence?.bedtimeDriftLateNights7d != null &&
+    dayAdherence?.bedtimeDriftMeasuredNights7d != null &&
+    dayAdherence.bedtimeDriftMeasuredNights7d > 0
+      ? dayAdherence.bedtimeDriftLateNights7d / dayAdherence.bedtimeDriftMeasuredNights7d
+      : null;
+
+  const disturbance = computeDisturbanceScore({
+    hrv_pct: deltas.hrv_pct,
+    sleep_pct: deltas.sleep_pct,
+    proxy_pct: deltas.proxy_pct,
+    rhr_bpm: deltas.rhr_bpm,
+    bedtimeDriftLateNights7d: dayAdherence?.bedtimeDriftLateNights7d ?? null,
+    bedtimeDriftMeasuredNights7d: dayAdherence?.bedtimeDriftMeasuredNights7d ?? null,
+  });
+
+  return { deltas, disturbance, lateRate };
+}
+
+export async function computeEpisodeWide(
+  taggedDays: string[],
+  userId: string,
+): Promise<EpisodeWideSnapshot> {
+  const sorted = [...taggedDays].sort();
+
+  if (sorted.length < 3) {
+    return {
+      windowStart: { start: sorted[0] || "", end: sorted[sorted.length - 1] || "" },
+      windowEnd: { start: sorted[0] || "", end: sorted[sorted.length - 1] || "" },
+      startMeans: { hrv_pct: null, sleep_pct: null, proxy_pct: null, rhr_bpm: null, lateRate: null, disturbance: null },
+      endMeans: { hrv_pct: null, sleep_pct: null, proxy_pct: null, rhr_bpm: null, lateRate: null, disturbance: null },
+      deltaChange: { hrv_pct: null, sleep_pct: null, proxy_pct: null, rhr_bpm: null, lateRate: null },
+      disturbanceChange: null,
+      interpretation: "insufficient_data",
+    };
+  }
+
+  const windowSize = sorted.length >= 7 ? 7 : 3;
+  const startWindow = sorted.slice(0, windowSize);
+  const endWindow = sorted.slice(-windowSize);
+
+  const computeWindowMeans = async (days: string[]) => {
+    const results = await Promise.all(days.map(d => computePerDayMetrics(d, userId)));
+    const hrvVals = results.map(r => r.deltas.hrv_pct).filter((v): v is number => v != null);
+    const sleepVals = results.map(r => r.deltas.sleep_pct).filter((v): v is number => v != null);
+    const proxyVals = results.map(r => r.deltas.proxy_pct).filter((v): v is number => v != null);
+    const rhrVals = results.map(r => r.deltas.rhr_bpm).filter((v): v is number => v != null);
+    const lateVals = results.map(r => r.lateRate).filter((v): v is number => v != null);
+    const distVals = results.map(r => r.disturbance.score);
+
+    const mean = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : null;
+
+    return {
+      hrv_pct: mean(hrvVals),
+      sleep_pct: mean(sleepVals),
+      proxy_pct: mean(proxyVals),
+      rhr_bpm: mean(rhrVals),
+      lateRate: mean(lateVals),
+      disturbance: mean(distVals),
+    };
+  };
+
+  const startMeans = await computeWindowMeans(startWindow);
+  const endMeans = await computeWindowMeans(endWindow);
+
+  const safeDelta = (a: number | null, b: number | null) =>
+    a != null && b != null ? Math.round((a - b) * 10) / 10 : null;
+
+  const deltaChange = {
+    hrv_pct: safeDelta(endMeans.hrv_pct, startMeans.hrv_pct),
+    sleep_pct: safeDelta(endMeans.sleep_pct, startMeans.sleep_pct),
+    proxy_pct: safeDelta(endMeans.proxy_pct, startMeans.proxy_pct),
+    rhr_bpm: safeDelta(endMeans.rhr_bpm, startMeans.rhr_bpm),
+    lateRate: safeDelta(endMeans.lateRate, startMeans.lateRate),
+  };
+
+  const disturbanceChange = safeDelta(endMeans.disturbance, startMeans.disturbance);
+
+  let interpretation: "improving" | "flat" | "worsening" | "insufficient_data" = "flat";
+  if (disturbanceChange != null) {
+    if (disturbanceChange <= -5) interpretation = "improving";
+    else if (disturbanceChange >= 5) interpretation = "worsening";
+  }
+
+  return {
+    windowStart: { start: startWindow[0], end: startWindow[startWindow.length - 1] },
+    windowEnd: { start: endWindow[0], end: endWindow[endWindow.length - 1] },
+    startMeans,
+    endMeans,
+    deltaChange,
+    disturbanceChange,
+    interpretation,
+  };
+}
+
 export interface LensEpisode {
   id: number;
   userId: string;
@@ -670,28 +894,57 @@ export async function concludeEpisode(
 
   const episode = rowToEpisode(rows[0]);
 
-  await pool.query(
-    `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4`,
+  const { rows: taggedEventRows } = await pool.query(
+    `SELECT day FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4 ORDER BY day ASC`,
     [userId, episode.tag, episode.startDay, endDay],
   );
+  const taggedDays = taggedEventRows.map((r: any) => r.day as string);
 
   let summaryJson: any = {};
   try {
     const lensResult = await computeContextLens(episode.tag, endDay, userId);
-    summaryJson = {
-      phase: lensResult.phase,
-      confidence: lensResult.confidence,
-      summary: lensResult.summary,
+
+    const endDayMetrics = await computePerDayMetrics(endDay, userId);
+
+    const terminalRolling: TerminalRollingSnapshot = {
+      day: endDay,
       disturbanceScore: lensResult.disturbance.score,
-      disturbanceSlope14d: lensResult.metrics.disturbanceSlope14d,
-      taggedDays: lensResult.metrics.taggedDays,
-      cortisolFlagRate: lensResult.metrics.cortisolFlagRate,
-      components: lensResult.disturbance.components,
-      durationDays: daysDiff(episode.startDay, endDay) + 1,
+      components: {
+        hrv: lensResult.disturbance.components.hrv,
+        rhr: lensResult.disturbance.components.rhr,
+        sleep: lensResult.disturbance.components.slp,
+        proxy: lensResult.disturbance.components.prx,
+        drift: lensResult.disturbance.components.drf,
+      },
+      deltas: {
+        hrv_pct: endDayMetrics.deltas.hrv_pct,
+        sleep_pct: endDayMetrics.deltas.sleep_pct,
+        proxy_pct: endDayMetrics.deltas.proxy_pct,
+        rhr_bpm: endDayMetrics.deltas.rhr_bpm,
+        lateRate: endDayMetrics.lateRate,
+      },
+      cortisolFlagRate21d: lensResult.metrics.cortisolFlagRate,
+      phase: lensResult.phase,
     };
+
+    const episodeWide = await computeEpisodeWide(taggedDays, userId);
+
+    summaryJson = {
+      tag: episode.tag,
+      start_day: episode.startDay,
+      end_day: endDay,
+      durationDays: daysDiff(episode.startDay, endDay) + 1,
+      terminalRolling,
+      episodeWide,
+    } as DualBaselineArchiveSummary;
   } catch (e) {
     summaryJson = { error: "Could not compute lens at conclude time", durationDays: daysDiff(episode.startDay, endDay) + 1 };
   }
+
+  await pool.query(
+    `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4`,
+    [userId, episode.tag, episode.startDay, endDay],
+  );
 
   await pool.query(
     `INSERT INTO context_lens_archives (user_id, episode_id, tag, start_day, end_day, label, summary_json)
