@@ -56,6 +56,7 @@ export interface DailyEntry {
   liftStartTime?: string;
   liftEndTime?: string;
   liftMin?: number;
+  fatFreeMassLb?: number;
 }
 
 export interface CardioFuel {
