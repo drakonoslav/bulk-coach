@@ -38,7 +38,7 @@ import {
   type MealGuideEntry,
   type Diagnosis,
 } from "@/lib/coaching-engine";
-import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions } from "@/lib/strength-index";
+import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
 
 function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
@@ -712,6 +712,7 @@ export default function ReportScreen() {
   const modeClass = classifyMode(entries, strengthBaselines);
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
+  const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
 
   const siRa = strengthIndexRollingAvg(entries, strengthBaselines, 7);
   const siChartData = siRa.slice(-28).map(d => ({ day: d.day, value: d.avg }));
@@ -861,15 +862,15 @@ export default function ReportScreen() {
                   </View>
                 )}
                 {modeClass.strengthVelocityPct != null && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <Ionicons
-                      name={modeClass.strengthVelocityPct >= 0.25 ? "arrow-up" : modeClass.strengthVelocityPct <= -0.25 ? "arrow-down" : "remove"}
+                      name={strengthPhase.isClamped ? "remove" : modeClass.strengthVelocityPct >= 0.25 ? "arrow-up" : modeClass.strengthVelocityPct <= -0.25 ? "arrow-down" : "remove"}
                       size={14}
-                      color={modeClass.strengthVelocityPct >= 0.25 ? "#34D399" : modeClass.strengthVelocityPct <= -0.25 ? "#F87171" : "#FBBF24"}
+                      color={strengthPhase.isClamped ? "#FBBF24" : modeClass.strengthVelocityPct >= 0.25 ? "#34D399" : modeClass.strengthVelocityPct <= -0.25 ? "#F87171" : "#FBBF24"}
                     />
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
-                      Strength: {modeClass.strengthVelocityPct >= 0 ? "+" : ""}{modeClass.strengthVelocityPct.toFixed(2)}%/wk
-                      <Text style={{ color: Colors.textTertiary }}> {modeClass.strengthVelocityPct >= 0.25 ? "(good)" : modeClass.strengthVelocityPct <= -0.25 ? "(watch)" : "(stable)"}</Text>
+                      Strength: {strengthPhase.displayPctPerWeek != null ? (strengthPhase.displayPctPerWeek >= 0 ? "+" : "") + strengthPhase.displayPctPerWeek.toFixed(2) : "0.00"}%/wk
+                      <Text style={{ color: Colors.textTertiary }}> ({strengthPhase.label})</Text>
                     </Text>
                   </View>
                 )}
@@ -1124,6 +1125,18 @@ export default function ReportScreen() {
             {(siChartData.length >= 2 || svChartData.length >= 2) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
+                {strengthPhase.phase !== "INSUFFICIENT_DATA" && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8, paddingHorizontal: 4 }}>
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: strengthPhase.phase === "NEURAL_REBOUND" ? "#34D39920" : strengthPhase.phase === "LATE_NEURAL" ? "#F59E0B20" : strengthPhase.phase === "HYPERTROPHY_PROGRESS" ? "#A78BFA20" : "#6B728020" }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: strengthPhase.phase === "NEURAL_REBOUND" ? "#34D399" : strengthPhase.phase === "LATE_NEURAL" ? "#F59E0B" : strengthPhase.phase === "HYPERTROPHY_PROGRESS" ? "#A78BFA" : "#9CA3AF" }}>
+                        {strengthPhase.phase.replace(/_/g, " ")}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, flex: 1 }}>
+                      {strengthPhase.phase === "NEURAL_REBOUND" ? "Fast early gains — expected deceleration ahead" : strengthPhase.phase === "LATE_NEURAL" ? "Deceleration expected as neural phase matures" : strengthPhase.phase === "HYPERTROPHY_PROGRESS" ? "Steady hypertrophy-range gains (0.5–3%/wk)" : strengthPhase.isClamped ? "Within noise — look for trend over weeks" : strengthPhase.rawPctPerWeek != null && strengthPhase.rawPctPerWeek < 0 ? "Review recovery and training load" : "Below progress threshold"}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.lgrCard}>
                   <View style={styles.lgrContent}>
                     {siChartData.length >= 2 && (

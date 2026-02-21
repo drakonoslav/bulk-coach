@@ -29,6 +29,77 @@ export interface StrengthVelocityResult {
   pctPerWeek: number;
 }
 
+export type StrengthPhase =
+  | "NEURAL_REBOUND"
+  | "LATE_NEURAL"
+  | "HYPERTROPHY_PROGRESS"
+  | "STALL_OR_FATIGUE"
+  | "INSUFFICIENT_DATA";
+
+export interface StrengthPhaseResult {
+  phase: StrengthPhase;
+  rawPctPerWeek: number | null;
+  displayPctPerWeek: number | null;
+  isClamped: boolean;
+  label: string;
+}
+
+const STRENGTH_NOISE_FLOOR = 0.25;
+
+export function classifyStrengthPhase(pctPerWeek: number | null): StrengthPhaseResult {
+  if (pctPerWeek == null) {
+    return {
+      phase: "INSUFFICIENT_DATA",
+      rawPctPerWeek: null,
+      displayPctPerWeek: null,
+      isClamped: false,
+      label: "Insufficient data",
+    };
+  }
+
+  const raw = pctPerWeek;
+  const withinNoise = Math.abs(raw) < STRENGTH_NOISE_FLOOR;
+  const display = withinNoise ? 0.0 : raw;
+
+  if (withinNoise || raw < 0.5) {
+    return {
+      phase: "STALL_OR_FATIGUE",
+      rawPctPerWeek: raw,
+      displayPctPerWeek: display,
+      isClamped: withinNoise,
+      label: withinNoise ? "Stable (within noise)" : raw < 0 ? "Strength declining" : "Flat",
+    };
+  }
+
+  if (raw >= 6.0) {
+    return {
+      phase: "NEURAL_REBOUND",
+      rawPctPerWeek: raw,
+      displayPctPerWeek: display,
+      isClamped: false,
+      label: "Neural rebound",
+    };
+  }
+
+  if (raw >= 3.0) {
+    return {
+      phase: "LATE_NEURAL",
+      rawPctPerWeek: raw,
+      displayPctPerWeek: display,
+      isClamped: false,
+      label: "Late neural",
+    };
+  }
+
+  return {
+    phase: "HYPERTROPHY_PROGRESS",
+    rawPctPerWeek: raw,
+    displayPctPerWeek: display,
+    isClamped: false,
+    label: "Hypertrophy-range progress",
+  };
+}
+
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
