@@ -593,8 +593,10 @@ export default function ReportScreen() {
   const strengthDaysInWindow = (() => {
     const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
     const last7 = sorted.slice(-7);
-    return last7.filter(e => computeDayStrengthIndex(e, strengthBaselines).strengthIndexRaw != null).length;
+    return last7.filter(e => e.pushupsReps != null || e.pullupsReps != null || e.benchReps != null || e.ohpReps != null).length;
   })();
+
+  const hasStrengthBaselines = strengthBaselines.pushups != null || strengthBaselines.pullups != null || strengthBaselines.benchBarReps != null || strengthBaselines.ohpBarReps != null;
 
   const hasEnoughData = entries.length >= 7;
   const daysWithWeight = entries.filter(e => e.morningWeightLb != null).length;
