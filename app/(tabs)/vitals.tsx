@@ -175,6 +175,16 @@ export default function VitalsScreen() {
     workouts?: number; vitals?: number; sleep?: number; lastSync?: string | null;
   }>>([]);
 
+  interface LensArchive { id: number; tag: string; startDay: string; endDay: string; label: string | null; summaryJson: any; }
+  interface ActiveLensEpisode { id: number; tag: string; startDay: string; intensity: number; label: string | null; }
+  const [lensArchives, setLensArchives] = useState<LensArchive[]>([]);
+  const [activeLenses, setActiveLenses] = useState<ActiveLensEpisode[]>([]);
+  const CONTEXT_TAG_COLORS: Record<string, string> = {
+    travel: "#60A5FA", schedule_shift: "#FBBF24", work_stress: "#F87171",
+    social_load: "#A78BFA", illness_symptoms: "#34D399", injury_pain: "#FB923C",
+    supplement_change: "#22D3EE", med_change: "#F472B6", early_dating: "#E879F9",
+  };
+
   const loadData = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
@@ -227,6 +237,19 @@ export default function VitalsScreen() {
       if (srcRes.ok) {
         const json = await srcRes.json();
         if (json.sources) setDataSources(json.sources);
+      }
+
+      const [activeRes, archiveRes] = await Promise.all([
+        authFetch(new URL("/api/context-lens/episodes/active", baseUrl).toString()),
+        authFetch(new URL("/api/context-lens/archives", baseUrl).toString()),
+      ]);
+      if (activeRes.ok) {
+        const data = await activeRes.json();
+        setActiveLenses(data.episodes || []);
+      }
+      if (archiveRes.ok) {
+        const data = await archiveRes.json();
+        setLensArchives(data.archives || []);
       }
     } catch (err) {
       console.error("vitals load error:", err);
@@ -835,6 +858,76 @@ export default function VitalsScreen() {
             <Text style={{ fontSize: 13, color: "#EF4444", textAlign: "center", marginTop: 8 }}>{resetStatus}</Text>
           )}
         </View>
+
+        {(activeLenses.length > 0 || lensArchives.length > 0) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Context Lenses</Text>
+
+            {activeLenses.length > 0 && (
+              <>
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Active</Text>
+                {activeLenses.map((ep) => {
+                  const tagColor = CONTEXT_TAG_COLORS[ep.tag] || "#8B5CF6";
+                  const dayCount = Math.max(1, Math.round((Date.now() - new Date(ep.startDay + "T00:00:00Z").getTime()) / 86400000) + 1);
+                  return (
+                    <View key={ep.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor, marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: tagColor }}>
+                          {ep.tag.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          Since {ep.startDay} {ep.label ? `\u00B7 ${ep.label}` : ""}
+                        </Text>
+                      </View>
+                      <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: tagColor + "20" }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: tagColor }}>Day {dayCount}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+                <View style={{ height: 16 }} />
+              </>
+            )}
+
+            {lensArchives.length > 0 && (
+              <>
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Archived</Text>
+                {lensArchives.map((ar) => {
+                  const tagColor = CONTEXT_TAG_COLORS[ar.tag] || "#8B5CF6";
+                  const duration = ar.summaryJson?.durationDays || "?";
+                  const phase = ar.summaryJson?.phase?.replace(/_/g, " ")?.toLowerCase() || "";
+                  const distScore = ar.summaryJson?.disturbanceScore;
+                  return (
+                    <View key={ar.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor + "60", marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                          {ar.tag.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          {ar.startDay} \u2192 {ar.endDay} \u00B7 {duration}d {ar.label ? `\u00B7 ${ar.label}` : ""}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        {distScore != null && (
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: distScore >= 62 ? "#F87171" : distScore >= 56 ? "#FBBF24" : "#34D399" }}>
+                            {distScore.toFixed(0)}
+                          </Text>
+                        )}
+                        {phase && (
+                          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                            {phase}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+          </View>
+        )}
 
         <View style={{ height: 20 }} />
       </ScrollView>

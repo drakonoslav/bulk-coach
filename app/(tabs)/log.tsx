@@ -292,6 +292,17 @@ export default function LogScreen() {
     med_change: "Starting, stopping, or adjusting a prescription or medically supervised treatment.",
     early_dating: "New or evolving romantic involvement that may affect sleep, stress, or emotional load.",
   };
+  const CONTEXT_TAG_COLORS: Record<string, string> = {
+    travel: "#60A5FA",
+    schedule_shift: "#FBBF24",
+    work_stress: "#F87171",
+    social_load: "#A78BFA",
+    illness_symptoms: "#34D399",
+    injury_pain: "#FB923C",
+    supplement_change: "#22D3EE",
+    med_change: "#F472B6",
+    early_dating: "#E879F9",
+  };
   const PRESET_CONTEXT_TAGS = [
     { key: "travel", label: "Travel", icon: "airplane-outline" as const },
     { key: "schedule_shift", label: "Schedule Shift", icon: "swap-horizontal-outline" as const },
@@ -303,51 +314,68 @@ export default function LogScreen() {
     { key: "med_change", label: "Med Change", icon: "medical-outline" as const },
     { key: "early_dating", label: "Early Dating", icon: "heart-outline" as const },
   ];
-  const [contextEvents, setContextEvents] = useState<ContextEvent[]>([]);
-  const [contextEditing, setContextEditing] = useState<{ tag: string; intensity: number; label: string; notes: string; existingId?: number } | null>(null);
+
+  interface LensEpisode { id: number; tag: string; startDay: string; endDay: string | null; intensity: number; label: string | null; notes: string | null; }
+
+  const [activeEpisodes, setActiveEpisodes] = useState<LensEpisode[]>([]);
+  const [contextEditing, setContextEditing] = useState<{
+    tag: string; intensity: number; label: string; notes: string;
+    episodeId?: number; startDay?: string; isCarriedOver?: boolean;
+  } | null>(null);
   const [contextCustomTag, setContextCustomTag] = useState("");
   const [contextShowCustom, setContextShowCustom] = useState(false);
 
-  const loadContextEvents = useCallback(async (day: string) => {
+  const loadEpisodes = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      const res = await authFetch(new URL(`/api/context-events?day=${day}`, baseUrl).toString());
+      await authFetch(new URL(`/api/context-lens/episodes/apply-today?day=${day}`, baseUrl).toString(), { method: "POST" });
+      const res = await authFetch(new URL(`/api/context-lens/episodes/active?day=${day}`, baseUrl).toString());
       if (res.ok) {
         const data = await res.json();
-        setContextEvents(data.events || []);
+        setActiveEpisodes(data.episodes || []);
       } else {
-        setContextEvents([]);
+        setActiveEpisodes([]);
       }
     } catch {
-      setContextEvents([]);
+      setActiveEpisodes([]);
     }
   }, []);
 
-  const saveContextEvent = useCallback(async (tag: string, intensity: number, label: string, notes: string) => {
+  const startNewEpisode = useCallback(async (tag: string, intensity: number, label: string, notes: string) => {
     try {
       const baseUrl = getApiUrl();
-      await authFetch(new URL("/api/context-events", baseUrl).toString(), {
+      const res = await authFetch(new URL("/api/context-lens/episodes/start", baseUrl).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          day: selectedDate,
-          tag,
-          intensity,
-          label: label || null,
-          notes: notes || null,
-        }),
+        body: JSON.stringify({ tag, startDay: selectedDate, intensity, label: label || null, notes: notes || null }),
       });
-      loadContextEvents(selectedDate);
+      if (res.ok) loadEpisodes(selectedDate);
     } catch {}
-  }, [selectedDate, loadContextEvents]);
+  }, [selectedDate, loadEpisodes]);
 
-  const deleteContextEvent = useCallback(async (id: number) => {
+  const concludeEpisode = useCallback(async (episodeId: number) => {
     try {
       const baseUrl = getApiUrl();
-      await authFetch(new URL(`/api/context-events/${id}`, baseUrl).toString(), { method: "DELETE" });
-      loadContextEvents(selectedDate);
+      await authFetch(new URL(`/api/context-lens/episodes/${episodeId}/conclude`, baseUrl).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endDay: selectedDate }),
+      });
+      loadEpisodes(selectedDate);
     } catch {}
-  }, [selectedDate, loadContextEvents]);
+  }, [selectedDate, loadEpisodes]);
+
+  const updateEpisodeDetails = useCallback(async (episodeId: number, intensity: number, label: string, notes: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      await authFetch(new URL(`/api/context-lens/episodes/${episodeId}`, baseUrl).toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intensity, label: label || null, notes: notes || null }),
+      });
+      loadEpisodes(selectedDate);
+    } catch {}
+  }, [selectedDate, loadEpisodes]);
 
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
@@ -561,7 +589,7 @@ export default function LogScreen() {
       loadReadinessForDate(selectedDate);
       loadDayState(selectedDate);
       loadAndrogenForDate(selectedDate);
-      loadContextEvents(selectedDate);
+      loadEpisodes(selectedDate);
       if (!sleepPlan) loadSleepPlan();
       setUploadResult(null);
     }, [selectedDate])
@@ -1813,16 +1841,18 @@ export default function LogScreen() {
         <View style={[styles.sectionCard, { borderColor: "#8B5CF620" }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <Ionicons name="prism-outline" size={16} color="#8B5CF6" />
-            <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#8B5CF6" }]}>Context Tags</Text>
+            <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#8B5CF6" }]}>Context Lenses</Text>
             <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>
-              {contextEvents.length > 0 ? `${contextEvents.length} active` : "tap to tag"}
+              {activeEpisodes.length > 0 ? `${activeEpisodes.length} active` : "tap to start"}
             </Text>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: contextShowCustom ? 8 : 0 }}>
             {PRESET_CONTEXT_TAGS.map((preset) => {
-              const existing = contextEvents.find((e) => e.tag === preset.key);
-              const isActive = !!existing;
-              const intensityDots = existing ? existing.intensity : 0;
+              const episode = activeEpisodes.find((ep) => ep.tag === preset.key);
+              const isActive = !!episode;
+              const tagColor = CONTEXT_TAG_COLORS[preset.key] || "#8B5CF6";
+              const isCarriedOver = isActive && episode.startDay < selectedDate;
+              const dayCount = isActive ? Math.max(1, Math.round((new Date(selectedDate + "T00:00:00Z").getTime() - new Date(episode.startDay + "T00:00:00Z").getTime()) / 86400000) + 1) : 0;
               return (
                 <Pressable
                   key={preset.key}
@@ -1831,76 +1861,34 @@ export default function LogScreen() {
                     if (isActive) {
                       setContextEditing({
                         tag: preset.key,
-                        intensity: existing.intensity,
-                        label: existing.label || "",
-                        notes: existing.notes || "",
-                        existingId: existing.id,
+                        intensity: episode.intensity,
+                        label: episode.label || "",
+                        notes: episode.notes || "",
+                        episodeId: episode.id,
+                        startDay: episode.startDay,
+                        isCarriedOver,
                       });
                     } else {
-                      setContextEditing({
-                        tag: preset.key,
-                        intensity: 1,
-                        label: "",
-                        notes: "",
-                      });
+                      setContextEditing({ tag: preset.key, intensity: 1, label: "", notes: "" });
                     }
                   }}
                   style={[
                     ctxStyles.chip,
-                    isActive && { backgroundColor: "#8B5CF618", borderColor: "#8B5CF650" },
+                    isActive && { backgroundColor: tagColor + "18", borderColor: tagColor + "50" },
                   ]}
                 >
-                  <Ionicons
-                    name={preset.icon as any}
-                    size={13}
-                    color={isActive ? "#8B5CF6" : Colors.textTertiary}
-                  />
-                  <Text style={[
-                    ctxStyles.chipText,
-                    isActive && { color: "#8B5CF6", fontFamily: "Rubik_600SemiBold" },
-                  ]}>
+                  <Ionicons name={preset.icon as any} size={13} color={isActive ? tagColor : Colors.textTertiary} />
+                  <Text style={[ctxStyles.chipText, isActive && { color: tagColor, fontFamily: "Rubik_600SemiBold" }]}>
                     {preset.label}
                   </Text>
-                  {isActive && intensityDots > 0 && (
-                    <View style={{ flexDirection: "row", gap: 2, marginLeft: 2 }}>
-                      {Array.from({ length: intensityDots }).map((_, i) => (
-                        <View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: intensityDots >= 3 ? "#F87171" : intensityDots >= 2 ? "#FBBF24" : "#8B5CF6" }} />
-                      ))}
-                    </View>
+                  {isActive && (
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: tagColor + "AA", marginLeft: 2 }}>
+                      {isCarriedOver ? `d${dayCount}` : "new"}
+                    </Text>
                   )}
                 </Pressable>
               );
             })}
-            {contextEvents
-              .filter((e) => !PRESET_CONTEXT_TAGS.some((p) => p.key === e.tag))
-              .map((e) => (
-                <Pressable
-                  key={e.tag}
-                  onPress={() => {
-                    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setContextEditing({
-                      tag: e.tag,
-                      intensity: e.intensity,
-                      label: e.label || "",
-                      notes: e.notes || "",
-                      existingId: e.id,
-                    });
-                  }}
-                  style={[ctxStyles.chip, { backgroundColor: "#8B5CF618", borderColor: "#8B5CF650" }]}
-                >
-                  <Ionicons name="pricetag-outline" size={13} color="#8B5CF6" />
-                  <Text style={[ctxStyles.chipText, { color: "#8B5CF6", fontFamily: "Rubik_600SemiBold" }]}>
-                    {e.tag.replace(/_/g, " ")}
-                  </Text>
-                  {e.intensity > 0 && (
-                    <View style={{ flexDirection: "row", gap: 2, marginLeft: 2 }}>
-                      {Array.from({ length: e.intensity }).map((_, i) => (
-                        <View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: e.intensity >= 3 ? "#F87171" : e.intensity >= 2 ? "#FBBF24" : "#8B5CF6" }} />
-                      ))}
-                    </View>
-                  )}
-                </Pressable>
-              ))}
             <Pressable
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1955,110 +1943,125 @@ export default function LogScreen() {
         >
           <Pressable style={ctxStyles.modalOverlay} onPress={() => setContextEditing(null)}>
             <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
-              {contextEditing && (
-                <>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
-                      {contextEditing.tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                    </Text>
-                    <Pressable onPress={() => setContextEditing(null)} hitSlop={12}>
-                      <Ionicons name="close" size={22} color={Colors.textTertiary} />
-                    </Pressable>
-                  </View>
-                  {TAG_DEFINITIONS[contextEditing.tag] && (
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 16, lineHeight: 17 }}>
-                      {TAG_DEFINITIONS[contextEditing.tag]}
-                    </Text>
-                  )}
+              {contextEditing && (() => {
+                const tagColor = CONTEXT_TAG_COLORS[contextEditing.tag] || "#8B5CF6";
+                const isExisting = contextEditing.episodeId != null;
+                return (
+                  <>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tagColor }} />
+                        <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
+                          {contextEditing.tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </Text>
+                      </View>
+                      <Pressable onPress={() => setContextEditing(null)} hitSlop={12}>
+                        <Ionicons name="close" size={22} color={Colors.textTertiary} />
+                      </Pressable>
+                    </View>
 
-                  <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Intensity</Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-                    {[0, 1, 2, 3].map((level) => {
-                      const isSelected = contextEditing.intensity === level;
-                      const levelLabels = ["Minimal", "Mild", "Moderate", "High"];
-                      const levelColors = [Colors.textTertiary, "#8B5CF6", "#FBBF24", "#F87171"];
-                      return (
+                    {isExisting && contextEditing.startDay && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: tagColor + "10", borderRadius: 8 }}>
+                        <Ionicons name="calendar-outline" size={13} color={tagColor} />
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: tagColor }}>
+                          Started {contextEditing.startDay}
+                          {contextEditing.isCarriedOver ? ` \u00B7 Day ${Math.max(1, Math.round((new Date(selectedDate + "T00:00:00Z").getTime() - new Date(contextEditing.startDay + "T00:00:00Z").getTime()) / 86400000) + 1)}` : ""}
+                        </Text>
+                      </View>
+                    )}
+
+                    {TAG_DEFINITIONS[contextEditing.tag] && (
+                      <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 14, lineHeight: 17 }}>
+                        {TAG_DEFINITIONS[contextEditing.tag]}
+                      </Text>
+                    )}
+
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Intensity</Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+                      {[0, 1, 2, 3].map((level) => {
+                        const isSelected = contextEditing.intensity === level;
+                        const levelLabels = ["Minimal", "Mild", "Moderate", "High"];
+                        const levelColors = [Colors.textTertiary, tagColor, "#FBBF24", "#F87171"];
+                        return (
+                          <Pressable
+                            key={level}
+                            onPress={() => {
+                              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              setContextEditing({ ...contextEditing, intensity: level });
+                            }}
+                            style={[
+                              ctxStyles.intensityBtn,
+                              isSelected && { backgroundColor: levelColors[level] + "20", borderColor: levelColors[level] },
+                            ]}
+                          >
+                            <Text style={[ctxStyles.intensityText, isSelected && { color: levelColors[level] }]}>
+                              {levelLabels[level]}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: -8, marginBottom: 14, lineHeight: 14 }}>
+                      {["Negligible impact", "Noticeable shift", "Clear disruption", "Significant impact"][contextEditing.intensity]}
+                    </Text>
+
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>Label (optional)</Text>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 12, fontSize: 14, paddingVertical: 10 }]}
+                      value={contextEditing.label}
+                      onChangeText={(t) => setContextEditing({ ...contextEditing, label: t })}
+                      placeholder='e.g. "magnesium glycinate"'
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardAppearance="dark"
+                      editable={!isExisting}
+                    />
+
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>Notes (optional)</Text>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 16, fontSize: 14, paddingVertical: 10, minHeight: 60 }]}
+                      value={contextEditing.notes}
+                      onChangeText={(t) => setContextEditing({ ...contextEditing, notes: t })}
+                      placeholder="Any additional details..."
+                      placeholderTextColor={Colors.textTertiary}
+                      multiline
+                      textAlignVertical="top"
+                      keyboardAppearance="dark"
+                    />
+
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      {isExisting && (
                         <Pressable
-                          key={level}
                           onPress={() => {
-                            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            setContextEditing({ ...contextEditing, intensity: level });
+                            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            concludeEpisode(contextEditing.episodeId!);
+                            setContextEditing(null);
                           }}
-                          style={[
-                            ctxStyles.intensityBtn,
-                            isSelected && { backgroundColor: levelColors[level] + "20", borderColor: levelColors[level] },
-                          ]}
+                          style={ctxStyles.deleteBtn}
                         >
-                          <Text style={[
-                            ctxStyles.intensityText,
-                            isSelected && { color: levelColors[level] },
-                          ]}>
-                            {levelLabels[level]}
-                          </Text>
+                          <Ionicons name="stop-circle-outline" size={16} color="#F87171" />
                         </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: -8, marginBottom: 14, lineHeight: 14 }}>
-                    {["Negligible impact", "Noticeable shift", "Clear disruption", "Significant impact"][contextEditing.intensity]}
-                  </Text>
-
-                  <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>Label (optional)</Text>
-                  <TextInput
-                    style={[styles.input, { marginBottom: 12, fontSize: 14, paddingVertical: 10 }]}
-                    value={contextEditing.label}
-                    onChangeText={(t) => setContextEditing({ ...contextEditing, label: t })}
-                    placeholder='e.g. "magnesium glycinate"'
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-
-                  <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>Notes (optional)</Text>
-                  <TextInput
-                    style={[styles.input, { marginBottom: 16, fontSize: 14, paddingVertical: 10, minHeight: 60 }]}
-                    value={contextEditing.notes}
-                    onChangeText={(t) => setContextEditing({ ...contextEditing, notes: t })}
-                    placeholder="Any additional details..."
-                    placeholderTextColor={Colors.textTertiary}
-                    multiline
-                    textAlignVertical="top"
-                    keyboardAppearance="dark"
-                  />
-
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    {contextEditing.existingId != null && (
+                      )}
                       <Pressable
                         onPress={() => {
-                          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          deleteContextEvent(contextEditing.existingId!);
+                          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          if (isExisting) {
+                            updateEpisodeDetails(contextEditing.episodeId!, contextEditing.intensity, contextEditing.label, contextEditing.notes);
+                          } else {
+                            startNewEpisode(contextEditing.tag, contextEditing.intensity, contextEditing.label, contextEditing.notes);
+                          }
                           setContextEditing(null);
                         }}
-                        style={ctxStyles.deleteBtn}
+                        style={[ctxStyles.saveBtn, { backgroundColor: tagColor }]}
                       >
-                        <Ionicons name="trash-outline" size={16} color="#F87171" />
+                        <Ionicons name="checkmark" size={18} color="#fff" />
+                        <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#fff" }}>
+                          {isExisting ? "Update" : "Start Lens"}
+                        </Text>
                       </Pressable>
-                    )}
-                    <Pressable
-                      onPress={() => {
-                        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        saveContextEvent(
-                          contextEditing.tag,
-                          contextEditing.intensity,
-                          contextEditing.label,
-                          contextEditing.notes,
-                        );
-                        setContextEditing(null);
-                      }}
-                      style={ctxStyles.saveBtn}
-                    >
-                      <Ionicons name="checkmark" size={18} color="#fff" />
-                      <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: "#fff" }}>
-                        {contextEditing.existingId != null ? "Update" : "Tag Day"}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
+                    </View>
+                  </>
+                );
+              })()}
             </Pressable>
           </Pressable>
         </Modal>
