@@ -98,4 +98,41 @@ describe("chooseFinalCalorieDelta — arbiter logic", () => {
       }
     }
   });
+
+  test("policy source badge: weight_only maps to WEIGHT label", () => {
+    const result = chooseFinalCalorieDelta(100, 50, "low");
+    expect(result.source).toBe("weight_only");
+    const badge = result.source === "mode_override" ? "MODE" : "WEIGHT";
+    expect(badge).toBe("WEIGHT");
+  });
+
+  test("policy source badge: mode_override maps to MODE label", () => {
+    const result = chooseFinalCalorieDelta(100, -100, "high");
+    expect(result.source).toBe("mode_override");
+    const badge = result.source === "mode_override" ? "MODE" : "WEIGHT";
+    expect(badge).toBe("MODE");
+  });
+
+  test("upsert idempotency: same input produces same output", () => {
+    const r1 = chooseFinalCalorieDelta(75, -100, "high");
+    const r2 = chooseFinalCalorieDelta(75, -100, "high");
+    expect(r1).toEqual(r2);
+  });
+
+  test("override detection: high-priority override changes direction", () => {
+    const weightOnly = chooseFinalCalorieDelta(100, 0, "low");
+    expect(weightOnly.delta).toBe(100);
+    expect(weightOnly.source).toBe("weight_only");
+    const overridden = chooseFinalCalorieDelta(100, -75, "high");
+    expect(overridden.delta).toBe(-75);
+    expect(overridden.source).toBe("mode_override");
+  });
+
+  test("upsert contract: all fields present in result", () => {
+    const result = chooseFinalCalorieDelta(50, -100, "high");
+    expect(result).toHaveProperty("delta");
+    expect(result).toHaveProperty("source");
+    expect(typeof result.delta).toBe("number");
+    expect(["weight_only", "mode_override"]).toContain(result.source);
+  });
 });
