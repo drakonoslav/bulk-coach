@@ -1975,7 +1975,7 @@ export default function LogScreen() {
                   <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
                     {[0, 1, 2, 3].map((level) => {
                       const isSelected = contextEditing.intensity === level;
-                      const levelLabels = ["None", "Mild", "Moderate", "Severe"];
+                      const levelLabels = ["Minimal", "Mild", "Moderate", "High"];
                       const levelColors = [Colors.textTertiary, "#8B5CF6", "#FBBF24", "#F87171"];
                       return (
                         <Pressable
@@ -1999,6 +1999,9 @@ export default function LogScreen() {
                       );
                     })}
                   </View>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: -8, marginBottom: 14, lineHeight: 14 }}>
+                    {["Negligible impact", "Noticeable shift", "Clear disruption", "Significant impact"][contextEditing.intensity]}
+                  </Text>
 
                   <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>Label (optional)</Text>
                   <TextInput
