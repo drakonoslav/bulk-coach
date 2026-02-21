@@ -456,6 +456,127 @@ export function leanMassRollingAvg(entries: DailyEntry[], days: number = 7): Arr
   return out;
 }
 
+export function ffmRollingAvg(entries: DailyEntry[], days: number = 7): Array<{ day: string; avg: number }> {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const items = sorted
+    .map((e) => ({ date: parseDate(e.day), ffm: e.fatFreeMassLb, day: e.day }))
+    .filter((x): x is { date: Date; ffm: number; day: string } => x.ffm != null);
+  const out: Array<{ day: string; avg: number }> = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const di = items[i].date;
+    const window = items.filter((w) => {
+      const diff = daysBetween(w.date, di);
+      return diff >= 0 && diff < days;
+    });
+    if (window.length >= Math.min(days, 3)) {
+      const avg = window.reduce((s, w) => s + w.ffm, 0) / window.length;
+      out.push({ day: items[i].day, avg: Math.round(avg * 100) / 100 });
+    }
+  }
+  return out;
+}
+
+export interface FfmVelocityResult {
+  velocityLbPerDay: number;
+  velocityLbPerWeek: number;
+  ffm7dToday: number;
+  ffm7d14dAgo: number;
+  spanDays: number;
+  label: string;
+}
+
+export function ffmVelocity14d(entries: DailyEntry[]): FfmVelocityResult | null {
+  const ra = ffmRollingAvg(entries, 7);
+  if (ra.length < 2) return null;
+
+  const today = ra[ra.length - 1];
+  const todayDate = parseDate(today.day);
+
+  let best: { day: string; avg: number } | null = null;
+  for (let i = ra.length - 2; i >= 0; i--) {
+    const d = parseDate(ra[i].day);
+    const span = daysBetween(d, todayDate);
+    if (span >= 10 && span <= 18) {
+      best = ra[i];
+      break;
+    }
+  }
+  if (!best) {
+    for (let i = ra.length - 2; i >= 0; i--) {
+      const d = parseDate(ra[i].day);
+      const span = daysBetween(d, todayDate);
+      if (span >= 7) {
+        best = ra[i];
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+
+  const spanDays = daysBetween(parseDate(best.day), todayDate);
+  if (spanDays < 7) return null;
+
+  const velocityLbPerDay = (today.avg - best.avg) / spanDays;
+  const velocityLbPerWeek = velocityLbPerDay * 7;
+
+  let label: string;
+  if (velocityLbPerWeek < -0.15) label = "Lean tissue declining";
+  else if (velocityLbPerWeek > 0.15) label = "Lean tissue increasing";
+  else label = "Lean tissue stable (recomp)";
+
+  return {
+    velocityLbPerDay,
+    velocityLbPerWeek: Math.round(velocityLbPerWeek * 100) / 100,
+    ffm7dToday: today.avg,
+    ffm7d14dAgo: best.avg,
+    spanDays,
+    label,
+  };
+}
+
+export function weightVelocity14d(entries: DailyEntry[]): number | null {
+  const ra = rollingAvg(entries, 7);
+  if (ra.length < 2) return null;
+
+  const today = ra[ra.length - 1];
+  const todayDate = parseDate(today.day);
+
+  let best: { day: string; avg: number } | null = null;
+  for (let i = ra.length - 2; i >= 0; i--) {
+    const d = parseDate(ra[i].day);
+    const span = daysBetween(d, todayDate);
+    if (span >= 10 && span <= 18) {
+      best = ra[i];
+      break;
+    }
+  }
+  if (!best) {
+    for (let i = ra.length - 2; i >= 0; i--) {
+      const d = parseDate(ra[i].day);
+      const span = daysBetween(d, todayDate);
+      if (span >= 7) {
+        best = ra[i];
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+
+  const spanDays = daysBetween(parseDate(best.day), todayDate);
+  if (spanDays < 7) return null;
+
+  return ((today.avg - best.avg) / spanDays) * 7;
+}
+
+export function ffmLeanGainRatio(entries: DailyEntry[]): number | null {
+  const ffmV = ffmVelocity14d(entries);
+  const wV = weightVelocity14d(entries);
+  if (!ffmV || wV == null) return null;
+  if (Math.abs(wV) < 0.05) return null;
+  return Math.max(-1.0, Math.min(2.0, ffmV.velocityLbPerWeek / wV));
+}
+
 export function leanGainRatioRolling(
   entries: DailyEntry[],
   windowDays: number = 14,
