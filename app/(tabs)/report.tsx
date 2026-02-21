@@ -742,11 +742,23 @@ export default function ReportScreen() {
                     </Text>
                   </View>
                 ) : (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Ionicons name="alert-circle-outline" size={14} color={Colors.textTertiary} />
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                      Insufficient strength coverage ({strengthDaysInWindow}/7 days)
-                    </Text>
+                  <View style={{ gap: 2 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="alert-circle-outline" size={14} color={Colors.textTertiary} />
+                      <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                        Insufficient strength coverage ({strengthDaysInWindow}/7 days)
+                      </Text>
+                    </View>
+                    {!hasStrengthBaselines && strengthDaysInWindow > 0 && (
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, paddingLeft: 20 }}>
+                        No baselines computed — re-save a day with strength data to trigger
+                      </Text>
+                    )}
+                    {strengthDaysInWindow === 0 && (
+                      <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, paddingLeft: 20 }}>
+                        No strength data in last 7 entries (pushups, pullups, bench, or OHP)
+                      </Text>
+                    )}
                   </View>
                 )}
               </View>
