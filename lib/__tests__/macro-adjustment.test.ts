@@ -40,28 +40,38 @@ describe("gramsForKcal", () => {
   });
 });
 
-describe("proposeMacroSafeAdjustment: whole foods policy", () => {
-  test("on cuts, never reduces whole foods", () => {
+describe("proposeMacroSafeAdjustment: adjustable-only policy", () => {
+  const ADJUSTABLE = ["mct_g", "dextrin_g", "oats_g"];
+
+  test("on cuts, only adjustable items appear", () => {
     const plan = proposeMacroSafeAdjustment(-100, BASELINE);
     for (const p of plan) {
-      if (["bananas", "eggs", "yogurt_cups"].includes(p.item)) {
-        expect(p.deltaAmount).toBeGreaterThanOrEqual(0);
-      }
+      expect(ADJUSTABLE).toContain(p.item);
     }
   });
 
-  test("on cuts, whole foods are not present in plan at all", () => {
-    const plan = proposeMacroSafeAdjustment(-200, BASELINE);
-    const wholeFoodItems = plan.filter((p) =>
-      ["bananas", "eggs", "yogurt_cups"].includes(p.item)
-    );
-    expect(wholeFoodItems).toHaveLength(0);
+  test("on surpluses, only adjustable items appear", () => {
+    const plan = proposeMacroSafeAdjustment(+200, BASELINE);
+    for (const p of plan) {
+      expect(ADJUSTABLE).toContain(p.item);
+    }
   });
 
-  test("cuts use only gram-based items", () => {
-    const plan = proposeMacroSafeAdjustment(-150, BASELINE);
-    for (const p of plan) {
-      expect(p.item).toMatch(/_g$/);
+  test("whole foods never appear in any plan", () => {
+    for (const delta of [-300, -100, +100, +300]) {
+      const plan = proposeMacroSafeAdjustment(delta, BASELINE);
+      const nonAdjustable = plan.filter((p) => !ADJUSTABLE.includes(p.item));
+      expect(nonAdjustable).toHaveLength(0);
+    }
+  });
+
+  test("whey/flax/bananas/eggs/yogurt never touched", () => {
+    const blocked = new Set(["whey_g", "flax_g", "bananas", "eggs", "yogurt_cups"]);
+    for (const delta of [-500, -100, +100, +500]) {
+      const plan = proposeMacroSafeAdjustment(delta, BASELINE);
+      for (const p of plan) {
+        expect(blocked.has(p.item)).toBe(false);
+      }
     }
   });
 });

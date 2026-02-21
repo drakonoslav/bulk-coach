@@ -237,12 +237,14 @@ export function waistDelta(entries: DailyEntry[], days: number = 14): number | n
 
 // NOTE: calorie adjustments must remain weight-only. Do not add readiness/strength inputs here.
 export function suggestCalorieAdjustment(wkGainLb: number): number {
-  if (wkGainLb <= -0.50) return 200;
-  if (wkGainLb < 0.10) return 100;
-  if (wkGainLb < 0.25) return 75;
+  if (wkGainLb <= -1.00) return 300;
+  if (wkGainLb <= -0.50) return 250;
+  if (wkGainLb < 0.10) return 200;
+  if (wkGainLb < 0.25) return 100;
   if (wkGainLb <= 0.50) return 0;
   if (wkGainLb <= 0.75) return -50;
-  return -100;
+  if (wkGainLb <= 1.00) return -100;
+  return -150;
 }
 
 export interface AdjustmentItem {
@@ -292,12 +294,12 @@ export function proposeMacroSafeAdjustment(kcalChange: number, baseline: Baselin
   const plan: AdjustmentItem[] = [];
   let remaining = kcalChange;
 
+  const ADJUSTABLE = new Set(["mct_g", "dextrin_g", "oats_g"]);
+
   for (const item of baseline.adjustPriority) {
     if (remaining === 0) break;
 
-    if (isCut && WHOLE_FOODS.has(item)) continue;
-
-    if (["whey_g", "yogurt_cups"].includes(item) && Math.abs(remaining) <= 150) continue;
+    if (!ADJUSTABLE.has(item)) continue;
 
     let deltaAmt = gramsForKcal(item, remaining);
     if (deltaAmt === 0) {

@@ -10,7 +10,7 @@ describe("coaching-engine: suggestCalorieAdjustment (integration contract)", () 
     expect(suggestCalorieAdjustment(+0.5)).toBeDefined();
     expect(suggestCalorieAdjustment(+1.0)).toBeDefined();
 
-    const allowed = new Set([+200, +100, +75, 0, -50, -100]);
+    const allowed = new Set([+300, +250, +200, +100, 0, -50, -100, -150]);
     const inputs = [-2, -1, -0.5, 0, 0.25, 0.5, 1] as const;
     for (const x of inputs) {
       expect(allowed.has(suggestCalorieAdjustment(x))).toBe(true);

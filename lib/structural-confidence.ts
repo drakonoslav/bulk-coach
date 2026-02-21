@@ -393,8 +393,11 @@ export function detectStrengthPlateau(
   return { flagged: false, label: "", coachingNotes: [] };
 }
 
-function capCalorieDelta(delta: number, phase: TrainingPhase): number {
+function capCalorieDelta(delta: number, phase: TrainingPhase, wkGainLb?: number | null): number {
   if (delta <= 0) return delta;
+  if (phase !== "hypertrophy" && wkGainLb != null && wkGainLb <= -0.50) {
+    return Math.min(delta, 250);
+  }
   const cap = phase === "hypertrophy" ? 150 : 100;
   return Math.min(delta, cap);
 }
@@ -457,7 +460,7 @@ export function classifyMode(
       calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
     } else if (weightVel != null && weightVel < 0.25) {
       const raw = trainingPhase === "hypertrophy" ? 150 : 100;
-      calorieAction = { delta: capCalorieDelta(raw, trainingPhase), reason: "Weight gain below target — add calories", priority: "medium" };
+      calorieAction = { delta: capCalorieDelta(raw, trainingPhase, weightVel), reason: "Weight gain below target — add calories", priority: "medium" };
     } else if (weightVel != null && weightVel > 0.75) {
       calorieAction = { delta: -100, reason: "Weight gain too fast — reduce calories", priority: "medium" };
     } else if (waistWarning.active && (strengthPct == null || strengthPct < 0.25)) {
@@ -496,9 +499,9 @@ export function classifyMode(
     } else if (plateau.flagged) {
       calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
     } else if (strengthPct != null && strengthPct > 0 && (waistVel <= -0.10)) {
-      calorieAction = { delta: capCalorieDelta(50, trainingPhase), reason: "Recomp fuel — strength rising + waist dropping", priority: "low" };
+      calorieAction = { delta: capCalorieDelta(50, trainingPhase, weightVel), reason: "Recomp fuel — strength rising + waist dropping", priority: "low" };
     } else if (ffmVel != null && ffmVel < -0.15) {
-      calorieAction = { delta: capCalorieDelta(75, trainingPhase), reason: "Protect lean tissue — FFM declining", priority: "high" };
+      calorieAction = { delta: capCalorieDelta(75, trainingPhase, weightVel), reason: "Protect lean tissue — FFM declining", priority: "high" };
     } else {
       calorieAction = { delta: 0, reason: "Recomp on track — hold calories", priority: "low" };
     }
@@ -532,7 +535,7 @@ export function classifyMode(
     } else if (plateau.flagged) {
       calorieAction = { delta: 0, reason: "Surplus not productive — hold calories, improve overload", priority: "high" };
     } else if (strengthPct != null && strengthPct <= -0.25 && ffmVel != null && ffmVel <= -0.15) {
-      calorieAction = { delta: capCalorieDelta(100, trainingPhase), reason: "Lean tissue at risk — add calories or reduce volume", priority: "high" };
+      calorieAction = { delta: capCalorieDelta(100, trainingPhase, weightVel), reason: "Lean tissue at risk — add calories or reduce volume", priority: "high" };
     } else if (waistVel != null && Math.abs(waistVel) < 0.05) {
       calorieAction = { delta: -100, reason: "Fat loss stalled — reduce calories slightly", priority: "medium" };
     } else {
