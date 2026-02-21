@@ -6,6 +6,13 @@ import {
   WEIGHT_VELOCITY_RATIO_FLOOR,
   type DailyEntry,
 } from "../coaching-engine";
+import {
+  detectWaistWarning,
+  detectTrainingPhase,
+  classifyMode,
+  type TrainingPhase,
+} from "../structural-confidence";
+import type { StrengthBaselines } from "../strength-index";
 
 function makeEntries(
   days: number,
@@ -92,5 +99,63 @@ describe("FFM Lean Gain Ratio denominator guard", () => {
     expect(result.ratio).toBeNull();
     expect(result.insufficientWeight).toBe(false);
     expect(result.label).toBe("Insufficient data");
+  });
+});
+
+describe("Waist acceleration warning", () => {
+  test("waistVelocity > +0.20 → warning active, amber severity", () => {
+    const w = detectWaistWarning(0.25);
+    expect(w.active).toBe(true);
+    expect(w.label).toBe("Waist rising quickly");
+    expect(w.severity).toBe("amber");
+  });
+
+  test("waistVelocity = +0.20 → no warning (not strictly above threshold)", () => {
+    const w = detectWaistWarning(0.20);
+    expect(w.active).toBe(false);
+    expect(w.severity).toBe("none");
+  });
+
+  test("waistVelocity = -0.10 → no warning", () => {
+    const w = detectWaistWarning(-0.10);
+    expect(w.active).toBe(false);
+  });
+
+  test("null waistVelocity → no warning", () => {
+    const w = detectWaistWarning(null);
+    expect(w.active).toBe(false);
+  });
+});
+
+describe("Training phase detection", () => {
+  const emptyBaselines: StrengthBaselines = { pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null };
+
+  test("fewer than 14 entries → default neural", () => {
+    const entries = makeEntries(10, 180, 1.0, 145, 1.0);
+    const phase = detectTrainingPhase(entries, emptyBaselines);
+    expect(phase).toBe("neural");
+  });
+
+  test("14+ entries without strength data → neural (no velocity)", () => {
+    const entries = makeEntries(21, 180, 1.0, 145, 1.0);
+    const phase = detectTrainingPhase(entries, emptyBaselines);
+    expect(phase).toBe("neural");
+  });
+});
+
+describe("Calorie cap by phase", () => {
+  const emptyBaselines: StrengthBaselines = { pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null };
+
+  test("classifyMode returns trainingPhase field", () => {
+    const entries = makeEntries(21, 180, 1.0, 145, 1.0);
+    const result = classifyMode(entries, emptyBaselines);
+    expect(["neural", "hypertrophy"]).toContain(result.trainingPhase);
+  });
+
+  test("classifyMode returns waistWarning field", () => {
+    const entries = makeEntries(21, 180, 1.0, 145, 1.0);
+    const result = classifyMode(entries, emptyBaselines);
+    expect(result.waistWarning).toBeDefined();
+    expect(typeof result.waistWarning.active).toBe("boolean");
   });
 });
