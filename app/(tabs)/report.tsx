@@ -29,6 +29,7 @@ import {
   ffmRollingAvg,
   ffmVelocity14d,
   ffmLeanGainRatio,
+  weightVelocity14d,
   BASELINE,
   ITEM_LABELS,
   ITEM_UNITS,
@@ -37,6 +38,8 @@ import {
   type MealGuideEntry,
   type Diagnosis,
 } from "@/lib/coaching-engine";
+import { type StrengthBaselines, strengthVelocity14d } from "@/lib/strength-index";
+import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
 
 function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
   const chartColor = lineColor || Colors.primary;
@@ -496,6 +499,9 @@ export default function ReportScreen() {
     gate30: boolean;
     gateLabel: string | null;
   } | null>(null);
+  const [strengthBaselines, setStrengthBaselines] = useState<StrengthBaselines>({
+    pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null,
+  });
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -535,6 +541,19 @@ export default function ReportScreen() {
         setReadinessHistory(await readinessHistRes.json());
       }
       if (dsRes.ok) setDataSuff(await dsRes.json());
+      try {
+        const sbRes = await authFetch(new URL("/api/strength/baselines", baseUrl).toString());
+        if (sbRes.ok) {
+          const sbData = await sbRes.json();
+          const bl = sbData.baselines || {};
+          setStrengthBaselines({
+            pushups: bl.pushups?.value ?? null,
+            pullups: bl.pullups?.value ?? null,
+            benchBarReps: bl.bench_bar_reps?.value ?? null,
+            ohpBarReps: bl.ohp_bar_reps?.value ?? null,
+          });
+        }
+      } catch {}
     } catch {}
   }, [proxyImputed]);
 
@@ -566,6 +585,10 @@ export default function ReportScreen() {
   const ffmChartData = ffmRa.slice(-21);
   const ffmV = ffmVelocity14d(entries);
   const ffmLgr = ffmLeanGainRatio(entries);
+  const scs = computeSCS(entries, strengthBaselines);
+  const modeClass = classifyMode(entries, strengthBaselines);
+  const waistV = waistVelocity14d(entries);
+  const sV = strengthVelocity14d(entries, strengthBaselines);
 
   const hasEnoughData = entries.length >= 7;
 
@@ -606,6 +629,81 @@ export default function ReportScreen() {
           </View>
         ) : (
           <>
+            <View style={{ backgroundColor: modeClass.color + "18", borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: modeClass.color + "40" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons
+                    name={modeClass.mode === "LEAN_BULK" ? "trending-up" : modeClass.mode === "RECOMP" ? "swap-horizontal" : modeClass.mode === "CUT" ? "trending-down" : "help-circle"}
+                    size={20}
+                    color={modeClass.color}
+                  />
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                    Mode: {modeClass.label}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                    {scs.total}/100
+                  </Text>
+                </View>
+              </View>
+              <View style={{ gap: 4 }}>
+                {modeClass.ffmVelocity != null && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name={modeClass.ffmVelocity >= 0.15 ? "arrow-up" : modeClass.ffmVelocity <= -0.15 ? "arrow-down" : "remove"}
+                      size={14}
+                      color={modeClass.ffmVelocity >= 0.15 ? "#34D399" : modeClass.ffmVelocity <= -0.15 ? "#F87171" : "#FBBF24"}
+                    />
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
+                      FFM: {modeClass.ffmVelocity >= 0 ? "+" : ""}{modeClass.ffmVelocity.toFixed(2)} lb/wk
+                      <Text style={{ color: Colors.textTertiary }}> {modeClass.ffmVelocity >= 0.15 ? "(good)" : modeClass.ffmVelocity <= -0.15 ? "(watch)" : "(stable)"}</Text>
+                    </Text>
+                  </View>
+                )}
+                {modeClass.waistVelocity != null && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name={modeClass.waistVelocity <= -0.10 ? "arrow-down" : modeClass.waistVelocity >= 0.10 ? "arrow-up" : "remove"}
+                      size={14}
+                      color={modeClass.waistVelocity <= -0.10 ? "#34D399" : modeClass.waistVelocity >= 0.10 ? "#F87171" : "#FBBF24"}
+                    />
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
+                      Waist: {modeClass.waistVelocity >= 0 ? "+" : ""}{modeClass.waistVelocity.toFixed(2)} in/wk
+                      <Text style={{ color: Colors.textTertiary }}> {modeClass.waistVelocity <= -0.10 ? "(good)" : modeClass.waistVelocity >= 0.10 ? "(watch)" : "(stable)"}</Text>
+                    </Text>
+                  </View>
+                )}
+                {modeClass.strengthVelocityPct != null && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name={modeClass.strengthVelocityPct >= 0.25 ? "arrow-up" : modeClass.strengthVelocityPct <= -0.25 ? "arrow-down" : "remove"}
+                      size={14}
+                      color={modeClass.strengthVelocityPct >= 0.25 ? "#34D399" : modeClass.strengthVelocityPct <= -0.25 ? "#F87171" : "#FBBF24"}
+                    />
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
+                      Strength: {modeClass.strengthVelocityPct >= 0 ? "+" : ""}{modeClass.strengthVelocityPct.toFixed(2)}%/wk
+                      <Text style={{ color: Colors.textTertiary }}> {modeClass.strengthVelocityPct >= 0.25 ? "(good)" : modeClass.strengthVelocityPct <= -0.25 ? "(watch)" : "(stable)"}</Text>
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {modeClass.calorieAction.delta !== 0 && (
+                <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                    {modeClass.calorieAction.delta > 0 ? "+" : ""}{modeClass.calorieAction.delta} kcal — {modeClass.calorieAction.reason}
+                  </Text>
+                </View>
+              )}
+              {modeClass.mode === "UNCERTAIN" && modeClass.reasons.length > 1 && (
+                <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                    {modeClass.reasons[1]}
+                  </Text>
+                </View>
+              )}
+            </View>
+
             <View style={styles.baselineCard}>
               <View style={styles.baselineRow}>
                 <View style={styles.baselineStat}>

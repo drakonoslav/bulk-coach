@@ -207,6 +207,12 @@ export default function LogScreen() {
   const [bfPmR2, setBfPmR2] = useState("");
   const [bfPmR3, setBfPmR3] = useState("");
   const [fatFreeMass, setFatFreeMass] = useState("");
+  const [pushupsReps, setPushupsReps] = useState("");
+  const [pullupsReps, setPullupsReps] = useState("");
+  const [benchReps, setBenchReps] = useState("");
+  const [benchWeight, setBenchWeight] = useState("");
+  const [ohpReps, setOhpReps] = useState("");
+  const [ohpWeight, setOhpWeight] = useState("");
   const [sleepStart, setSleepStart] = useState("");
   const [sleepEnd, setSleepEnd] = useState("");
   const [sleepQuality, setSleepQuality] = useState<number | undefined>();
@@ -302,6 +308,12 @@ export default function LogScreen() {
       setBfPmR2(existing.bfEveningR2?.toString() || "");
       setBfPmR3(existing.bfEveningR3?.toString() || "");
       setFatFreeMass(existing.fatFreeMassLb?.toString() || "");
+      setPushupsReps(existing.pushupsReps?.toString() || "");
+      setPullupsReps(existing.pullupsReps?.toString() || "");
+      setBenchReps(existing.benchReps?.toString() || "");
+      setBenchWeight(existing.benchWeightLb?.toString() || "");
+      setOhpReps(existing.ohpReps?.toString() || "");
+      setOhpWeight(existing.ohpWeightLb?.toString() || "");
       setSleepStart(existing.sleepStart || "");
       setSleepEnd(existing.sleepEnd || "");
       setSleepQuality(existing.sleepQuality);
@@ -581,6 +593,12 @@ export default function LogScreen() {
     setBfPmR2("");
     setBfPmR3("");
     setFatFreeMass("");
+    setPushupsReps("");
+    setPullupsReps("");
+    setBenchReps("");
+    setBenchWeight("");
+    setOhpReps("");
+    setOhpWeight("");
     setSleepStart("");
     setSleepEnd("");
     setSleepQuality(undefined);
@@ -683,6 +701,12 @@ export default function LogScreen() {
         caloriesIn: caloriesIn ? parseInt(caloriesIn, 10) : undefined,
         trainingLoad: trainingLoad || undefined,
         fatFreeMassLb: fatFreeMass ? parseFloat(fatFreeMass) : undefined,
+        pushupsReps: pushupsReps ? parseInt(pushupsReps, 10) : undefined,
+        pullupsReps: pullupsReps ? parseInt(pullupsReps, 10) : undefined,
+        benchReps: benchReps ? parseInt(benchReps, 10) : undefined,
+        benchWeightLb: benchWeight ? parseFloat(benchWeight) : undefined,
+        ohpReps: ohpReps ? parseInt(ohpReps, 10) : undefined,
+        ohpWeightLb: ohpWeight ? parseFloat(ohpWeight) : undefined,
       };
 
       await saveEntry(entry);
@@ -968,6 +992,106 @@ export default function LogScreen() {
                   value={fatFreeMass}
                   onChangeText={setFatFreeMass}
                   placeholder="e.g. 145.2"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>lb</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <Ionicons name="barbell-outline" size={14} color="#F59256" />
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#F59256" }}>Strength Tracking</Text>
+            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>reps to failure or top set</Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>Pushups</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={pushupsReps}
+                  onChangeText={setPushupsReps}
+                  placeholder="reps"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>Pullups</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={pullupsReps}
+                  onChangeText={setPullupsReps}
+                  placeholder="reps"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>Bench reps</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={benchReps}
+                  onChangeText={setBenchReps}
+                  placeholder="reps"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>Bench weight</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={benchWeight}
+                  onChangeText={setBenchWeight}
+                  placeholder="45"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  keyboardAppearance="dark"
+                />
+                <Text style={styles.inputSuffix}>lb</Text>
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>OHP reps</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={ohpReps}
+                  onChangeText={setOhpReps}
+                  placeholder="reps"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  keyboardAppearance="dark"
+                />
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>OHP weight</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={ohpWeight}
+                  onChangeText={setOhpWeight}
+                  placeholder="45"
                   placeholderTextColor={Colors.textTertiary}
                   keyboardType="decimal-pad"
                   keyboardAppearance="dark"
