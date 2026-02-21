@@ -38,7 +38,7 @@ import {
   type MealGuideEntry,
   type Diagnosis,
 } from "@/lib/coaching-engine";
-import { type StrengthBaselines, strengthVelocity14d } from "@/lib/strength-index";
+import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
 
 function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: number }>; lineColor?: string }) {
@@ -590,6 +590,12 @@ export default function ReportScreen() {
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
 
+  const strengthDaysInWindow = (() => {
+    const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+    const last7 = sorted.slice(-7);
+    return last7.filter(e => computeDayStrengthIndex(e, strengthBaselines).strengthIndexRaw != null).length;
+  })();
+
   const hasEnoughData = entries.length >= 7;
   const daysWithWeight = entries.filter(e => e.morningWeightLb != null).length;
   const allVelocitiesNull = modeClass.ffmVelocity == null && modeClass.waistVelocity == null && modeClass.strengthVelocityPct == null;
@@ -721,6 +727,23 @@ export default function ReportScreen() {
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
                       Strength: {modeClass.strengthVelocityPct >= 0 ? "+" : ""}{modeClass.strengthVelocityPct.toFixed(2)}%/wk
                       <Text style={{ color: Colors.textTertiary }}> {modeClass.strengthVelocityPct >= 0.25 ? "(good)" : modeClass.strengthVelocityPct <= -0.25 ? "(watch)" : "(stable)"}</Text>
+                    </Text>
+                  </View>
+                )}
+                {sV != null ? (
+                  <View style={{ marginTop: 4, paddingLeft: 20, gap: 2 }}>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                      today7dAvg: {sV.si7dToday.toFixed(4)}  prior7dAvg: {sV.si7d14dAgo.toFixed(4)}  delta: {(sV.si7dToday - sV.si7d14dAgo) >= 0 ? "+" : ""}{(sV.si7dToday - sV.si7d14dAgo).toFixed(4)}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                      pctPerWeek: {sV.pctPerWeek >= 0 ? "+" : ""}{sV.pctPerWeek.toFixed(2)}%  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.spanDays}d
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="alert-circle-outline" size={14} color={Colors.textTertiary} />
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                      Insufficient strength coverage ({strengthDaysInWindow}/7 days)
                     </Text>
                   </View>
                 )}
