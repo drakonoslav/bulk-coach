@@ -319,9 +319,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cardio_start_time, cardio_end_time,
           lift_start_time, lift_end_time, lift_min,
           fat_free_mass_lb,
+          pushups_reps, pullups_reps, bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -372,6 +373,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lift_end_time = EXCLUDED.lift_end_time,
           lift_min = EXCLUDED.lift_min,
           fat_free_mass_lb = EXCLUDED.fat_free_mass_lb,
+          pushups_reps = EXCLUDED.pushups_reps,
+          pullups_reps = EXCLUDED.pullups_reps,
+          bench_reps = EXCLUDED.bench_reps,
+          bench_weight_lb = EXCLUDED.bench_weight_lb,
+          ohp_reps = EXCLUDED.ohp_reps,
+          ohp_weight_lb = EXCLUDED.ohp_weight_lb,
           updated_at = NOW()`,
         [
           userId,
@@ -424,6 +431,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.liftEndTime ?? null,
           b.liftMin ?? null,
           b.fatFreeMassLb ?? null,
+          b.pushupsReps ?? null,
+          b.pullupsReps ?? null,
+          b.benchReps ?? null,
+          b.benchWeightLb ?? null,
+          b.ohpReps ?? null,
+          b.ohpWeightLb ?? null,
         ],
       );
 
@@ -2909,6 +2922,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err) {
       console.error("preset delete error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/strength/baselines", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { rows } = await pool.query(
+        `SELECT exercise, baseline_value, baseline_type, computed_from_days, updated_at
+         FROM strength_baselines WHERE user_id = $1`,
+        [userId],
+      );
+      const baselines: Record<string, any> = {};
+      for (const r of rows) {
+        baselines[r.exercise] = {
+          value: r.baseline_value,
+          type: r.baseline_type,
+          computedFromDays: r.computed_from_days,
+          updatedAt: r.updated_at,
+        };
+      }
+      res.json({ ok: true, baselines });
+    } catch (err) {
+      console.error("strength baselines fetch error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/strength/baselines/compute", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const maxDays = req.body.maxDays ?? 7;
+      const { rows } = await pool.query(
+        `SELECT * FROM daily_log WHERE user_id = $1 ORDER BY day ASC`,
+        [userId],
+      );
+      const entries = rows.map(snakeToCamel);
+
+      const sorted = [...entries].sort((a: any, b: any) => a.day.localeCompare(b.day));
+      const recent = sorted.slice(0, maxDays);
+
+      const avg = (vals: number[]) => vals.length > 0 ? vals.reduce((s: number, v: number) => s + v, 0) / vals.length : null;
+      const pushups = avg(recent.filter((e: any) => e.pushupsReps != null).map((e: any) => e.pushupsReps));
+      const pullups = avg(recent.filter((e: any) => e.pullupsReps != null).map((e: any) => e.pullupsReps));
+      const benchBarReps = avg(recent.filter((e: any) => e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)).map((e: any) => e.benchReps));
+      const ohpBarReps = avg(recent.filter((e: any) => e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)).map((e: any) => e.ohpReps));
+
+      const exercises: Array<{ name: string; val: number | null }> = [
+        { name: "pushups", val: pushups },
+        { name: "pullups", val: pullups },
+        { name: "bench_bar_reps", val: benchBarReps },
+        { name: "ohp_bar_reps", val: ohpBarReps },
+      ];
+
+      for (const ex of exercises) {
+        if (ex.val != null) {
+          const rounded = Math.round(ex.val * 10) / 10;
+          await pool.query(
+            `INSERT INTO strength_baselines (user_id, exercise, baseline_value, baseline_type, computed_from_days, updated_at)
+             VALUES ($1, $2, $3, 'reps', $4, NOW())
+             ON CONFLICT (user_id, exercise) DO UPDATE SET
+               baseline_value = EXCLUDED.baseline_value,
+               computed_from_days = EXCLUDED.computed_from_days,
+               updated_at = NOW()`,
+            [userId, ex.name, rounded, maxDays],
+          );
+        }
+      }
+
+      res.json({
+        ok: true,
+        baselines: {
+          pushups: pushups != null ? Math.round(pushups * 10) / 10 : null,
+          pullups: pullups != null ? Math.round(pullups * 10) / 10 : null,
+          benchBarReps: benchBarReps != null ? Math.round(benchBarReps * 10) / 10 : null,
+          ohpBarReps: ohpBarReps != null ? Math.round(ohpBarReps * 10) / 10 : null,
+        },
+        computedFromDays: maxDays,
+        dataPoints: recent.length,
+      });
+    } catch (err) {
+      console.error("strength baselines compute error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

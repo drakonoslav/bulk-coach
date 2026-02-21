@@ -57,6 +57,12 @@ export interface DailyEntry {
   liftEndTime?: string;
   liftMin?: number;
   fatFreeMassLb?: number;
+  pushupsReps?: number;
+  pullupsReps?: number;
+  benchReps?: number;
+  benchWeightLb?: number;
+  ohpReps?: number;
+  ohpWeightLb?: number;
 }
 
 export interface CardioFuel {
