@@ -179,6 +179,8 @@ export default function VitalsScreen() {
   interface ActiveLensEpisode { id: number; tag: string; startDay: string; intensity: number; label: string | null; }
   const [lensArchives, setLensArchives] = useState<LensArchive[]>([]);
   const [activeLenses, setActiveLenses] = useState<ActiveLensEpisode[]>([]);
+  const [expandedArchiveId, setExpandedArchiveId] = useState<number | null>(null);
+  const [archiveTab, setArchiveTab] = useState<"terminal" | "episode">("terminal");
   const CONTEXT_TAG_COLORS: Record<string, string> = {
     travel: "#60A5FA", schedule_shift: "#FBBF24", work_stress: "#F87171",
     social_load: "#A78BFA", illness_symptoms: "#34D399", injury_pain: "#FB923C",
@@ -895,33 +897,138 @@ export default function VitalsScreen() {
                 <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 8 }}>Archived</Text>
                 {lensArchives.map((ar) => {
                   const tagColor = CONTEXT_TAG_COLORS[ar.tag] || "#8B5CF6";
-                  const duration = ar.summaryJson?.durationDays || "?";
-                  const phase = ar.summaryJson?.phase?.replace(/_/g, " ")?.toLowerCase() || "";
-                  const distScore = ar.summaryJson?.disturbanceScore;
+                  const s = ar.summaryJson || {};
+                  const duration = s.durationDays || "?";
+                  const tr = s.terminalRolling;
+                  const ew = s.episodeWide;
+                  const distScore = tr?.disturbanceScore ?? s.disturbanceScore;
+                  const phase = (tr?.phase ?? s.phase ?? "")?.replace(/_/g, " ")?.toLowerCase();
+                  const isExpanded = expandedArchiveId === ar.id;
+
+                  const interpColor = (i: string) => i === "improving" ? "#34D399" : i === "worsening" ? "#F87171" : i === "flat" ? "#FBBF24" : Colors.textTertiary;
+                  const fmtDelta = (v: number | null | undefined) => v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+
                   return (
-                    <View key={ar.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor + "60", marginRight: 10 }} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
-                          {ar.tag.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                        </Text>
-                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                          {ar.startDay} \u2192 {ar.endDay} \u00B7 {duration}d {ar.label ? `\u00B7 ${ar.label}` : ""}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        {distScore != null && (
-                          <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: distScore >= 62 ? "#F87171" : distScore >= 56 ? "#FBBF24" : "#34D399" }}>
-                            {distScore.toFixed(0)}
-                          </Text>
+                    <Pressable key={ar.id} onPress={() => setExpandedArchiveId(isExpanded ? null : ar.id)}>
+                      <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor + "60", marginRight: 10 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                              {ar.tag.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </Text>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                              {ar.startDay} → {ar.endDay} · {duration}d {ar.label ? `· ${ar.label}` : ""}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: "flex-end" }}>
+                            {distScore != null && (
+                              <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: distScore >= 62 ? "#F87171" : distScore >= 56 ? "#FBBF24" : "#34D399" }}>
+                                {distScore.toFixed(0)}
+                              </Text>
+                            )}
+                            {phase ? (
+                              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                {phase}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+
+                        {isExpanded && tr && (
+                          <View style={{ marginTop: 10, paddingLeft: 18 }}>
+                            <View style={{ flexDirection: "row", marginBottom: 8 }}>
+                              <Pressable
+                                onPress={() => setArchiveTab("terminal")}
+                                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: archiveTab === "terminal" ? tagColor + "30" : "transparent", marginRight: 6 }}
+                              >
+                                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: archiveTab === "terminal" ? tagColor : Colors.textTertiary }}>End-of-Episode</Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => setArchiveTab("episode")}
+                                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: archiveTab === "episode" ? tagColor + "30" : "transparent" }}
+                              >
+                                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: archiveTab === "episode" ? tagColor : Colors.textTertiary }}>Genesis → Terminus</Text>
+                              </Pressable>
+                            </View>
+
+                            {archiveTab === "terminal" && (
+                              <View>
+                                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 4 }}>
+                                  Rolling baseline at {tr.day} · Disturbance: {tr.disturbanceScore?.toFixed(1)}
+                                </Text>
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                                  {[
+                                    { label: "HRV", val: tr.deltas?.hrv_pct, suffix: "%" },
+                                    { label: "Sleep", val: tr.deltas?.sleep_pct, suffix: "%" },
+                                    { label: "RHR", val: tr.deltas?.rhr_bpm, suffix: " bpm" },
+                                    { label: "Proxy", val: tr.deltas?.proxy_pct, suffix: "%" },
+                                    { label: "Late", val: tr.deltas?.lateRate != null ? Math.round(tr.deltas.lateRate * 100) : null, suffix: "%" },
+                                  ].map((item) => (
+                                    <View key={item.label} style={{ backgroundColor: Colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{item.label}</Text>
+                                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                                        {item.val != null ? `${item.val >= 0 ? "+" : ""}${typeof item.val === "number" ? item.val.toFixed(0) : item.val}${item.suffix}` : "\u2014"}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                                {tr.cortisolFlagRate21d != null && (
+                                  <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 4 }}>
+                                    Cortisol flag rate: {(tr.cortisolFlagRate21d * 100).toFixed(0)}%
+                                  </Text>
+                                )}
+                              </View>
+                            )}
+
+                            {archiveTab === "episode" && ew && (
+                              <View>
+                                {ew.interpretation === "insufficient_data" ? (
+                                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                    Insufficient tagged days for episode-wide comparison
+                                  </Text>
+                                ) : (
+                                  <>
+                                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                        Start: {ew.windowStart?.start} → {ew.windowStart?.end}
+                                      </Text>
+                                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                        End: {ew.windowEnd?.start} → {ew.windowEnd?.end}
+                                      </Text>
+                                    </View>
+                                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                                      {[
+                                        { label: "ΔHRV", val: ew.deltaChange?.hrv_pct },
+                                        { label: "ΔSleep", val: ew.deltaChange?.sleep_pct },
+                                        { label: "ΔRHR", val: ew.deltaChange?.rhr_bpm },
+                                        { label: "ΔProxy", val: ew.deltaChange?.proxy_pct },
+                                        { label: "ΔDrift", val: ew.deltaChange?.lateRate },
+                                      ].map((item) => (
+                                        <View key={item.label} style={{ backgroundColor: Colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{item.label}</Text>
+                                          <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.text }}>{fmtDelta(item.val)}</Text>
+                                        </View>
+                                      ))}
+                                    </View>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                      <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: interpColor(ew.interpretation) }}>
+                                        {ew.interpretation?.toUpperCase()}
+                                      </Text>
+                                      {ew.disturbanceChange != null && (
+                                        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                          Disturbance Δ: {fmtDelta(ew.disturbanceChange)}
+                                        </Text>
+                                      )}
+                                    </View>
+                                  </>
+                                )}
+                              </View>
+                            )}
+                          </View>
                         )}
-                        {phase && (
-                          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                            {phase}
-                          </Text>
-                        )}
                       </View>
-                    </View>
+                    </Pressable>
                   );
                 })}
               </>
