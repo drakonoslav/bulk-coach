@@ -641,12 +641,27 @@ export default function ReportScreen() {
                     Mode: {modeClass.label}
                   </Text>
                 </View>
-                <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
-                    {scs.total}/100
-                  </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ backgroundColor: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA30" : "#6B728030", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA" : "#9CA3AF" }}>
+                      {modeClass.trainingPhase === "hypertrophy" ? "Hypertrophy" : "Neural"}
+                    </Text>
+                  </View>
+                  <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                      {scs.total}/100
+                    </Text>
+                  </View>
                 </View>
               </View>
+              {modeClass.waistWarning.active && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, backgroundColor: "#FBBF2418", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Ionicons name="warning" size={13} color="#FBBF24" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>
+                    {modeClass.waistWarning.label}
+                  </Text>
+                </View>
+              )}
               <View style={{ gap: 4 }}>
                 {modeClass.ffmVelocity != null && (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

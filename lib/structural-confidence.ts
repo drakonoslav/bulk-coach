@@ -33,6 +33,14 @@ export interface SCSResult {
 
 export type TrainingMode = "LEAN_BULK" | "RECOMP" | "CUT" | "UNCERTAIN";
 
+export type TrainingPhase = "neural" | "hypertrophy";
+
+export interface WaistWarning {
+  active: boolean;
+  label: string;
+  severity: "amber" | "none";
+}
+
 export interface ModeClassification {
   mode: TrainingMode;
   label: string;
@@ -44,6 +52,8 @@ export interface ModeClassification {
   weightVelocity: number | null;
   reasons: string[];
   calorieAction: CalorieAction;
+  trainingPhase: TrainingPhase;
+  waistWarning: WaistWarning;
 }
 
 export interface CalorieAction {
@@ -283,6 +293,65 @@ function computeWaistRolling(
   return out;
 }
 
+export function detectWaistWarning(waistVel: number | null): WaistWarning {
+  if (waistVel != null && waistVel > 0.20) {
+    return { active: true, label: "Waist rising quickly", severity: "amber" };
+  }
+  return { active: false, label: "", severity: "none" };
+}
+
+export function detectTrainingPhase(
+  entries: DailyEntry[],
+  baselines: StrengthBaselines,
+): TrainingPhase {
+  const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  if (sorted.length < 14) return "neural";
+
+  const hypertrophyStreak = checkConsecutiveDaysCondition(sorted, baselines, "hypertrophy");
+  if (hypertrophyStreak >= 14) return "hypertrophy";
+
+  return "neural";
+}
+
+function checkConsecutiveDaysCondition(
+  sorted: DailyEntry[],
+  baselines: StrengthBaselines,
+  condition: "hypertrophy" | "revert",
+): number {
+  let maxStreak = 0;
+  let streak = 0;
+
+  for (let i = 13; i < sorted.length; i++) {
+    const windowEnd = i;
+    const window = sorted.slice(0, windowEnd + 1);
+
+    const sV = strengthVelocity14d(window, baselines);
+    const ffmV = ffmVelocity14d(window);
+    const penalty = swapPenaltyMultiplier(window);
+
+    if (condition === "hypertrophy") {
+      const met =
+        sV != null && sV.pctPerWeek >= 0.02 &&
+        ffmV != null && ffmV.velocityLbPerWeek >= 0 &&
+        penalty >= 0.90;
+      if (met) { streak++; } else { streak = 0; }
+    } else {
+      const met = sV != null && sV.pctPerWeek < 0;
+      if (met) { streak++; } else { streak = 0; }
+    }
+
+    maxStreak = Math.max(maxStreak, streak);
+  }
+
+  return maxStreak;
+}
+
+function capCalorieDelta(delta: number, phase: TrainingPhase): number {
+  if (delta <= 0) return delta;
+  const cap = phase === "hypertrophy" ? 150 : 100;
+  return Math.min(delta, cap);
+}
+
 export function classifyMode(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
@@ -298,7 +367,19 @@ export function classifyMode(
   const strengthPct = sV?.pctPerWeek ?? null;
   const weightVel = wV;
 
+  const trainingPhase = detectTrainingPhase(entries, baselines);
+  const waistWarning = detectWaistWarning(waistVel);
+
   const reasons: string[] = [];
+
+  const base = {
+    ffmVelocity: ffmVel,
+    waistVelocity: waistVel,
+    strengthVelocityPct: strengthPct,
+    weightVelocity: weightVel,
+    trainingPhase,
+    waistWarning,
+  };
 
   if (scs.total < 60) {
     return {
@@ -306,10 +387,7 @@ export function classifyMode(
       label: "Uncertain",
       color: "#6B7280",
       confidence: scs.total,
-      ffmVelocity: ffmVel,
-      waistVelocity: waistVel,
-      strengthVelocityPct: strengthPct,
-      weightVelocity: weightVel,
+      ...base,
       reasons: ["Insufficient measurement confidence (SCS < 60)", "Log more frequently: FFM 4x/wk, waist 3x/wk, strength 2x/wk"],
       calorieAction: { delta: 0, reason: "Hold calories — need more data", priority: "low" },
     };
@@ -327,11 +405,12 @@ export function classifyMode(
 
     let calorieAction: CalorieAction;
     if (weightVel != null && weightVel < 0.25) {
-      calorieAction = { delta: 100, reason: "Weight gain below target — add calories", priority: "medium" };
+      const raw = trainingPhase === "hypertrophy" ? 150 : 100;
+      calorieAction = { delta: capCalorieDelta(raw, trainingPhase), reason: "Weight gain below target — add calories", priority: "medium" };
     } else if (weightVel != null && weightVel > 0.75) {
       calorieAction = { delta: -100, reason: "Weight gain too fast — reduce calories", priority: "medium" };
-    } else if (waistVel != null && waistVel > 0.20 && (strengthPct == null || strengthPct < 0.25)) {
-      calorieAction = { delta: 0, reason: "Waist rising without strength gains — hold", priority: "high" };
+    } else if (waistWarning.active && (strengthPct == null || strengthPct < 0.25)) {
+      calorieAction = { delta: 0, reason: "Waist rising quickly without strength gains — hold", priority: "high" };
     } else {
       calorieAction = { delta: 0, reason: "On track — maintain current intake", priority: "low" };
     }
@@ -341,10 +420,7 @@ export function classifyMode(
       label: "Lean Bulk",
       color: "#34D399",
       confidence: scs.total,
-      ffmVelocity: ffmVel,
-      waistVelocity: waistVel,
-      strengthVelocityPct: strengthPct,
-      weightVelocity: weightVel,
+      ...base,
       reasons,
       calorieAction,
     };
@@ -362,9 +438,9 @@ export function classifyMode(
 
     let calorieAction: CalorieAction;
     if (strengthPct != null && strengthPct > 0 && (waistVel <= -0.10)) {
-      calorieAction = { delta: 50, reason: "Recomp fuel — strength rising + waist dropping", priority: "low" };
+      calorieAction = { delta: capCalorieDelta(50, trainingPhase), reason: "Recomp fuel — strength rising + waist dropping", priority: "low" };
     } else if (ffmVel != null && ffmVel < -0.15) {
-      calorieAction = { delta: 75, reason: "Protect lean tissue — FFM declining", priority: "high" };
+      calorieAction = { delta: capCalorieDelta(75, trainingPhase), reason: "Protect lean tissue — FFM declining", priority: "high" };
     } else {
       calorieAction = { delta: 0, reason: "Recomp on track — hold calories", priority: "low" };
     }
@@ -374,10 +450,7 @@ export function classifyMode(
       label: "Recomp",
       color: "#FBBF24",
       confidence: scs.total,
-      ffmVelocity: ffmVel,
-      waistVelocity: waistVel,
-      strengthVelocityPct: strengthPct,
-      weightVelocity: weightVel,
+      ...base,
       reasons,
       calorieAction,
     };
@@ -395,7 +468,7 @@ export function classifyMode(
 
     let calorieAction: CalorieAction;
     if (strengthPct != null && strengthPct <= -0.25 && ffmVel != null && ffmVel <= -0.15) {
-      calorieAction = { delta: 100, reason: "Lean tissue at risk — add calories or reduce volume", priority: "high" };
+      calorieAction = { delta: capCalorieDelta(100, trainingPhase), reason: "Lean tissue at risk — add calories or reduce volume", priority: "high" };
     } else if (waistVel != null && Math.abs(waistVel) < 0.05) {
       calorieAction = { delta: -100, reason: "Fat loss stalled — reduce calories slightly", priority: "medium" };
     } else {
@@ -407,10 +480,7 @@ export function classifyMode(
       label: "Cut",
       color: "#F87171",
       confidence: scs.total,
-      ffmVelocity: ffmVel,
-      waistVelocity: waistVel,
-      strengthVelocityPct: strengthPct,
-      weightVelocity: weightVel,
+      ...base,
       reasons,
       calorieAction,
     };
@@ -426,10 +496,7 @@ export function classifyMode(
     label: "Uncertain",
     color: "#6B7280",
     confidence: scs.total,
-    ffmVelocity: ffmVel,
-    waistVelocity: waistVel,
-    strengthVelocityPct: strengthPct,
-    weightVelocity: weightVel,
+    ...base,
     reasons,
     calorieAction: { delta: 0, reason: "Hold calories — conflicting signals", priority: "low" },
   };
