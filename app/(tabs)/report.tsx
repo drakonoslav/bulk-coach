@@ -786,7 +786,7 @@ export default function ReportScreen() {
           </View>
         ) : (
           <>
-            <View style={{ backgroundColor: modeClass.color + "18", borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: modeClass.color + "40" }}>
+            <View testID="mode-banner" style={{ backgroundColor: modeClass.color + "18", borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: modeClass.color + "40" }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Ionicons
@@ -794,18 +794,18 @@ export default function ReportScreen() {
                     size={20}
                     color={modeClass.color}
                   />
-                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                  <Text testID="mode-banner-mode" style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
                     Mode: {modeClass.label}
                   </Text>
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <View style={{ backgroundColor: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA30" : "#6B728030", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA" : "#9CA3AF" }}>
+                    <Text testID="mode-banner-phase" style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA" : "#9CA3AF" }}>
                       {modeClass.trainingPhase === "hypertrophy" ? "Hypertrophy" : "Neural"}
                     </Text>
                   </View>
                   <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                    <Text testID="mode-banner-scs" style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
                       {scs.total}/100
                     </Text>
                   </View>
@@ -914,7 +914,7 @@ export default function ReportScreen() {
               )}
               {modeClass.calorieAction.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                  <Text testID="mode-banner-calorie-action" style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
                     {modeClass.calorieAction.delta > 0 ? "+" : ""}{modeClass.calorieAction.delta} kcal — {modeClass.calorieAction.reason}
                   </Text>
                 </View>
