@@ -328,7 +328,7 @@ export default function LogScreen() {
   const loadEpisodes = useCallback(async (day: string) => {
     try {
       const baseUrl = getApiUrl();
-      await authFetch(new URL(`/api/context-lens/episodes/apply-today?day=${day}`, baseUrl).toString(), { method: "POST" });
+      try { await authFetch(new URL(`/api/context-lens/episodes/apply-today?day=${day}`, baseUrl).toString(), { method: "POST" }); } catch {}
       const res = await authFetch(new URL(`/api/context-lens/episodes/active?day=${day}`, baseUrl).toString());
       if (res.ok) {
         const data = await res.json();
@@ -1848,7 +1848,7 @@ export default function LogScreen() {
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: contextShowCustom ? 8 : 0 }}>
             {PRESET_CONTEXT_TAGS.map((preset) => {
-              const episode = activeEpisodes.find((ep) => ep.tag === preset.key);
+              const episode = activeEpisodes.find((ep) => ep.tag === preset.key && ep.endDay === null);
               const isActive = !!episode;
               const tagColor = CONTEXT_TAG_COLORS[preset.key] || "#8B5CF6";
               const isCarriedOver = isActive && episode.startDay < selectedDate;
@@ -2031,6 +2031,8 @@ export default function LogScreen() {
                     <View style={{ flexDirection: "row", gap: 10 }}>
                       {isExisting && (
                         <Pressable
+                          testID="conclude-episode-btn"
+                          accessibilityLabel="Conclude episode"
                           onPress={() => {
                             if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             concludeEpisode(contextEditing.episodeId!);
