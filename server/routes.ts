@@ -93,6 +93,8 @@ import {
   getActiveEpisodes,
   getActiveEpisodesOnDay,
   getArchivedEpisodes,
+  applyCarryForward,
+  getArchives,
 } from "./context-lens";
 import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
 import { classifyMode } from "../lib/structural-confidence";
@@ -3367,6 +3369,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("episodes archive error:", err);
       res.status(500).json({ ok: false, error: "Failed to get archived episodes" });
+    }
+  });
+
+  app.post("/api/context-lens/episodes/apply-today", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const day = (req.query.day as string) || new Date().toISOString().slice(0, 10);
+      const events = await applyCarryForward(day, userId);
+      res.json({ ok: true, events });
+    } catch (err) {
+      console.error("apply-today error:", err);
+      res.status(500).json({ ok: false, error: "Failed to apply carry-forward" });
+    }
+  });
+
+  app.get("/api/context-lens/archives", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const tag = req.query.tag as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const archives = await getArchives(userId, { tag, limit });
+      res.json({ ok: true, archives });
+    } catch (err) {
+      console.error("lens archives error:", err);
+      res.status(500).json({ ok: false, error: "Failed to get lens archives" });
     }
   });
 

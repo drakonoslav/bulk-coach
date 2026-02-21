@@ -633,12 +633,110 @@ export async function concludeEpisode(
 
   const episode = rowToEpisode(rows[0]);
 
-  await pool.query(
-    `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4`,
+  const { rows: eventRows } = await pool.query(
+    `SELECT day FROM context_events WHERE user_id = $1 AND tag = $2 AND day >= $3 AND day <= $4 ORDER BY day DESC`,
     [userId, episode.tag, episode.startDay, endDay],
   );
 
+  const daysToDelete: string[] = [];
+  let expected = endDay;
+  for (const r of eventRows) {
+    if (r.day === expected) {
+      daysToDelete.push(r.day);
+      expected = addDays(expected, -1);
+    } else {
+      break;
+    }
+  }
+
+  if (daysToDelete.length > 0) {
+    await pool.query(
+      `DELETE FROM context_events WHERE user_id = $1 AND tag = $2 AND day = ANY($3::text[])`,
+      [userId, episode.tag, daysToDelete],
+    );
+  }
+
+  let summaryJson: any = {};
+  try {
+    const lensResult = await computeContextLens(episode.tag, endDay, userId);
+    summaryJson = {
+      phase: lensResult.phase,
+      confidence: lensResult.confidence,
+      summary: lensResult.summary,
+      disturbanceScore: lensResult.disturbance.score,
+      disturbanceSlope14d: lensResult.metrics.disturbanceSlope14d,
+      taggedDays: lensResult.metrics.taggedDays,
+      cortisolFlagRate: lensResult.metrics.cortisolFlagRate,
+      components: lensResult.disturbance.components,
+      durationDays: daysDiff(episode.startDay, endDay) + 1,
+    };
+  } catch (e) {
+    summaryJson = { error: "Could not compute lens at conclude time", durationDays: daysDiff(episode.startDay, endDay) + 1 };
+  }
+
+  await pool.query(
+    `INSERT INTO context_lens_archives (user_id, episode_id, tag, start_day, end_day, label, summary_json)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [userId, episode.id, episode.tag, episode.startDay, endDay, episode.label, JSON.stringify(summaryJson)],
+  );
+
   return episode;
+}
+
+export async function applyCarryForward(
+  day: string,
+  userId: string = DEFAULT_USER_ID,
+): Promise<ContextEvent[]> {
+  const activeEpisodes = await getActiveEpisodesOnDay(day, userId);
+
+  for (const ep of activeEpisodes) {
+    await pool.query(
+      `INSERT INTO context_events (user_id, day, tag, intensity, label, notes, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (user_id, day, tag) DO NOTHING`,
+      [userId, day, ep.tag, ep.intensity, ep.label, ep.notes],
+    );
+  }
+
+  return getContextEvents(userId, { from: day, to: day });
+}
+
+export interface LensArchive {
+  id: number;
+  userId: string;
+  episodeId: number;
+  tag: string;
+  startDay: string;
+  endDay: string;
+  label: string | null;
+  summaryJson: any;
+  createdAt: string;
+}
+
+export async function getArchives(
+  userId: string = DEFAULT_USER_ID,
+  opts?: { tag?: string; limit?: number },
+): Promise<LensArchive[]> {
+  let q = `SELECT * FROM context_lens_archives WHERE user_id = $1`;
+  const vals: unknown[] = [userId];
+  let idx = 2;
+
+  if (opts?.tag) { q += ` AND tag = $${idx++}`; vals.push(opts.tag); }
+  q += ` ORDER BY end_day DESC`;
+  if (opts?.limit) { q += ` LIMIT $${idx++}`; vals.push(opts.limit); }
+
+  const { rows } = await pool.query(q, vals);
+  return rows.map((r: any) => ({
+    id: r.id,
+    userId: r.user_id,
+    episodeId: r.episode_id,
+    tag: r.tag,
+    startDay: r.start_day,
+    endDay: r.end_day,
+    label: r.label ?? null,
+    summaryJson: r.summary_json,
+    createdAt: r.created_at,
+  }));
 }
 
 export async function updateEpisode(

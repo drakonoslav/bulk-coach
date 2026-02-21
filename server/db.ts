@@ -698,6 +698,21 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_episodes_user_archive
       ON context_lens_episodes (user_id, tag, end_day) WHERE end_day IS NOT NULL;
   `);
+
+  await runMigration('012_context_lens_archives', `
+    CREATE TABLE IF NOT EXISTS context_lens_archives (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      episode_id INTEGER REFERENCES context_lens_episodes(id),
+      tag TEXT NOT NULL,
+      start_day TEXT NOT NULL,
+      end_day TEXT NOT NULL,
+      label TEXT,
+      summary_json JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_archives_user_tag ON context_lens_archives(user_id, tag);
+  `);
 }
 
 export { pool };
