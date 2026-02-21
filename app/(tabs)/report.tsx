@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -638,6 +638,9 @@ export default function ReportScreen() {
   const [strengthBaselines, setStrengthBaselines] = useState<StrengthBaselines>({
     pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null,
   });
+  const [calorieHistory, setCalorieHistory] = useState<Array<{
+    day: string; deltaKcal: number; source: string; priority: string; reason: string; wkGainLb: number | null; mode: string | null;
+  }>>([]);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -690,6 +693,10 @@ export default function ReportScreen() {
           });
         }
       } catch {}
+      try {
+        const chRes = await authFetch(new URL("/api/calorie-decisions?days=14", baseUrl).toString());
+        if (chRes.ok) setCalorieHistory(await chRes.json());
+      } catch {}
     } catch {}
   }, [proxyImputed]);
 
@@ -728,6 +735,27 @@ export default function ReportScreen() {
     modeClass.calorieAction.delta,
     modeClass.calorieAction.priority
   );
+  const upsertedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (!hasEnoughData || upsertedRef.current === today) return;
+    upsertedRef.current = today;
+    const baseUrl = getApiUrl();
+    authFetch(new URL("/api/calorie-decisions/upsert", baseUrl).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        day: today,
+        deltaKcal: finalKcal.delta,
+        source: finalKcal.source,
+        priority: modeClass.calorieAction.priority,
+        reason: finalKcal.source === "mode_override" ? modeClass.calorieAction.reason : "Weight policy (weekly rate)",
+        wkGainLb: wkGain,
+        mode: modeClass.mode,
+      }),
+    }).catch(() => {});
+  }, [hasEnoughData, finalKcal.delta, finalKcal.source]);
+
   const adjustments = finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
@@ -933,9 +961,19 @@ export default function ReportScreen() {
               )}
               {finalKcal.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
-                  <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textPrimary }}>
-                    {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal — Applied adjustment
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textPrimary }}>
+                      {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal — Applied adjustment
+                    </Text>
+                    <View testID="mode-banner-policy-source" style={{
+                      backgroundColor: finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                      borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
+                    }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                        {finalKcal.source === "mode_override" ? "MODE" : "WEIGHT"}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
                     {finalKcal.source === "mode_override"
                       ? modeClass.calorieAction.reason
@@ -986,6 +1024,33 @@ export default function ReportScreen() {
                 </View>
               </View>
             </View>
+
+            {calorieHistory.length > 0 && (
+              <View testID="calorie-history" style={styles.section}>
+                <Text style={styles.sectionTitle}>Applied Delta History (14d)</Text>
+                <View style={{ gap: 4 }}>
+                  {calorieHistory.map((h) => (
+                    <View key={h.day} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 4, paddingHorizontal: 8, backgroundColor: Colors.card, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, width: 72 }}>{h.day.slice(5)}</Text>
+                      <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: h.deltaKcal > 0 ? "#34D399" : h.deltaKcal < 0 ? "#F87171" : Colors.textSecondary, width: 54, textAlign: "right" }}>
+                        {h.deltaKcal > 0 ? "+" : ""}{h.deltaKcal}
+                      </Text>
+                      <View style={{
+                        backgroundColor: h.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                        borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1, width: 48, alignItems: "center",
+                      }}>
+                        <Text style={{ fontSize: 8, fontFamily: "Rubik_600SemiBold", color: h.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                          {h.source === "mode_override" ? "MODE" : "WEIGHT"}
+                        </Text>
+                      </View>
+                      <Text numberOfLines={1} style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, flex: 1, marginLeft: 6 }}>
+                        {h.reason}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
 
             {chartData.length >= 2 ? (
               <View style={styles.section}>
