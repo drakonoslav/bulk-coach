@@ -314,43 +314,37 @@ export function detectTrainingPhase(
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
   if (sorted.length < 14) return "neural";
 
-  const hypertrophyStreak = checkConsecutiveDaysCondition(sorted, baselines, "hypertrophy");
-  if (hypertrophyStreak >= 14) return "hypertrophy";
-
-  return "neural";
-}
-
-function checkConsecutiveDaysCondition(
-  sorted: DailyEntry[],
-  baselines: StrengthBaselines,
-  condition: "hypertrophy" | "revert",
-): number {
-  let maxStreak = 0;
-  let streak = 0;
+  let phase: TrainingPhase = "neural";
+  let hypertrophyStreak = 0;
+  let revertStreak = 0;
 
   for (let i = 13; i < sorted.length; i++) {
-    const windowEnd = i;
-    const window = sorted.slice(0, windowEnd + 1);
-
+    const window = sorted.slice(0, i + 1);
     const sV = strengthVelocity14d(window, baselines);
     const ffmV = ffmVelocity14d(window);
     const penalty = swapPenaltyMultiplier(window);
 
-    if (condition === "hypertrophy") {
+    if (phase === "neural") {
       const met =
         sV != null && sV.pctPerWeek >= 0.02 &&
         ffmV != null && ffmV.velocityLbPerWeek >= 0 &&
         penalty >= 0.90;
-      if (met) { streak++; } else { streak = 0; }
+      if (met) { hypertrophyStreak++; } else { hypertrophyStreak = 0; }
+      if (hypertrophyStreak >= 14) {
+        phase = "hypertrophy";
+        revertStreak = 0;
+      }
     } else {
-      const met = sV != null && sV.pctPerWeek < 0;
-      if (met) { streak++; } else { streak = 0; }
+      const shouldRevert = sV != null && sV.pctPerWeek < 0;
+      if (shouldRevert) { revertStreak++; } else { revertStreak = 0; }
+      if (revertStreak >= 14) {
+        phase = "neural";
+        hypertrophyStreak = 0;
+      }
     }
-
-    maxStreak = Math.max(maxStreak, streak);
   }
 
-  return maxStreak;
+  return phase;
 }
 
 function caloriesIncreasedRecently(entries: DailyEntry[]): boolean {
