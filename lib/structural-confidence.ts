@@ -108,23 +108,23 @@ export function computeFfmSignalQuality(entries: DailyEntry[]): FfmSignalQuality
   let score = 0;
 
   const count7d = countMeasurementsInWindow(entries, "fatFreeMassLb", 7);
-  if (count7d >= 4) score += 15;
-  else if (count7d >= 2) score += 8;
+  if (count7d >= 4) score += 13;
+  else if (count7d >= 2) score += 7;
   else if (count7d >= 1) score += 3;
 
   const ffmV = ffmVelocity14d(entries);
   const velocityAboveNoise = ffmV != null && Math.abs(ffmV.velocityLbPerWeek) >= 0.15;
-  if (velocityAboveNoise) score += 10;
-  else if (ffmV != null && Math.abs(ffmV.velocityLbPerWeek) >= 0.08) score += 5;
+  if (velocityAboveNoise) score += 9;
+  else if (ffmV != null && Math.abs(ffmV.velocityLbPerWeek) >= 0.08) score += 4;
 
   const directionConsistent = ffmV != null && checkDirectionConsistency(
     entries, "fatFreeMassLb", ffmV.velocityLbPerWeek, 3,
   );
-  if (directionConsistent) score += 15;
-  else if (ffmV != null) score += 5;
+  if (directionConsistent) score += 13;
+  else if (ffmV != null) score += 4;
 
   return {
-    score: Math.min(40, score),
+    score: Math.min(35, score),
     measurementCount7d: count7d,
     velocityAboveNoise,
     directionConsistent,
@@ -135,23 +135,23 @@ export function computeWaistSignalQuality(entries: DailyEntry[]): WaistSignalQua
   let score = 0;
 
   const count14d = countMeasurementsInWindow(entries, "waistIn", 14);
-  if (count14d >= 4) score += 10;
-  else if (count14d >= 2) score += 5;
+  if (count14d >= 4) score += 8;
+  else if (count14d >= 2) score += 4;
   else if (count14d >= 1) score += 2;
 
   const waistV = waistVelocity14d(entries);
   const velocityAboveNoise = waistV != null && Math.abs(waistV) >= 0.10;
-  if (velocityAboveNoise) score += 10;
-  else if (waistV != null && Math.abs(waistV) >= 0.05) score += 5;
+  if (velocityAboveNoise) score += 8;
+  else if (waistV != null && Math.abs(waistV) >= 0.05) score += 4;
 
   const directionConsistent = waistV != null && checkDirectionConsistency(
     entries, "waistIn", waistV, 3,
   );
-  if (directionConsistent) score += 10;
+  if (directionConsistent) score += 9;
   else if (waistV != null) score += 3;
 
   return {
-    score: Math.min(30, score),
+    score: Math.min(25, score),
     measurementCount14d: count14d,
     velocityAboveNoise,
     directionConsistent,
@@ -183,22 +183,22 @@ export function computeStrengthSignalQuality(
     return d >= startDate && hasStrengthData(e);
   }).length;
 
-  if (actualSessions >= 3) score += 10;
-  else if (actualSessions >= 2) score += 6;
-  else if (actualSessions >= 1) score += 3;
+  if (actualSessions >= 3) score += 14;
+  else if (actualSessions >= 2) score += 8;
+  else if (actualSessions >= 1) score += 4;
 
   const sV = strengthVelocity14d(entries, baselines);
   const velocityAboveNoise = sV != null && Math.abs(sV.pctPerWeek) >= 0.25;
-  if (velocityAboveNoise) score += 10;
-  else if (sV != null && Math.abs(sV.pctPerWeek) >= 0.10) score += 5;
+  if (velocityAboveNoise) score += 13;
+  else if (sV != null && Math.abs(sV.pctPerWeek) >= 0.10) score += 6;
 
   const penalty = swapPenaltyMultiplier(entries);
-  if (penalty >= 0.9) score += 10;
-  else if (penalty >= 0.8) score += 5;
+  if (penalty >= 0.9) score += 13;
+  else if (penalty >= 0.8) score += 6;
   else score += 2;
 
   return {
-    score: Math.min(30, score),
+    score: Math.min(40, score),
     sessionsIn14d: actualSessions,
     velocityAboveNoise,
     swapPenalty: penalty,
