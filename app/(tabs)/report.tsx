@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -695,7 +695,10 @@ export default function ReportScreen() {
       } catch {}
       try {
         const chRes = await authFetch(new URL("/api/calorie-decisions?days=14", baseUrl).toString());
-        if (chRes.ok) setCalorieHistory(await chRes.json());
+        if (chRes.ok) {
+          const chData = await chRes.json();
+          setCalorieHistory(chData.decisions ?? chData);
+        }
       } catch {}
     } catch {}
   }, [proxyImputed]);
@@ -735,27 +738,6 @@ export default function ReportScreen() {
     modeClass.calorieAction.delta,
     modeClass.calorieAction.priority
   );
-  const upsertedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    if (!hasEnoughData || upsertedRef.current === today) return;
-    upsertedRef.current = today;
-    const baseUrl = getApiUrl();
-    authFetch(new URL("/api/calorie-decisions/upsert", baseUrl).toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        day: today,
-        deltaKcal: finalKcal.delta,
-        source: finalKcal.source,
-        priority: modeClass.calorieAction.priority,
-        reason: finalKcal.source === "mode_override" ? modeClass.calorieAction.reason : "Weight policy (weekly rate)",
-        wkGainLb: wkGain,
-        mode: modeClass.mode,
-      }),
-    }).catch(() => {});
-  }, [hasEnoughData, finalKcal.delta, finalKcal.source]);
-
   const adjustments = finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);

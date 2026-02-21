@@ -75,6 +75,13 @@ import { computeDrift7d, computePrimaryDriver } from "./adherence-metrics";
 import { computeRangeAdherence } from "./adherence-metrics-range";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import {
+  upsertCalorieDecision,
+  getCalorieDecisions,
+  chooseFinalCalorieDelta,
+} from "./calorie-decisions-storage";
+import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
+import { classifyMode, type StrengthBaselines } from "../lib/structural-confidence";
+import {
   computeReadiness,
   persistReadiness,
   recomputeReadinessRange,
@@ -674,7 +681,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 d.lean_mass_lb, d.fat_mass_lb,
                 d.weight_7d_avg, d.waist_7d_avg, d.lean_mass_7d_avg,
                 d.lean_gain_ratio_14d_roll, d.cardio_fuel_note,
-                l.fat_free_mass_lb
+                l.fat_free_mass_lb,
+                l.pushups_reps, l.pullups_reps,
+                l.bench_reps, l.bench_weight_lb,
+                l.ohp_reps, l.ohp_weight_lb
          FROM dashboard_cache d
          JOIN daily_log l ON l.day = d.day AND l.user_id = d.user_id
          WHERE d.user_id = $3 AND d.day BETWEEN $1 AND $2
@@ -683,7 +693,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       const mapped = rows.map(snakeToCamel);
-      res.json(mapped);
+
+      let appliedCalorieDelta: number | null = null;
+      let policySource: string | null = null;
+      let modeInsightReason: string | null = null;
+      let decisions14d: any[] = [];
+
+      if (mapped.length >= 7) {
+        try {
+          const entries = mapped as unknown as DailyEntry[];
+          const wkGain = weeklyDelta(entries) ?? 0;
+          const weightDelta = suggestCalorieAdjustment(wkGain);
+
+          const sbRes = await pool.query(
+            `SELECT exercise, baseline_value FROM strength_baselines WHERE user_id = $1`,
+            [userId],
+          );
+          const sbMap: Record<string, number> = {};
+          for (const r of sbRes.rows) sbMap[r.exercise] = Number(r.baseline_value);
+          const strengthBaselines: StrengthBaselines = {
+            pushups: sbMap.pushups ?? null,
+            pullups: sbMap.pullups ?? null,
+            benchBarReps: sbMap.bench_bar_reps ?? null,
+            ohpBarReps: sbMap.ohp_bar_reps ?? null,
+          };
+
+          const modeClass = classifyMode(entries, strengthBaselines);
+          const final = chooseFinalCalorieDelta(
+            weightDelta,
+            modeClass.calorieAction.delta,
+            modeClass.calorieAction.priority,
+          );
+
+          appliedCalorieDelta = final.delta;
+          policySource = final.source;
+          modeInsightReason = modeClass.calorieAction.reason;
+
+          const today = new Date().toISOString().slice(0, 10);
+          await upsertCalorieDecision(userId, {
+            day: today,
+            deltaKcal: final.delta,
+            source: final.source,
+            priority: modeClass.calorieAction.priority,
+            reason: final.source === "mode_override"
+              ? modeClass.calorieAction.reason
+              : "Weight policy (weekly rate)",
+            wkGainLb: wkGain,
+            mode: modeClass.mode,
+          });
+
+          decisions14d = await getCalorieDecisions(userId, 14);
+        } catch (calcErr) {
+          console.error("dashboard calorie calc error:", calcErr);
+        }
+      }
+
+      res.json({
+        entries: mapped,
+        appliedCalorieDelta,
+        policySource,
+        modeInsightReason,
+        decisions14d,
+      });
     } catch (err: unknown) {
       console.error("dashboard error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -3057,49 +3128,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const { day, deltaKcal, source, priority, reason, wkGainLb, mode } = req.body;
-      if (!day || deltaKcal == null || !source || !priority || !reason) {
-        return res.status(400).json({ error: "Missing required fields: day, deltaKcal, source, priority, reason" });
+      if (!day || typeof day !== "string") {
+        return res.status(400).json({ ok: false, error: "day required" });
       }
-      if (!["weight_only", "mode_override"].includes(source)) {
-        return res.status(400).json({ error: "source must be weight_only or mode_override" });
+      if (typeof deltaKcal !== "number") {
+        return res.status(400).json({ ok: false, error: "deltaKcal required" });
       }
-      if (!["high", "medium", "low"].includes(priority)) {
-        return res.status(400).json({ error: "priority must be high, medium, or low" });
+      if (source !== "weight_only" && source !== "mode_override") {
+        return res.status(400).json({ ok: false, error: "invalid source" });
       }
-      await pool.query(`
-        INSERT INTO calorie_decisions (user_id, day, delta_kcal, source, priority, reason, wk_gain_lb, mode)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (user_id, day) DO UPDATE SET
-          delta_kcal = EXCLUDED.delta_kcal,
-          source = EXCLUDED.source,
-          priority = EXCLUDED.priority,
-          reason = EXCLUDED.reason,
-          wk_gain_lb = EXCLUDED.wk_gain_lb,
-          mode = EXCLUDED.mode,
-          updated_at = NOW()
-      `, [userId, day, deltaKcal, source, priority, reason, wkGainLb ?? null, mode ?? null]);
+      if (priority !== "high" && priority !== "medium" && priority !== "low") {
+        return res.status(400).json({ ok: false, error: "invalid priority" });
+      }
+      if (!reason || typeof reason !== "string") {
+        return res.status(400).json({ ok: false, error: "reason required" });
+      }
+      await upsertCalorieDecision(userId, {
+        day,
+        deltaKcal,
+        source,
+        priority,
+        reason,
+        wkGainLb: wkGainLb ?? null,
+        mode: mode ?? null,
+      });
       res.json({ ok: true });
     } catch (err) {
       console.error("calorie-decisions upsert error:", err);
-      res.status(500).json({ error: "Failed to upsert calorie decision" });
+      res.status(500).json({ ok: false, error: "Failed to upsert calorie decision" });
     }
   });
 
   app.get("/api/calorie-decisions", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const days = parseInt(String(req.query.days || "14"), 10);
-      const { rows } = await pool.query(`
-        SELECT day, delta_kcal, source, priority, reason, wk_gain_lb, mode, created_at, updated_at
-        FROM calorie_decisions
-        WHERE user_id = $1
-          AND day >= (CURRENT_DATE - ($2::int - 1))::text
-        ORDER BY day DESC
-      `, [userId, days]);
-      res.json(rows.map(snakeToCamel));
+      const days = parseInt(String(req.query.days ?? 14), 10);
+      const decisions = await getCalorieDecisions(userId, days);
+      res.json({ ok: true, decisions });
     } catch (err) {
       console.error("calorie-decisions fetch error:", err);
-      res.status(500).json({ error: "Failed to fetch calorie decisions" });
+      res.status(500).json({ ok: false, error: "Failed to fetch calorie decisions" });
     }
   });
 
