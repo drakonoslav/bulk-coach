@@ -38,6 +38,7 @@ interface PhaseResult {
       slp: number;
       prx: number;
       drf: number;
+      lateRate: number | null;
     };
   };
 }

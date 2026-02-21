@@ -23,7 +23,7 @@ Core logic is modularized into several engines and modules:
 - **Backup Module**: Provides versioned export/import functionality with schema migration safety.
 - **Fitbit Takeout Parser**: Handles parsing Google Takeout ZIP files for Fitbit data.
 - **Sleep Alignment Module**: Implements a 3-layer sleep model for deviation classification.
-- **Context Lens**: Classifies physiological impact patterns around user-tagged life contexts using a multi-component disturbance score.
+- **Context Lens**: Classifies physiological impact patterns around user-tagged life contexts using a multi-component disturbance score. Uses ReadinessDeltas outputs (hrv_pct, sleep_pct, proxy_pct in percent points; rhr_bpm in absolute bpm delta) plus adherence lateRate (bedtimeDriftLateNights7d/MeasuredNights7d) for drift. FullSwing constants: HRV 8 pct, Sleep 10 pct, Proxy 10 pct, RHR 3 bpm, LATE_RATE 3/7. Cortisol flag: 3-of-4 thresholds (HRV<=-8, Sleep<=-10, Proxy<=-10, RHR>=+3 bpm).
 
 UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purple accent for vitals (#8B5CF6), and the Rubik font family. Authentication uses Bearer token via an `API_KEY` environment variable.
 

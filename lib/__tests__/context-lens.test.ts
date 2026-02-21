@@ -8,11 +8,12 @@ import {
 describe("computeDisturbanceScore", () => {
   test("neutral inputs return ~50", () => {
     const r = computeDisturbanceScore({
-      hrvDeltaPct: 0,
-      rhrDeltaPct: 0,
-      sleepDeltaPct: 0,
-      proxyDeltaPct: 0,
-      bedtimeDriftMin7d: 0,
+      hrv_pct: 0,
+      rhr_bpm: 0,
+      sleep_pct: 0,
+      proxy_pct: 0,
+      bedtimeDriftLateNights7d: 0,
+      bedtimeDriftMeasuredNights7d: 7,
     });
     expect(r.score).toBe(50);
   });
@@ -21,15 +22,17 @@ describe("computeDisturbanceScore", () => {
     const r = computeDisturbanceScore({});
     expect(r.score).toBe(50);
     expect(r.reasons).toHaveLength(0);
+    expect(r.components.lateRate).toBeNull();
   });
 
   test("heavily negative HRV delta raises score above mild threshold", () => {
     const r = computeDisturbanceScore({
-      hrvDeltaPct: -12,
-      rhrDeltaPct: 0,
-      sleepDeltaPct: 0,
-      proxyDeltaPct: 0,
-      bedtimeDriftMin7d: 0,
+      hrv_pct: -12,
+      rhr_bpm: 0,
+      sleep_pct: 0,
+      proxy_pct: 0,
+      bedtimeDriftLateNights7d: 0,
+      bedtimeDriftMeasuredNights7d: 7,
     });
     expect(r.score).toBeGreaterThan(PHASE_THRESH.DISTURB_MILD);
     expect(r.components.hrv).toBeGreaterThan(0);
@@ -37,63 +40,80 @@ describe("computeDisturbanceScore", () => {
 
   test("positive HRV delta lowers score", () => {
     const r = computeDisturbanceScore({
-      hrvDeltaPct: 12,
-      rhrDeltaPct: 0,
-      sleepDeltaPct: 0,
-      proxyDeltaPct: 0,
-      bedtimeDriftMin7d: 0,
+      hrv_pct: 12,
+      rhr_bpm: 0,
+      sleep_pct: 0,
+      proxy_pct: 0,
+      bedtimeDriftLateNights7d: 0,
+      bedtimeDriftMeasuredNights7d: 7,
     });
     expect(r.score).toBeLessThan(50);
   });
 
   test("all-bad inputs push score toward high disturbance", () => {
     const r = computeDisturbanceScore({
-      hrvDeltaPct: -12,
-      rhrDeltaPct: 5,
-      sleepDeltaPct: -15,
-      proxyDeltaPct: -15,
-      bedtimeDriftMin7d: 60,
+      hrv_pct: -12,
+      rhr_bpm: 5,
+      sleep_pct: -15,
+      proxy_pct: -15,
+      bedtimeDriftLateNights7d: 5,
+      bedtimeDriftMeasuredNights7d: 7,
     });
     expect(r.score).toBeGreaterThan(PHASE_THRESH.DISTURB_HIGH);
   });
 
   test("score clamps to 0-100", () => {
     const extreme = computeDisturbanceScore({
-      hrvDeltaPct: -30,
-      rhrDeltaPct: 20,
-      sleepDeltaPct: -30,
-      proxyDeltaPct: -30,
-      bedtimeDriftMin7d: 120,
+      hrv_pct: -30,
+      rhr_bpm: 20,
+      sleep_pct: -30,
+      proxy_pct: -30,
+      bedtimeDriftLateNights7d: 7,
+      bedtimeDriftMeasuredNights7d: 7,
     });
     expect(extreme.score).toBeLessThanOrEqual(100);
     expect(extreme.score).toBeGreaterThanOrEqual(0);
   });
 
-  test("high bedtime drift adds disturbance", () => {
-    const low = computeDisturbanceScore({ bedtimeDriftMin7d: 0 });
-    const high = computeDisturbanceScore({ bedtimeDriftMin7d: 60 });
+  test("high late-night rate adds disturbance", () => {
+    const low = computeDisturbanceScore({
+      bedtimeDriftLateNights7d: 0,
+      bedtimeDriftMeasuredNights7d: 7,
+    });
+    const high = computeDisturbanceScore({
+      bedtimeDriftLateNights7d: 4,
+      bedtimeDriftMeasuredNights7d: 7,
+    });
     expect(high.score).toBeGreaterThan(low.score);
   });
 
-  test("RHR increase adds disturbance", () => {
-    const baseline = computeDisturbanceScore({ rhrDeltaPct: 0 });
-    const elevated = computeDisturbanceScore({ rhrDeltaPct: 5 });
+  test("RHR increase (bpm) adds disturbance", () => {
+    const baseline = computeDisturbanceScore({ rhr_bpm: 0 });
+    const elevated = computeDisturbanceScore({ rhr_bpm: 5 });
     expect(elevated.score).toBeGreaterThan(baseline.score);
+  });
+
+  test("lateRate is returned in components", () => {
+    const r = computeDisturbanceScore({
+      bedtimeDriftLateNights7d: 2,
+      bedtimeDriftMeasuredNights7d: 7,
+    });
+    expect(r.components.lateRate).toBeCloseTo(2 / 7, 6);
   });
 });
 
 describe("cortisolFlagAligned", () => {
   test("returns false with insufficient aligned signals", () => {
-    expect(cortisolFlagAligned({ hrvDeltaPct: -10, rhrDeltaPct: 5 })).toBe(false);
+    expect(cortisolFlagAligned({ hrv_pct: -10, rhr_bpm: 5 })).toBe(false);
   });
 
   test("returns true with 3+ aligned signals", () => {
     expect(
       cortisolFlagAligned({
-        hrvDeltaPct: -10,
-        rhrDeltaPct: 5,
-        sleepDeltaPct: -12,
-        proxyDeltaPct: -12,
+        hrv_pct: -10,
+        rhr_bpm: 5,
+        sleep_pct: -12,
+        proxy_pct: -12,
       }),
     ).toBe(true);
   });
@@ -101,12 +121,23 @@ describe("cortisolFlagAligned", () => {
   test("returns false when values are within tolerance", () => {
     expect(
       cortisolFlagAligned({
-        hrvDeltaPct: -5,
-        rhrDeltaPct: 2,
-        sleepDeltaPct: -5,
-        proxyDeltaPct: -5,
+        hrv_pct: -5,
+        rhr_bpm: 2,
+        sleep_pct: -5,
+        proxy_pct: -5,
       }),
     ).toBe(false);
+  });
+
+  test("exactly at thresholds counts as hit", () => {
+    expect(
+      cortisolFlagAligned({
+        hrv_pct: -8,
+        rhr_bpm: 3,
+        sleep_pct: -10,
+        proxy_pct: -5,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -1,4 +1,6 @@
 import { pool } from "./db";
+import { computeReadinessDeltas } from "./readiness-deltas";
+import { computeRangeAdherence } from "./adherence-metrics-range";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -30,15 +32,16 @@ export interface DisturbanceResult {
     slp: number;
     prx: number;
     drf: number;
+    lateRate: number | null;
   };
 }
 
-const FULL_SWING = {
+export const FULL_SWING = {
   HRV_PCT: 8,
-  RHR_PCT: 3,
+  RHR_BPM: 3,
   SLEEP_PCT: 10,
   PROXY_PCT: 10,
-  DRIFT_MIN: 45,
+  LATE_RATE: 3 / 7,
 } as const;
 
 const W = {
@@ -64,30 +67,41 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
-function norm(deltaPct: number, fullSwingPct: number): number {
-  return clamp(deltaPct / fullSwingPct, -1.5, 1.5);
+function norm(value: number, swing: number): number {
+  return clamp(value / swing, -1.5, 1.5);
 }
 
-export function computeDisturbanceScore(inputs: {
-  hrvDeltaPct?: number | null;
-  rhrDeltaPct?: number | null;
-  sleepDeltaPct?: number | null;
-  proxyDeltaPct?: number | null;
-  bedtimeDriftMin7d?: number | null;
+export function computeDisturbanceScore(d: {
+  hrv_pct?: number | null;
+  sleep_pct?: number | null;
+  proxy_pct?: number | null;
+  rhr_bpm?: number | null;
+  bedtimeDriftLateNights7d?: number | null;
+  bedtimeDriftMeasuredNights7d?: number | null;
 }): DisturbanceResult {
   const reasons: string[] = [];
 
-  const hrv = inputs.hrvDeltaPct != null ? -norm(inputs.hrvDeltaPct, FULL_SWING.HRV_PCT) : 0;
-  const rhr = inputs.rhrDeltaPct != null ? norm(inputs.rhrDeltaPct, FULL_SWING.RHR_PCT) : 0;
-  const slp = inputs.sleepDeltaPct != null ? -norm(inputs.sleepDeltaPct, FULL_SWING.SLEEP_PCT) : 0;
-  const prx = inputs.proxyDeltaPct != null ? -norm(inputs.proxyDeltaPct, FULL_SWING.PROXY_PCT) : 0;
-  const drf = inputs.bedtimeDriftMin7d != null ? clamp(inputs.bedtimeDriftMin7d / FULL_SWING.DRIFT_MIN, 0, 1.5) : 0;
+  const hrv = d.hrv_pct == null ? 0 : -norm(d.hrv_pct, FULL_SWING.HRV_PCT);
+  const slp = d.sleep_pct == null ? 0 : -norm(d.sleep_pct, FULL_SWING.SLEEP_PCT);
+  const prx = d.proxy_pct == null ? 0 : -norm(d.proxy_pct, FULL_SWING.PROXY_PCT);
+  const rhr = d.rhr_bpm == null ? 0 : norm(d.rhr_bpm, FULL_SWING.RHR_BPM);
 
-  if (inputs.hrvDeltaPct != null) reasons.push("HRV delta");
-  if (inputs.rhrDeltaPct != null) reasons.push("RHR delta");
-  if (inputs.sleepDeltaPct != null) reasons.push("Sleep delta");
-  if (inputs.bedtimeDriftMin7d != null) reasons.push("Bedtime drift");
-  if (inputs.proxyDeltaPct != null) reasons.push("Proxy delta");
+  const hasDrift =
+    d.bedtimeDriftLateNights7d != null &&
+    d.bedtimeDriftMeasuredNights7d != null &&
+    d.bedtimeDriftMeasuredNights7d > 0;
+
+  const lateRate = hasDrift
+    ? d.bedtimeDriftLateNights7d! / d.bedtimeDriftMeasuredNights7d!
+    : null;
+
+  const drf = lateRate == null ? 0 : clamp(norm(lateRate, FULL_SWING.LATE_RATE), 0, 1.5);
+
+  if (d.hrv_pct != null) reasons.push("HRV delta");
+  if (d.rhr_bpm != null) reasons.push("RHR delta");
+  if (d.sleep_pct != null) reasons.push("Sleep delta");
+  if (hasDrift) reasons.push("Bedtime drift");
+  if (d.proxy_pct != null) reasons.push("Proxy delta");
 
   const raw =
     hrv * W.HRV +
@@ -98,20 +112,20 @@ export function computeDisturbanceScore(inputs: {
 
   const score = clamp(Math.round((50 + raw * 25) * 10) / 10, 0, 100);
 
-  return { score, reasons, components: { hrv, rhr, slp, prx, drf } };
+  return { score, reasons, components: { hrv, rhr, slp, prx, drf, lateRate } };
 }
 
 export function cortisolFlagAligned(d: {
-  hrvDeltaPct?: number | null;
-  rhrDeltaPct?: number | null;
-  sleepDeltaPct?: number | null;
-  proxyDeltaPct?: number | null;
+  hrv_pct?: number | null;
+  rhr_bpm?: number | null;
+  sleep_pct?: number | null;
+  proxy_pct?: number | null;
 }): boolean {
   let hits = 0;
-  if (d.hrvDeltaPct != null && d.hrvDeltaPct <= -8) hits++;
-  if (d.rhrDeltaPct != null && d.rhrDeltaPct >= +3) hits++;
-  if (d.sleepDeltaPct != null && d.sleepDeltaPct <= -10) hits++;
-  if (d.proxyDeltaPct != null && d.proxyDeltaPct <= -10) hits++;
+  if (d.hrv_pct != null && d.hrv_pct <= -8) hits++;
+  if (d.rhr_bpm != null && d.rhr_bpm >= +3) hits++;
+  if (d.sleep_pct != null && d.sleep_pct <= -10) hits++;
+  if (d.proxy_pct != null && d.proxy_pct <= -10) hits++;
   return hits >= 3;
 }
 
@@ -239,11 +253,6 @@ function rollingMean(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null);
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
-}
-
-function computeDeltaPct(v7: number | null, v28: number | null): number | null {
-  if (v7 == null || v28 == null || Math.abs(v28) < 1e-6) return null;
-  return ((v7 - v28) / v28) * 100;
 }
 
 export interface ContextEvent {
@@ -450,53 +459,32 @@ export async function computeContextLens(
   const last7 = (arr: (number | null)[]) => arr.slice(Math.max(0, len - 7));
   const last28 = (arr: (number | null)[]) => arr.slice(Math.max(0, len - 28));
 
-  const hrv7d = rollingMean(last7(hrvAll));
-  const hrv28d = rollingMean(last28(hrvAll));
-  const rhr7d = rollingMean(last7(rhrAll));
-  const rhr28d = rollingMean(last28(rhrAll));
-  const sleep7d = rollingMean(last7(sleepAll));
-  const sleep28d = rollingMean(last28(sleepAll));
-  const proxy7d = rollingMean(last7(proxyAll));
-  const proxy28d = rollingMean(last28(proxyAll));
+  const deltas = computeReadinessDeltas({
+    hrvMs_7d: rollingMean(last7(hrvAll)),
+    hrvMs_28d: rollingMean(last28(hrvAll)),
+    rhrBpm_7d: rollingMean(last7(rhrAll)),
+    rhrBpm_28d: rollingMean(last28(rhrAll)),
+    sleepMin_7d: rollingMean(last7(sleepAll)),
+    sleepMin_28d: rollingMean(last28(sleepAll)),
+    proxy_7d: rollingMean(last7(proxyAll)),
+    proxy_28d: rollingMean(last28(proxyAll)),
+  });
 
-  const hrvDeltaPct = computeDeltaPct(hrv7d, hrv28d);
-  const rhrDeltaPct = computeDeltaPct(rhr7d, rhr28d);
-  const sleepDeltaPct = computeDeltaPct(sleep7d, sleep28d);
-  const proxyDeltaPct = computeDeltaPct(proxy7d, proxy28d);
-
-  const { rows: driftRows } = await pool.query(
-    `SELECT actual_bed_time, planned_bed_time
-     FROM daily_log
-     WHERE day >= $1 AND day <= $2 AND user_id = $3 AND actual_bed_time IS NOT NULL`,
-    [addDays(referenceDate, -6), referenceDate, userId],
-  );
-
-  let bedtimeDriftMin7d: number | null = null;
-  if (driftRows.length > 0) {
-    const drifts: number[] = [];
-    for (const r of driftRows) {
-      if (r.actual_bed_time && r.planned_bed_time) {
-        const actual = toMin(r.actual_bed_time);
-        const planned = toMin(r.planned_bed_time);
-        const diff = circDiffMin(actual, planned);
-        if (diff > 0) drifts.push(diff);
-      }
-    }
-    bedtimeDriftMin7d = drifts.length > 0 ? drifts.reduce((a, b) => a + b, 0) / drifts.length : 0;
-  }
+  const adherenceMap = await computeRangeAdherence(referenceDate, referenceDate, userId);
+  const todayAdherence = adherenceMap.get(referenceDate);
 
   const disturbance = computeDisturbanceScore({
-    hrvDeltaPct,
-    rhrDeltaPct,
-    sleepDeltaPct,
-    proxyDeltaPct,
-    bedtimeDriftMin7d,
+    hrv_pct: deltas.hrv_pct,
+    sleep_pct: deltas.sleep_pct,
+    proxy_pct: deltas.proxy_pct,
+    rhr_bpm: deltas.rhr_bpm,
+    bedtimeDriftLateNights7d: todayAdherence?.bedtimeDriftLateNights7d ?? null,
+    bedtimeDriftMeasuredNights7d: todayAdherence?.bedtimeDriftMeasuredNights7d ?? null,
   });
 
   let disturbanceSlope14d: number | null = null;
   if (taggedDaysInLast21 >= PHASE_THRESH.MIN_TAGGED_DAYS) {
     const midpoint = addDays(referenceDate, -14);
-    const midFrom = addDays(midpoint, -34);
 
     const midHrvAll = allDates.filter(d => d <= midpoint).map(d => vitalsMap.get(d)?.hrv ?? null);
     const midRhrAll = allDates.filter(d => d <= midpoint).map(d => vitalsMap.get(d)?.rhr ?? null);
@@ -507,21 +495,27 @@ export async function computeContextLens(
     const mid7 = (arr: (number | null)[]) => arr.slice(Math.max(0, midLen - 7));
     const mid28 = (arr: (number | null)[]) => arr.slice(Math.max(0, midLen - 28));
 
-    const midHrv7 = rollingMean(mid7(midHrvAll));
-    const midHrv28 = rollingMean(mid28(midHrvAll));
-    const midRhr7 = rollingMean(mid7(midRhrAll));
-    const midRhr28 = rollingMean(mid28(midRhrAll));
-    const midSlp7 = rollingMean(mid7(midSleepAll));
-    const midSlp28 = rollingMean(mid28(midSleepAll));
-    const midPrx7 = rollingMean(mid7(midProxyAll));
-    const midPrx28 = rollingMean(mid28(midProxyAll));
+    const midDeltas = computeReadinessDeltas({
+      hrvMs_7d: rollingMean(mid7(midHrvAll)),
+      hrvMs_28d: rollingMean(mid28(midHrvAll)),
+      rhrBpm_7d: rollingMean(mid7(midRhrAll)),
+      rhrBpm_28d: rollingMean(mid28(midRhrAll)),
+      sleepMin_7d: rollingMean(mid7(midSleepAll)),
+      sleepMin_28d: rollingMean(mid28(midSleepAll)),
+      proxy_7d: rollingMean(mid7(midProxyAll)),
+      proxy_28d: rollingMean(mid28(midProxyAll)),
+    });
+
+    const midAdherenceMap = await computeRangeAdherence(midpoint, midpoint, userId);
+    const midAdherence = midAdherenceMap.get(midpoint);
 
     const midDisturbance = computeDisturbanceScore({
-      hrvDeltaPct: computeDeltaPct(midHrv7, midHrv28),
-      rhrDeltaPct: computeDeltaPct(midRhr7, midRhr28),
-      sleepDeltaPct: computeDeltaPct(midSlp7, midSlp28),
-      proxyDeltaPct: computeDeltaPct(midPrx7, midPrx28),
-      bedtimeDriftMin7d: null,
+      hrv_pct: midDeltas.hrv_pct,
+      sleep_pct: midDeltas.sleep_pct,
+      proxy_pct: midDeltas.proxy_pct,
+      rhr_bpm: midDeltas.rhr_bpm,
+      bedtimeDriftLateNights7d: midAdherence?.bedtimeDriftLateNights7d ?? null,
+      bedtimeDriftMeasuredNights7d: midAdherence?.bedtimeDriftMeasuredNights7d ?? null,
     });
 
     disturbanceSlope14d = Math.round(((disturbance.score - midDisturbance.score) / 2) * 10) / 10;
@@ -563,16 +557,4 @@ function rowToEvent(r: any): ContextEvent {
     adjustmentAttempted: !!r.adjustment_attempted,
     adjustmentAttemptedDay: r.adjustment_attempted_day ?? null,
   };
-}
-
-function toMin(hhmm: string): number {
-  const parts = hhmm.split(":").map(Number);
-  return (parts[0] || 0) * 60 + (parts[1] || 0);
-}
-
-function circDiffMin(actual: number, planned: number): number {
-  let diff = actual - planned;
-  if (diff > 720) diff -= 1440;
-  if (diff < -720) diff += 1440;
-  return diff;
 }
