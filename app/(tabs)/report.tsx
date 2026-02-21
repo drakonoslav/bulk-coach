@@ -741,14 +741,20 @@ export default function ReportScreen() {
   const scs = computeSCS(entries, strengthBaselines);
   const modeClass = classifyMode(entries, strengthBaselines);
 
-  const finalKcal = appliedCalorieDelta != null
-    ? { delta: appliedCalorieDelta, source: (policySource ?? "weight_only") as CalorieSource }
-    : chooseFinalCalorieDelta(
-        kcalAdjWeightOnly,
-        modeClass.calorieAction.delta,
-        modeClass.calorieAction.priority
-      );
-  const adjustments = finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
+  const finalKcal =
+    appliedCalorieDelta != null
+      ? { delta: appliedCalorieDelta, source: (policySource ?? "weight_only") as CalorieSource }
+      : chooseFinalCalorieDelta(
+          kcalAdjWeightOnly,
+          modeClass.calorieAction.delta,
+          modeClass.calorieAction.priority
+        );
+
+  const modeInsight =
+    (modeInsightReason ?? modeClass?.calorieAction?.reason ?? "").trim();
+
+  const adjustments =
+    finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, strengthBaselines);
   const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
@@ -955,7 +961,7 @@ export default function ReportScreen() {
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textPrimary }}>
-                      {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal — Applied adjustment
+                      {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal
                     </Text>
                     <View testID="mode-banner-policy-source" style={{
                       backgroundColor: finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
@@ -966,17 +972,12 @@ export default function ReportScreen() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
-                    {finalKcal.source === "mode_override"
-                      ? (modeInsightReason ?? modeClass.calorieAction.reason)
-                      : "Weight policy (weekly rate)"}
-                  </Text>
                 </View>
               )}
-              {(modeInsightReason ?? modeClass.calorieAction.reason) ? (
+              {modeInsight.length > 0 ? (
                 <View style={{ marginTop: 6 }}>
                   <Text testID="mode-banner-insight" style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, opacity: 0.9 }}>
-                    Insight: {modeInsightReason ?? modeClass.calorieAction.reason}
+                    {modeInsight}
                   </Text>
                 </View>
               ) : null}
@@ -1748,12 +1749,52 @@ export default function ReportScreen() {
               </View>
             )}
 
-            {finalKcal.delta !== 0 ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Calorie Recommendation</Text>
-                <AdjustmentCard adjustments={adjustments} kcalChange={finalKcal.delta} />
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Calorie Policy</Text>
+
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  testID="calorie-policy-applied"
+                  style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: Colors.text }}
+                >
+                  Applied: {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal/day
+                </Text>
+
+                <View
+                  testID="calorie-policy-source-badge"
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 999,
+                    backgroundColor: finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                    borderWidth: 1,
+                    borderColor: finalKcal.source === "mode_override" ? "#F59E0B60" : "#6366F160",
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                    {finalKcal.source === "mode_override" ? "Mode Override" : "Weight"}
+                  </Text>
+                </View>
               </View>
-            ) : null}
+
+              <Text
+                testID="calorie-policy-insight"
+                style={{ marginTop: 6, fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}
+              >
+                Insight: {modeInsight.length ? modeInsight : "No additional insight (need more data)."}
+              </Text>
+
+              {finalKcal.delta !== 0 ? (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 8 }]}>Suggested Tweaks</Text>
+                  <AdjustmentCard adjustments={adjustments} kcalChange={finalKcal.delta} />
+                </View>
+              ) : (
+                <Text style={{ marginTop: 10, fontSize: 12, color: Colors.textSecondary }}>
+                  No change recommended today.
+                </Text>
+              )}
+            </View>
 
             {finalKcal.delta !== 0 ? (
               <View style={styles.section}>
