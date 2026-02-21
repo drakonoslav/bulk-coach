@@ -251,35 +251,62 @@ export interface AdjustmentItem {
   achievedKcal: number;
 }
 
-function gramsForKcal(itemKey: string, kcal: number): number {
+const WHOLE_FOODS = new Set(["bananas", "eggs", "yogurt_cups"]);
+
+function roundToStep(x: number, step: number): number {
+  return Math.round(x / step) * step;
+}
+
+function unitsForKcal(kcal: number, kcalPerUnit: number): number {
+  const u = kcal / kcalPerUnit;
+  const rounded = Math.round(u);
+  if (rounded === 0) return 0;
+  return rounded;
+}
+
+export function gramsForKcal(itemKey: string, kcal: number): number {
   const k = KCAL_PER_G[itemKey];
-  if (["bananas", "eggs", "yogurt_cups"].includes(itemKey)) {
-    return Math.round(kcal / k);
+  if (!k) return 0;
+
+  if (WHOLE_FOODS.has(itemKey)) {
+    return unitsForKcal(kcal, k);
   }
-  const grams = Math.round(kcal / k);
+
+  const gExact = kcal / k;
+
   if (["mct_g", "dextrin_g"].includes(itemKey)) {
-    return Math.round(grams / 5) * 5;
+    return roundToStep(gExact, 5);
   }
+
   if (["oats_g", "whey_g", "flax_g"].includes(itemKey)) {
-    return Math.round(grams / 10) * 10;
+    return roundToStep(gExact, 10);
   }
-  return grams;
+
+  return Math.round(gExact);
 }
 
 export function proposeMacroSafeAdjustment(kcalChange: number, baseline: Baseline): AdjustmentItem[] {
   if (kcalChange === 0) return [];
 
+  const isCut = kcalChange < 0;
   const plan: AdjustmentItem[] = [];
   let remaining = kcalChange;
 
   for (const item of baseline.adjustPriority) {
     if (remaining === 0) break;
+
+    if (isCut && WHOLE_FOODS.has(item)) continue;
+
     if (["whey_g", "yogurt_cups"].includes(item) && Math.abs(remaining) <= 150) continue;
 
     let deltaAmt = gramsForKcal(item, remaining);
     if (deltaAmt === 0) {
-      deltaAmt = item.endsWith("_g") ? 5 : 1;
-      if (remaining < 0) deltaAmt *= -1;
+      if (item.endsWith("_g")) {
+        const step = ["mct_g", "dextrin_g"].includes(item) ? 5 : 10;
+        deltaAmt = remaining > 0 ? step : -step;
+      } else {
+        continue;
+      }
     }
 
     let achieved = Math.round(deltaAmt * KCAL_PER_G[item]);
@@ -289,10 +316,18 @@ export function proposeMacroSafeAdjustment(kcalChange: number, baseline: Baselin
         deltaAmt = remaining > 0 ? step : -step;
         achieved = Math.round(deltaAmt * KCAL_PER_G[item]);
       } else {
-        deltaAmt = remaining > 0 ? 1 : -1;
-        achieved = Math.round(deltaAmt * KCAL_PER_G[item]);
+        continue;
       }
     }
+
+    const baseAmt = baseline.items[item] ?? 0;
+    const proposed = baseAmt + deltaAmt;
+    if (proposed < 0) {
+      deltaAmt = -baseAmt;
+      achieved = Math.round(deltaAmt * KCAL_PER_G[item]);
+    }
+
+    if (deltaAmt === 0) continue;
 
     plan.push({ item, deltaAmount: deltaAmt, achievedKcal: achieved });
     remaining -= achieved;
