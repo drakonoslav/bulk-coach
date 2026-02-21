@@ -677,6 +677,27 @@ async function runMigrations(): Promise<void> {
       END IF;
     END $$;
   `);
+
+  await runMigration('011_context_lens_episodes', `
+    CREATE TABLE IF NOT EXISTS context_lens_episodes (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      tag TEXT NOT NULL,
+      start_day TEXT NOT NULL,
+      end_day TEXT,
+      intensity SMALLINT NOT NULL DEFAULT 1 CHECK (intensity >= 0 AND intensity <= 3),
+      label TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_episode_per_tag
+      ON context_lens_episodes (user_id, tag) WHERE end_day IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_episodes_user_active
+      ON context_lens_episodes (user_id) WHERE end_day IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_episodes_user_archive
+      ON context_lens_episodes (user_id, tag, end_day) WHERE end_day IS NOT NULL;
+  `);
 }
 
 export { pool };
