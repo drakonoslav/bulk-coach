@@ -144,6 +144,7 @@ const TEXT_FIELDS = new Set([
   "workout_type", "session_type_tag", "hrv_response_flag",
   "gate", "confidence_grade", "readiness_tier", "cortisol_flag",
   "type_lean", "exercise_bias", "sleep_source_mode",
+  "priority", "reason", "mode",
 ]);
 
 function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
@@ -3047,6 +3048,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("strength baselines compute error:", err);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Calorie Decisions (applied delta audit log) ──
+
+  app.post("/api/calorie-decisions/upsert", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { day, deltaKcal, source, priority, reason, wkGainLb, mode } = req.body;
+      if (!day || deltaKcal == null || !source || !priority || !reason) {
+        return res.status(400).json({ error: "Missing required fields: day, deltaKcal, source, priority, reason" });
+      }
+      if (!["weight_only", "mode_override"].includes(source)) {
+        return res.status(400).json({ error: "source must be weight_only or mode_override" });
+      }
+      if (!["high", "medium", "low"].includes(priority)) {
+        return res.status(400).json({ error: "priority must be high, medium, or low" });
+      }
+      await pool.query(`
+        INSERT INTO calorie_decisions (user_id, day, delta_kcal, source, priority, reason, wk_gain_lb, mode)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (user_id, day) DO UPDATE SET
+          delta_kcal = EXCLUDED.delta_kcal,
+          source = EXCLUDED.source,
+          priority = EXCLUDED.priority,
+          reason = EXCLUDED.reason,
+          wk_gain_lb = EXCLUDED.wk_gain_lb,
+          mode = EXCLUDED.mode,
+          updated_at = NOW()
+      `, [userId, day, deltaKcal, source, priority, reason, wkGainLb ?? null, mode ?? null]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("calorie-decisions upsert error:", err);
+      res.status(500).json({ error: "Failed to upsert calorie decision" });
+    }
+  });
+
+  app.get("/api/calorie-decisions", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const days = parseInt(String(req.query.days || "14"), 10);
+      const { rows } = await pool.query(`
+        SELECT day, delta_kcal, source, priority, reason, wk_gain_lb, mode, created_at, updated_at
+        FROM calorie_decisions
+        WHERE user_id = $1
+          AND day >= (CURRENT_DATE - ($2::int - 1))::text
+        ORDER BY day DESC
+      `, [userId, days]);
+      res.json(rows.map(snakeToCamel));
+    } catch (err) {
+      console.error("calorie-decisions fetch error:", err);
+      res.status(500).json({ error: "Failed to fetch calorie decisions" });
     }
   });
 

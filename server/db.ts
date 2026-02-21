@@ -633,6 +633,22 @@ async function runMigrations(): Promise<void> {
     DROP INDEX IF EXISTS idx_hr_samples_user_session;
     DROP INDEX IF EXISTS idx_rr_intervals_user_session;
   `);
+
+  await runMigration('008_add_calorie_decisions', `
+    CREATE TABLE IF NOT EXISTS calorie_decisions (
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      day TEXT NOT NULL,
+      delta_kcal INTEGER NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('weight_only','mode_override')),
+      priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
+      reason TEXT NOT NULL,
+      wk_gain_lb NUMERIC,
+      mode TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, day)
+    );
+  `);
 }
 
 export { pool };
