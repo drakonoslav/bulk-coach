@@ -961,14 +961,14 @@ export default function ReportScreen() {
               {finalKcal.delta !== 0 && (
                 <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: modeClass.color + "20" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textPrimary }}>
+                    <Text testID="mode-banner-applied-calorie" style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#FFFFFF" }}>
                       {finalKcal.delta > 0 ? "+" : ""}{finalKcal.delta} kcal
                     </Text>
                     <View testID="mode-banner-policy-source" style={{
-                      backgroundColor: isLocalFallback ? "#6B728030" : finalKcal.source === "mode_override" ? "#F59E0B30" : "#6366F130",
+                      backgroundColor: isLocalFallback ? "#6B728050" : finalKcal.source === "mode_override" ? "#F59E0B40" : "#6366F140",
                       borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
                     }}>
-                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: isLocalFallback ? "#9CA3AF" : finalKcal.source === "mode_override" ? "#F59E0B" : "#818CF8" }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#FFFFFF" }}>
                         {isLocalFallback ? "LOCAL" : finalKcal.source === "mode_override" ? "MODE" : "WEIGHT"}
                       </Text>
                     </View>
