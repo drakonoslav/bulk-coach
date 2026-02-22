@@ -222,7 +222,7 @@ export async function getHpaRange(
   const { rows } = await pool.query(
     `SELECT date::text as date, hpa_score, suppression_flag
      FROM hpa_activation_daily
-     WHERE user_id = $1 AND date >= $2::date AND date <= $3::date
+     WHERE user_id = $1 AND date >= $2 AND date <= $3
      ORDER BY date ASC`,
     [userId, startDate, endDate]
   );

@@ -1484,6 +1484,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/signals/chart", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const days = Math.min(Number(req.query.days) || 30, 180);
+      const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      const fromDate = new Date(to);
+      fromDate.setDate(fromDate.getDate() - days + 1);
+      const from = fromDate.toISOString().slice(0, 10);
+
+      const [hpaRows, readinessRows, logRows, sbRes] = await Promise.all([
+        getHpaRange(from, to, userId),
+        getReadinessRange(from, to, userId),
+        pool.query(
+          `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
+                  bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
+                  fat_free_mass_lb
+           FROM daily_log WHERE user_id = $1 AND day >= $2::date AND day <= $3::date
+           ORDER BY day ASC`,
+          [userId, from, to],
+        ),
+        pool.query(
+          `SELECT exercise, baseline_value FROM strength_baselines WHERE user_id = $1`,
+          [userId],
+        ),
+      ]);
+
+      const sbMap: Record<string, number> = {};
+      for (const r of sbRes.rows) sbMap[r.exercise] = Number(r.baseline_value);
+      const strengthBaselines: StrengthBaselines = {
+        pushups: sbMap.pushups ?? null,
+        pullups: sbMap.pullups ?? null,
+        benchBarReps: sbMap.bench_bar_reps ?? null,
+        ohpBarReps: sbMap.ohp_bar_reps ?? null,
+      };
+
+      const { strengthVelocityOverTime } = await import("../lib/strength-index");
+      const entries = logRows.rows.map((r: any) => ({
+        day: typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10),
+        morningWeightLb: Number(r.morning_weight_lb),
+        pushupsReps: r.pushups_reps != null ? Number(r.pushups_reps) : undefined,
+        pullupsReps: r.pullups_reps != null ? Number(r.pullups_reps) : undefined,
+        benchReps: r.bench_reps != null ? Number(r.bench_reps) : undefined,
+        benchWeightLb: r.bench_weight_lb != null ? Number(r.bench_weight_lb) : undefined,
+        ohpReps: r.ohp_reps != null ? Number(r.ohp_reps) : undefined,
+        ohpWeightLb: r.ohp_weight_lb != null ? Number(r.ohp_weight_lb) : undefined,
+        fatFreeMassLb: r.fat_free_mass_lb != null ? Number(r.fat_free_mass_lb) : undefined,
+      })) as DailyEntry[];
+      const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
+
+      const hpaMap = new Map(hpaRows.map(h => [h.date, h.hpaScore]));
+      const readinessMap = new Map(readinessRows.map((r: any) => [r.date, {
+        score: r.readinessScore,
+        hrvDelta: r.hrvDelta,
+      }]));
+      const svMap = new Map(svOverTime.map(s => [s.day, s.pctPerWeek]));
+
+      const allDates = new Set<string>();
+      hpaRows.forEach(h => allDates.add(h.date));
+      readinessRows.forEach((r: any) => allDates.add(r.date));
+      svOverTime.forEach(s => allDates.add(s.day));
+
+      const sortedDates = [...allDates].sort();
+      const points = sortedDates.map(date => {
+        const rd = readinessMap.get(date);
+        return {
+          date,
+          hpa: hpaMap.get(date) ?? null,
+          hrvDeltaPct: rd?.hrvDelta != null ? Math.round(rd.hrvDelta * 10000) / 100 : null,
+          readiness: rd?.score ?? null,
+          strengthVelocity: svMap.get(date) ?? null,
+        };
+      });
+
+      res.json({ from, to, days, points });
+    } catch (err: unknown) {
+      console.error("signals chart error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/settings/analysis-start-date", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
