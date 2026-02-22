@@ -713,6 +713,21 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_archives_user_tag ON context_lens_archives(user_id, tag);
   `);
+
+  await runMigration('013_hpa_activation', `
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS pain_0_10 INTEGER;
+
+    CREATE TABLE IF NOT EXISTS hpa_activation_daily (
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      date TEXT NOT NULL,
+      hpa_score INTEGER NOT NULL DEFAULT 0,
+      suppression_flag BOOLEAN NOT NULL DEFAULT FALSE,
+      drivers JSONB NOT NULL DEFAULT '{}',
+      computed_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hpa_user_date ON hpa_activation_daily(user_id, date);
+  `);
 }
 
 export { pool };
