@@ -271,6 +271,7 @@ export default function LogScreen() {
   const [nocturnalCount, setNocturnalCount] = useState("");
   const [nocturnalDuration, setNocturnalDuration] = useState("");
   const [firmnessAvg, setFirmnessAvg] = useState("");
+  const [pain010, setPain010] = useState<number | null>(null);
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
 
   interface ContextEvent {
@@ -445,6 +446,7 @@ export default function LogScreen() {
       setPerfNote(existing.performanceNote || "");
       setAdherence(existing.adherence ?? 1);
       setNotes(existing.notes || "");
+      setPain010(existing.pain010 != null ? Number(existing.pain010) : null);
       setFitbitData({
         sleepMinutes: existing.sleepMinutes,
         activeZoneMinutes: existing.activeZoneMinutes,
@@ -741,6 +743,7 @@ export default function LogScreen() {
     setNocturnalCount("");
     setNocturnalDuration("");
     setFirmnessAvg("");
+    setPain010(null);
   };
 
   const handleSave = async () => {
@@ -813,6 +816,7 @@ export default function LogScreen() {
         benchWeightLb: benchWeight ? parseFloat(benchWeight) : undefined,
         ohpReps: ohpReps ? parseInt(ohpReps, 10) : undefined,
         ohpWeightLb: ohpWeight ? parseFloat(ohpWeight) : undefined,
+        pain010: pain010 ?? undefined,
       };
 
       await saveEntry(entry);
@@ -1836,6 +1840,59 @@ export default function LogScreen() {
             textAlignVertical="top"
             keyboardAppearance="dark"
           />
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Ionicons name="bandage-outline" size={16} color="#F59E0B" />
+            <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#F59E0B" }]}>Pain / Injury</Text>
+            {pain010 != null && pain010 > 0 && (
+              <View style={{ marginLeft: "auto", backgroundColor: pain010 >= 7 ? "#F8717120" : pain010 >= 4 ? "#F59E0B20" : "#34D39920", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: pain010 >= 7 ? "#F87171" : pain010 >= 4 ? "#F59E0B" : "#34D399" }}>
+                  {pain010}/10
+                </Text>
+              </View>
+            )}
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 16 }}>{pain010 ?? 0}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 2 }}>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
+                  <Pressable
+                    key={v}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setPain010(v === 0 && pain010 === 0 ? null : v);
+                    }}
+                    style={{
+                      width: 26, height: 26, borderRadius: 13,
+                      alignItems: "center", justifyContent: "center",
+                      backgroundColor: pain010 != null && v <= pain010
+                        ? (v >= 7 ? "#F87171" : v >= 4 ? "#F59E0B" : "#34D399") + (v === pain010 ? "40" : "15")
+                        : Colors.border,
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 9, fontFamily: v === pain010 ? "Rubik_700Bold" : "Rubik_400Regular",
+                      color: pain010 != null && v <= pain010
+                        ? (v >= 7 ? "#F87171" : v >= 4 ? "#F59E0B" : "#34D399")
+                        : Colors.textTertiary
+                    }}>
+                      {v}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 8, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>None</Text>
+                <Text style={{ fontSize: 8, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>Severe</Text>
+              </View>
+            </View>
+          </View>
+          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 4 }}>
+            {pain010 == null ? "Tap a level to log pain/injury" : pain010 >= 4 ? "Contributes +20 to HPA stress score" : "Below HPA threshold (4+)"}
+          </Text>
         </View>
 
         <View style={[styles.sectionCard, { borderColor: "#8B5CF620" }]}>
