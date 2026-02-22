@@ -13,6 +13,8 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadEntries } from "@/lib/entry-storage";
+import { authFetch, getApiUrl } from "@/lib/query-client";
+import SignalCharts from "@/components/SignalCharts";
 import {
   DailyEntry,
   rollingAvg,
@@ -153,10 +155,33 @@ function EntryRow({ entry }: { entry: DailyEntry }) {
   );
 }
 
+interface SignalPoint {
+  date: string;
+  hpa: number | null;
+  hrvDeltaPct: number | null;
+  readiness: number | null;
+  strengthVelocity: number | null;
+}
+
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [signalPoints, setSignalPoints] = useState<SignalPoint[]>([]);
+  const [signalDays, setSignalDays] = useState(30);
+
+  const fetchSignals = useCallback(async (days: number) => {
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/signals/chart", baseUrl);
+      url.searchParams.set("days", String(days));
+      const res = await authFetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setSignalPoints(data.points || []);
+      }
+    } catch {}
+  }, []);
 
   const fetchEntries = useCallback(async () => {
     const data = await loadEntries();
@@ -166,14 +191,20 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchEntries();
-    }, [fetchEntries])
+      fetchSignals(signalDays);
+    }, [fetchEntries, fetchSignals, signalDays])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchEntries();
+    await Promise.all([fetchEntries(), fetchSignals(signalDays)]);
     setRefreshing(false);
-  }, [fetchEntries]);
+  }, [fetchEntries, fetchSignals, signalDays]);
+
+  const handleRangeChange = useCallback((days: number) => {
+    setSignalDays(days);
+    fetchSignals(days);
+  }, [fetchSignals]);
 
   const avgWeight = getCurrentAvgWeight(entries);
   const wkDelta = weeklyDelta(entries);
@@ -218,6 +249,12 @@ export default function DashboardScreen() {
             {entries.length > 0 ? `${entries.length} days tracked` : "Start logging to see insights"}
           </Text>
         </View>
+
+        <SignalCharts
+          points={signalPoints}
+          rangeDays={signalDays}
+          onRangeChange={handleRangeChange}
+        />
 
         <View style={styles.heroCard}>
           <View style={styles.heroLeft}>

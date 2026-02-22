@@ -1500,7 +1500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
                   bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
                   fat_free_mass_lb
-           FROM daily_log WHERE user_id = $1 AND day >= $2::date AND day <= $3::date
+           FROM daily_log WHERE user_id = $1 AND day >= $2 AND day <= $3
            ORDER BY day ASC`,
           [userId, from, to],
         ),
