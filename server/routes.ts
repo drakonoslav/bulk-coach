@@ -112,6 +112,7 @@ import {
   getDataSufficiency,
 } from "./readiness-engine";
 import { computeAndUpsertHpa, getHpaForDate, getHpaRange } from "./hpa-engine";
+import { bucketHpa, classifyHpaHrv, stateTooltip } from "./hpa-classifier";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -1439,7 +1440,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
       const result = await getHpaForDate(date, userId);
-      res.json(result || { hpaScore: null, suppressionFlag: false, drivers: null });
+      if (!result || result.hpaScore == null) {
+        return res.json({ hpaScore: null, suppressionFlag: false, drivers: null, hpaBucket: null, stateLabel: null, stateTooltipText: null });
+      }
+      const hrvPct = result.drivers?.hrv?.pct ?? null;
+      const { hpaBucket: bucket, stateLabel } = classifyHpaHrv(result.hpaScore, hrvPct ?? 0);
+      const showState = result.hpaScore >= 40 || (hrvPct != null && hrvPct <= -0.08);
+      res.json({
+        ...result,
+        hpaBucket: bucket,
+        stateLabel: showState ? stateLabel : null,
+        stateTooltipText: showState ? stateTooltip(stateLabel) : null,
+      });
     } catch (err: unknown) {
       console.error("hpa get error:", err);
       res.status(500).json({ error: "Internal server error" });

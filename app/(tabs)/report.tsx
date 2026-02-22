@@ -628,7 +628,7 @@ export default function ReportScreen() {
     sleepTrending?: any;
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
-  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any } | null>(null);
+  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any; hpaBucket: string | null; stateLabel: string | null; stateTooltipText: string | null } | null>(null);
   const [dataSuff, setDataSuff] = useState<{
     analysisStartDate: string;
     daysWithData: number;
@@ -1712,14 +1712,14 @@ export default function ReportScreen() {
                     {sigRow("HPA", (() => {
                       const score = hpaData?.hpaScore;
                       if (score == null) return sigText("\u2014", "#6B7280");
-                      const color = score >= 60 ? "#F87171" : score >= 30 ? "#F59E0B" : "#34D399";
-                      const label = score >= 60 ? "High" : score >= 30 ? "Moderate" : "Low";
+                      const bucket = hpaData?.hpaBucket ?? "—";
+                      const color = score >= 80 ? "#DC2626" : score >= 60 ? "#F87171" : score >= 40 ? "#F59E0B" : score >= 20 ? "#34D399" : Colors.textSecondary;
                       return (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                           <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score}</Text>
                           <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100</Text>
                           <View style={{ backgroundColor: color + "20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{label}</Text>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{bucket}</Text>
                           </View>
                           {hpaData?.suppressionFlag && (
                             <View style={{ backgroundColor: "#F8717125", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
@@ -1727,6 +1727,14 @@ export default function ReportScreen() {
                             </View>
                           )}
                         </View>
+                      );
+                    })())}
+
+                    {hpaData?.stateLabel && sigRow("State", (() => {
+                      return (
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#8B5CF6" }}>
+                          {hpaData.stateLabel}
+                        </Text>
                       );
                     })())}
 

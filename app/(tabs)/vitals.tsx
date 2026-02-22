@@ -181,7 +181,7 @@ export default function VitalsScreen() {
   const [activeLenses, setActiveLenses] = useState<ActiveLensEpisode[]>([]);
   const [expandedArchiveId, setExpandedArchiveId] = useState<number | null>(null);
   const [archiveTab, setArchiveTab] = useState<"terminal" | "episode">("terminal");
-  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any } | null>(null);
+  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any; hpaBucket: string | null; stateLabel: string | null; stateTooltipText: string | null } | null>(null);
   const CONTEXT_TAG_COLORS: Record<string, string> = {
     travel: "#60A5FA", schedule_shift: "#FBBF24", work_stress: "#F87171",
     social_load: "#A78BFA", illness_symptoms: "#34D399", injury_pain: "#FB923C",
@@ -881,18 +881,34 @@ export default function VitalsScreen() {
             </View>
 
             <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 12, marginBottom: 10 }}>
-              <Text style={{ fontSize: 32, fontFamily: "Rubik_700Bold", color: hpaData.hpaScore >= 60 ? "#F87171" : hpaData.hpaScore >= 30 ? "#F59E0B" : "#34D399" }}>
+              <Text style={{ fontSize: 32, fontFamily: "Rubik_700Bold", color: hpaData.hpaScore >= 80 ? "#DC2626" : hpaData.hpaScore >= 60 ? "#F87171" : hpaData.hpaScore >= 40 ? "#F59E0B" : hpaData.hpaScore >= 20 ? "#34D399" : Colors.textSecondary }}>
                 {hpaData.hpaScore}
               </Text>
               <View style={{ paddingBottom: 6 }}>
                 <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
-                  {hpaData.hpaScore >= 60 ? "High activation" : hpaData.hpaScore >= 30 ? "Moderate" : "Low"}
+                  {hpaData.hpaBucket ?? "—"}
                 </Text>
                 <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
                   0–100 scale · today
                 </Text>
               </View>
             </View>
+
+            {hpaData.stateLabel && (
+              <View style={{ backgroundColor: "#8B5CF610", borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                <Ionicons name="analytics-outline" size={14} color="#8B5CF6" style={{ marginTop: 1 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6" }}>
+                    {hpaData.stateLabel}
+                  </Text>
+                  {hpaData.stateTooltipText && (
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                      {hpaData.stateTooltipText}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
 
             {hpaData.drivers && (
               <View style={{ gap: 6 }}>
