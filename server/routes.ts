@@ -111,6 +111,7 @@ import {
   setAnalysisStartDate,
   getDataSufficiency,
 } from "./readiness-engine";
+import { computeAndUpsertHpa, getHpaForDate, getHpaRange } from "./hpa-engine";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -346,9 +347,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lift_start_time, lift_end_time, lift_min,
           fat_free_mass_lb,
           pushups_reps, pullups_reps, bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
+          pain_0_10,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -405,6 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           bench_weight_lb = COALESCE(EXCLUDED.bench_weight_lb, daily_log.bench_weight_lb),
           ohp_reps = COALESCE(EXCLUDED.ohp_reps, daily_log.ohp_reps),
           ohp_weight_lb = COALESCE(EXCLUDED.ohp_weight_lb, daily_log.ohp_weight_lb),
+          pain_0_10 = COALESCE(EXCLUDED.pain_0_10, daily_log.pain_0_10),
           updated_at = NOW()`,
         [
           userId,
@@ -463,6 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.benchWeightLb ?? null,
           b.ohpReps ?? null,
           b.ohpWeightLb ?? null,
+          b.pain010 ?? null,
         ],
       );
 
@@ -519,6 +523,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       recomputeReadinessRange(b.day, userId).catch((err: unknown) =>
         console.error("readiness recompute error:", err)
+      );
+
+      computeAndUpsertHpa(b.day, userId).catch((err: unknown) =>
+        console.error("hpa compute error:", err)
       );
 
       const hasStrength = b.pushupsReps != null || b.pullupsReps != null || b.benchReps != null || b.ohpReps != null;
@@ -1422,6 +1430,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("template update error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/hpa", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const result = await getHpaForDate(date, userId);
+      res.json(result || { hpaScore: null, suppressionFlag: false, drivers: null });
+    } catch (err: unknown) {
+      console.error("hpa get error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/hpa/range", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
+      const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      const results = await getHpaRange(from, to, userId);
+      res.json(results);
+    } catch (err: unknown) {
+      console.error("hpa range error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/hpa/compute", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { date } = req.body;
+      if (!date) return res.status(400).json({ error: "date required" });
+      const result = await computeAndUpsertHpa(date, userId);
+      res.json(result || { score: null, suppressionFlag: false, drivers: null });
+    } catch (err: unknown) {
+      console.error("hpa compute error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
