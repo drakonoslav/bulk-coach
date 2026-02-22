@@ -181,6 +181,7 @@ export default function VitalsScreen() {
   const [activeLenses, setActiveLenses] = useState<ActiveLensEpisode[]>([]);
   const [expandedArchiveId, setExpandedArchiveId] = useState<number | null>(null);
   const [archiveTab, setArchiveTab] = useState<"terminal" | "episode">("terminal");
+  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any } | null>(null);
   const CONTEXT_TAG_COLORS: Record<string, string> = {
     travel: "#60A5FA", schedule_shift: "#FBBF24", work_stress: "#F87171",
     social_load: "#A78BFA", illness_symptoms: "#34D399", injury_pain: "#FB923C",
@@ -241,9 +242,10 @@ export default function VitalsScreen() {
         if (json.sources) setDataSources(json.sources);
       }
 
-      const [activeRes, archiveRes] = await Promise.all([
+      const [activeRes, archiveRes, hpaRes] = await Promise.all([
         authFetch(new URL("/api/context-lens/episodes/active", baseUrl).toString()),
         authFetch(new URL("/api/context-lens/archives", baseUrl).toString()),
+        authFetch(new URL("/api/hpa", baseUrl).toString()),
       ]);
       if (activeRes.ok) {
         const data = await activeRes.json();
@@ -252,6 +254,10 @@ export default function VitalsScreen() {
       if (archiveRes.ok) {
         const data = await archiveRes.json();
         setLensArchives(data.archives || []);
+      }
+      if (hpaRes.ok) {
+        const data = await hpaRes.json();
+        setHpaData(data);
       }
     } catch (err) {
       console.error("vitals load error:", err);
@@ -860,6 +866,88 @@ export default function VitalsScreen() {
             <Text style={{ fontSize: 13, color: "#EF4444", textAlign: "center", marginTop: 8 }}>{resetStatus}</Text>
           )}
         </View>
+
+        {hpaData && hpaData.hpaScore != null && (
+          <View style={styles.section}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <Ionicons name="pulse-outline" size={18} color="#F59E0B" />
+              <Text style={styles.sectionTitle}>HPA Stress</Text>
+              {hpaData.suppressionFlag && (
+                <View style={{ backgroundColor: "#F8717125", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="warning" size={11} color="#F87171" />
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_700Bold", color: "#F87171" }}>SUPPRESSION</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 12, marginBottom: 10 }}>
+              <Text style={{ fontSize: 32, fontFamily: "Rubik_700Bold", color: hpaData.hpaScore >= 60 ? "#F87171" : hpaData.hpaScore >= 30 ? "#F59E0B" : "#34D399" }}>
+                {hpaData.hpaScore}
+              </Text>
+              <View style={{ paddingBottom: 6 }}>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                  {hpaData.hpaScore >= 60 ? "High activation" : hpaData.hpaScore >= 30 ? "Moderate" : "Low"}
+                </Text>
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                  0–100 scale · today
+                </Text>
+              </View>
+            </View>
+
+            {hpaData.drivers && (
+              <View style={{ gap: 6 }}>
+                {[
+                  { key: "sleep", label: "Sleep", icon: "moon-outline" as const, color: "#60A5FA" },
+                  { key: "hrv", label: "HRV", icon: "heart-outline" as const, color: "#A78BFA" },
+                  { key: "rhr", label: "RHR", icon: "fitness-outline" as const, color: "#F87171" },
+                  { key: "pain", label: "Pain", icon: "bandage-outline" as const, color: "#F59E0B" },
+                ].map((item) => {
+                  const d = hpaData.drivers[item.key];
+                  if (!d) return null;
+                  return (
+                    <View key={item.key} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons name={item.icon} size={14} color={d.fired ? item.color : Colors.textTertiary} />
+                      <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: d.fired ? Colors.text : Colors.textTertiary, flex: 1 }}>
+                        {item.label}
+                      </Text>
+                      <View style={{ backgroundColor: d.fired ? item.color + "20" : Colors.border, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: d.fired ? item.color : Colors.textTertiary }}>
+                          {d.fired ? `+${d.points}` : "—"}
+                        </Text>
+                      </View>
+                      {d.pct != null && (
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 50, textAlign: "right" }}>
+                          {(d.pct * 100).toFixed(0)}% vs 28d
+                        </Text>
+                      )}
+                      {d.diff != null && (
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 50, textAlign: "right" }}>
+                          {d.diff >= 0 ? "+" : ""}{d.diff.toFixed(1)} bpm
+                        </Text>
+                      )}
+                      {item.key === "pain" && d.current != null && (
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 50, textAlign: "right" }}>
+                          {d.current}/10
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {hpaData.suppressionFlag && hpaData.drivers?.suppression && (
+              <View style={{ marginTop: 10, padding: 10, backgroundColor: "#F8717110", borderRadius: 8, borderWidth: 1, borderColor: "#F8717130" }}>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171", marginBottom: 2 }}>
+                  Cortisol likely suppressing
+                </Text>
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                  HPA score {hpaData.hpaScore}+ with androgen proxy dropped {hpaData.drivers.suppression.proxyDelta != null ? `${(hpaData.drivers.suppression.proxyDelta * 100).toFixed(0)}%` : "≥10%"} below baseline
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {(activeLenses.length > 0 || lensArchives.length > 0) && (
           <View style={styles.section}>
