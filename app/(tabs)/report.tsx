@@ -628,6 +628,7 @@ export default function ReportScreen() {
     sleepTrending?: any;
   } | null>(null);
   const [readinessHistory, setReadinessHistory] = useState<Array<{ date: string; readinessScore: number; readinessTier: string }>>([]);
+  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any } | null>(null);
   const [dataSuff, setDataSuff] = useState<{
     analysisStartDate: string;
     daysWithData: number;
@@ -671,12 +672,13 @@ export default function ReportScreen() {
         const d = new Date(); d.setDate(d.getDate() - 13);
         return d.toISOString().slice(0, 10);
       })();
-      const [proxyRes, confRes, readinessRes, readinessHistRes, dsRes] = await Promise.all([
+      const [proxyRes, confRes, readinessRes, readinessHistRes, dsRes, hpaRes] = await Promise.all([
         authFetch(new URL(`/api/erection/proxy?include_imputed=${proxyImputed}`, baseUrl).toString()),
         authFetch(new URL("/api/erection/confidence", baseUrl).toString()),
         authFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString()),
         authFetch(new URL(`/api/readiness/range?from=${histFrom}&to=${today}`, baseUrl).toString()),
         authFetch(new URL("/api/data-sufficiency", baseUrl).toString()),
+        authFetch(new URL(`/api/hpa?date=${today}`, baseUrl).toString()),
       ]);
       if (proxyRes.ok) {
         const rows = await proxyRes.json();
@@ -696,6 +698,7 @@ export default function ReportScreen() {
         setReadinessHistory(await readinessHistRes.json());
       }
       if (dsRes.ok) setDataSuff(await dsRes.json());
+      if (hpaRes.ok) setHpaData(await hpaRes.json());
       try {
         const sbRes = await authFetch(new URL("/api/strength/baselines", baseUrl).toString());
         if (sbRes.ok) {
@@ -1705,6 +1708,39 @@ export default function ReportScreen() {
                       insufficientData ? "\u2014" : `${readiness.deltas?.proxy_str ?? "\u2014"} vs baseline`,
                       insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
                     ))}
+
+                    {sigRow("HPA", (() => {
+                      const score = hpaData?.hpaScore;
+                      if (score == null) return sigText("\u2014", "#6B7280");
+                      const color = score >= 60 ? "#F87171" : score >= 30 ? "#F59E0B" : "#34D399";
+                      const label = score >= 60 ? "High" : score >= 30 ? "Moderate" : "Low";
+                      return (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100</Text>
+                          <View style={{ backgroundColor: color + "20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{label}</Text>
+                          </View>
+                          {hpaData?.suppressionFlag && (
+                            <View style={{ backgroundColor: "#F8717125", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                              <Text style={{ fontSize: 8, fontFamily: "Rubik_700Bold", color: "#F87171" }}>SUPP</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })())}
+
+                    {sigRow("Pain", (() => {
+                      const pain = hpaData?.drivers?.pain?.current;
+                      if (pain == null) return sigText("\u2014", "#6B7280");
+                      const color = pain >= 7 ? "#F87171" : pain >= 4 ? "#F59E0B" : Colors.textSecondary;
+                      return (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{pain}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 10</Text>
+                        </View>
+                      );
+                    })())}
 
                     {sigRow("Confidence", sigText(
                       `${confGradeVal} (${readiness.confidenceBreakdown?.measured_7d ?? 0} / 7d)`,

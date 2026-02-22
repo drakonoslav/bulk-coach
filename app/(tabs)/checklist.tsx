@@ -151,6 +151,7 @@ export default function ChecklistScreen() {
     gateLabel: string | null;
     signals: { hrv: number; rhr: number; sleep: number; steps: number; proxy: number };
   } | null>(null);
+  const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any } | null>(null);
   const [rebaselining, setRebaselining] = useState(false);
   const [picking, setPicking] = useState(false);
   const [templates, setTemplates] = useState<Array<{
@@ -193,12 +194,14 @@ export default function ChecklistScreen() {
     try {
       const baseUrl = getApiUrl();
       const today = new Date().toISOString().slice(0, 10);
-      const [rRes, tRes, dsRes] = await Promise.all([
+      const [rRes, tRes, dsRes, hpaRes] = await Promise.all([
         authFetch(new URL(`/api/readiness?date=${today}`, baseUrl).toString()),
         authFetch(new URL("/api/training/template", baseUrl).toString()),
         authFetch(new URL("/api/data-sufficiency", baseUrl).toString()),
+        authFetch(new URL(`/api/hpa?date=${today}`, baseUrl).toString()),
       ]);
       if (rRes.ok) setReadiness(await rRes.json());
+      if (hpaRes.ok) setHpaData(await hpaRes.json());
       if (tRes.ok) {
         const tData = await tRes.json();
         if (Array.isArray(tData)) {
@@ -1019,6 +1022,39 @@ export default function ChecklistScreen() {
                 insufficientData ? "\u2014" : `${readiness.deltas?.proxy_str ?? "\u2014"} vs baseline`,
                 insufficientData ? "#6B7280" : ((readiness.deltas?.proxy_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
               ))}
+
+              {sigRow("HPA", (() => {
+                const score = hpaData?.hpaScore;
+                if (score == null) return sigText("\u2014", "#6B7280");
+                const color = score >= 60 ? "#F87171" : score >= 30 ? "#F59E0B" : "#34D399";
+                const label = score >= 60 ? "High" : score >= 30 ? "Moderate" : "Low";
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100</Text>
+                    <View style={{ backgroundColor: color + "20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{label}</Text>
+                    </View>
+                    {hpaData?.suppressionFlag && (
+                      <View style={{ backgroundColor: "#F8717125", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                        <Text style={{ fontSize: 8, fontFamily: "Rubik_700Bold", color: "#F87171" }}>SUPP</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })())}
+
+              {sigRow("Pain", (() => {
+                const pain = hpaData?.drivers?.pain?.current;
+                if (pain == null) return sigText("\u2014", "#6B7280");
+                const color = pain >= 7 ? "#F87171" : pain >= 4 ? "#F59E0B" : Colors.textSecondary;
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{pain}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 10</Text>
+                  </View>
+                );
+              })())}
 
               {sigRow("Confidence", sigText(
                 `${confGradeVal} (${readiness.confidenceBreakdown?.measured_7d ?? 0} / 7d)`,
