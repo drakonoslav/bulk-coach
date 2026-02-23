@@ -63,6 +63,7 @@ export interface DailyEntry {
   benchWeightLb?: number;
   ohpReps?: number;
   ohpWeightLb?: number;
+  pain010?: number;
 }
 
 export interface CardioFuel {
