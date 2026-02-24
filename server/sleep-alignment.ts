@@ -308,7 +308,7 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepDeltaMin = timeAsleepMin - plannedSleepMin;
     shortfallMin = Math.max(0, -sleepDeltaMin);
     sleepDebtMin = -sleepDeltaMin;
-    sleepAdequacyScore = clamp(Math.round(100 * timeAsleepMin / plannedSleepMin), 0, 110);
+    sleepAdequacyScore = clamp(Math.floor((100 * timeAsleepMin / plannedSleepMin) * 100) / 100, 0, 110);
   }
 
   if (hasStages && estimatedSleepMin != null && estimatedSleepMin > 0) {
