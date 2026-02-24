@@ -60,6 +60,9 @@ export interface SleepAlignment {
   observedWakeLocal: string | null;
   bedDeviationMin: number | null;
   wakeDeviationMin: number | null;
+  bedPenaltyMin: number | null;
+  wakePenaltyMin: number | null;
+  totalPenaltyMin: number | null;
   alignmentScore: number | null;
   deviationLabel: string;
   shortfallMin: number | null;
@@ -244,11 +247,14 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   }
 
   let alignmentScore: number | null = null;
+  let bedPenaltyMin: number | null = null;
+  let wakePenaltyMin: number | null = null;
+  let totalPenaltyMin: number | null = null;
   if (bedDevMin != null && wakeDevMin != null) {
-    const bedPenalty = Math.max(0, bedDevMin);
-    const wakePenalty = Math.max(0, -wakeDevMin);
-    const penalty = clamp(bedPenalty + wakePenalty, 0, 180);
-    alignmentScore = Math.round(100 - (penalty * (100 / 180)));
+    bedPenaltyMin = Math.max(0, bedDevMin);
+    wakePenaltyMin = Math.max(0, -wakeDevMin);
+    totalPenaltyMin = clamp(bedPenaltyMin + wakePenaltyMin, 0, 180);
+    alignmentScore = Math.round(100 - (totalPenaltyMin * (100 / 180)));
   }
 
   const devLabel = formatBedWakeDeviation(bedDevMin, wakeDevMin);
@@ -345,6 +351,9 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     observedWakeLocal: actualWake,
     bedDeviationMin: bedDevMin,
     wakeDeviationMin: wakeDevMin,
+    bedPenaltyMin,
+    wakePenaltyMin,
+    totalPenaltyMin,
     alignmentScore,
     deviationLabel: devLabel,
     shortfallMin: shortfallMin != null ? noiseFloorMinutes(shortfallMin) : null,
