@@ -447,6 +447,12 @@ export default function LogScreen() {
       setLiftStartTime(existing.liftStartTime || "");
       setLiftEndTime(existing.liftEndTime || "");
       setLiftMin(existing.liftMin?.toString() || "");
+      setLiftWorkingMin(existing.liftWorkingMin?.toString() || "");
+      setZone1(existing.zone1Min?.toString() || "");
+      setZone2(existing.zone2Min?.toString() || "");
+      setZone3(existing.zone3Min?.toString() || "");
+      setZone4(existing.zone4Min?.toString() || "");
+      setZone5(existing.zone5Min?.toString() || "");
       setLiftDone(existing.liftDone);
       setDeloadWeek(existing.deloadWeek);
       setPerfNote(existing.performanceNote || "");
@@ -805,6 +811,12 @@ export default function LogScreen() {
         liftStartTime: liftStartTime || undefined,
         liftEndTime: liftEndTime || undefined,
         liftMin: liftMin ? parseInt(liftMin, 10) : undefined,
+        liftWorkingMin: liftWorkingMin ? parseInt(liftWorkingMin, 10) : undefined,
+        zone1Min: zone1 ? parseFloat(zone1) : undefined,
+        zone2Min: zone2 ? parseFloat(zone2) : undefined,
+        zone3Min: zone3 ? parseFloat(zone3) : undefined,
+        zone4Min: zone4 ? parseFloat(zone4) : undefined,
+        zone5Min: zone5 ? parseFloat(zone5) : undefined,
         liftDone,
         deloadWeek,
         performanceNote: perfNote || undefined,
@@ -1494,6 +1506,92 @@ export default function LogScreen() {
                 </View>
               </View>
             </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, marginBottom: 4 }}>
+              <Ionicons name="speedometer-outline" size={12} color="#EF4444" />
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (min)</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#9CA3AF" }}>Z1</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={zone1}
+                    onChangeText={setZone1}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#34D399" }}>Z2</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={zone2}
+                    onChangeText={setZone2}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Z3</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={zone3}
+                    onChangeText={setZone3}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#F97316" }}>Z4</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={zone4}
+                    onChangeText={setZone4}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#EF4444" }}>Z5</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={zone5}
+                    onChangeText={setZone5}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              </View>
+            </View>
           </View>
           <View style={[styles.sectionCard, { borderColor: "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -1572,6 +1670,30 @@ export default function LogScreen() {
                   />
                   <Text style={styles.inputSuffix}>min</Text>
                 </View>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="fitness-outline" size={14} color="#FBBF24" />
+                  <Text style={styles.inputLabelText}>Working</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={liftWorkingMin}
+                    onChangeText={handleMinuteSetter(setLiftWorkingMin)}
+                    placeholder="e.g. 50"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardAppearance="dark"
+                  />
+                  <Text style={styles.inputSuffix}>min</Text>
+                </View>
+              </View>
+              <View style={{ flex: 2 }}>
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 16 }}>
+                  Time under load (sets + reps). Used for efficiency & continuity scores.
+                </Text>
               </View>
             </View>
           </View>
