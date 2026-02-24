@@ -1757,15 +1757,11 @@ export default function ReportScreen() {
                           {debugCardioOutcomeExpanded && (
                             <View style={{ backgroundColor: "#F8717108", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`planned = ${co?.plannedDurationMin ?? "—"} min\nactual = ${co?.actualDurationMin ?? "—"} min\nadequacy = clamp(100×actual/planned, 0, 110) = ${co?.adequacyScore?.toFixed(2) ?? "—"}`}
+                                {`plannedMin = ${co?.plannedDurationMin ?? "—"}\ncardioTotalMin = ${co?.cardioTotalMin ?? "—"} [src=${co?.cardioTotalSource ?? "—"}]\nz1=${co?.z1Min ?? "—"} z2=${co?.z2Min ?? "—"} z3=${co?.z3Min ?? "—"} z4=${co?.z4Min ?? "—"} z5=${co?.z5Min ?? "—"}\nproductiveMin = z2+z3 = ${co?.productiveMin ?? "— (zones missing)"}`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`zone2Min = ${co?.zone2Min ?? "—"}\nefficiency = clamp(100×zone2/actual, 0, 100) = ${co?.efficiencyScore?.toFixed(2) ?? "—"} [src=${co?.efficiencySource ?? "—"}]`}
-                              </Text>
-                              <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`minutesOutOfZone = ${co?.minutesOutOfZone ?? "—"}\ncontinuity = clamp(100×(1−outOfZone/actual), 0, 100) = ${co?.continuityScore?.toFixed(2) ?? "—"} [src=${co?.continuityDenominator ?? co?.continuitySource ?? "—"}]`}
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
+                                {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−z1/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}`}
                               </Text>
                             </View>
                           )}
@@ -1842,11 +1838,11 @@ export default function ReportScreen() {
                           {debugLiftOutcomeExpanded && (
                             <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`planned = ${lo?.plannedMin ?? "—"} min\nactual = ${lo?.actualMin ?? "—"} min\nadequacy = clamp(100×actual/planned, 0, 110) = ${lo?.adequacyScore?.toFixed(2) ?? "—"}`}
+                                {`plannedMin = ${lo?.plannedMin ?? "—"}\nactualMin = ${lo?.actualMin ?? "—"}\nworkingMin = ${lo?.workingMin ?? "— (not logged)"}\nidleMin = ${lo?.idleMin ?? "—"}`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`efficiency = ${lo?.efficiencySource ?? "not_available"}\ncontinuity = ${lo?.continuityDenominator ?? lo?.continuitySource ?? "not_available"}`}
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
+                                {`adequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = 100×working/actual = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−idle/actual) = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}`}
                               </Text>
                             </View>
                           )}

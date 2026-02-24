@@ -57,14 +57,17 @@ export interface CardioScheduleStability {
 
 export interface CardioOutcome {
   adequacyScore: number | null;
-  actualDurationMin: number | null;
+  productiveMin: number | null;
+  cardioTotalMin: number | null;
+  cardioTotalSource: "zones_sum" | "spanMinutes" | "cardio_min" | null;
   plannedDurationMin: number | null;
   efficiencyScore: number | null;
-  efficiencySource: "zone2_min" | "not_available" | null;
-  zone2Min: number | null;
   continuityScore: number | null;
-  continuitySource: "zone_data" | "not_available" | null;
-  minutesOutOfZone: number | null;
+  z1Min: number | null;
+  z2Min: number | null;
+  z3Min: number | null;
+  z4Min: number | null;
+  z5Min: number | null;
 }
 
 export interface CardioBlock {
@@ -200,7 +203,7 @@ export async function computeCardioOutcome(
 
   const { rows } = await pool.query(
     `SELECT cardio_start_time, cardio_end_time, cardio_min,
-            zone1_min, zone2_min, zone3_min
+            zone1_min, zone2_min, zone3_min, zone4_min, zone5_min
      FROM daily_log
      WHERE day = $1 AND user_id = $2`,
     [date, userId],
@@ -208,78 +211,66 @@ export async function computeCardioOutcome(
 
   const r = rows[0] ?? null;
 
-  let actualDurationMin: number | null = null;
-  if (r) {
+  const z1 = r?.zone1_min != null ? Number(r.zone1_min) : null;
+  const z2 = r?.zone2_min != null ? Number(r.zone2_min) : null;
+  const z3 = r?.zone3_min != null ? Number(r.zone3_min) : null;
+  const z4 = r?.zone4_min != null ? Number(r.zone4_min) : null;
+  const z5 = r?.zone5_min != null ? Number(r.zone5_min) : null;
+  const hasZones = z1 != null && z2 != null && z3 != null;
+
+  let cardioTotalMin: number | null = null;
+  let cardioTotalSource: "zones_sum" | "spanMinutes" | "cardio_min" | null = null;
+
+  if (hasZones) {
+    cardioTotalMin = z1 + z2 + z3 + (z4 ?? 0) + (z5 ?? 0);
+    cardioTotalSource = "zones_sum";
+  } else if (r) {
     if (r.cardio_start_time && r.cardio_end_time) {
       const startM = toMin(r.cardio_start_time);
       const endM = toMin(r.cardio_end_time);
       let dur = endM - startM;
       if (dur < 0) dur += 1440;
-      actualDurationMin = dur;
+      cardioTotalMin = dur;
+      cardioTotalSource = "spanMinutes";
     } else if (r.cardio_min != null) {
-      actualDurationMin = Number(r.cardio_min);
+      cardioTotalMin = Number(r.cardio_min);
+      cardioTotalSource = "cardio_min";
     }
+  }
+
+  let productiveMin: number | null = null;
+  if (hasZones) {
+    productiveMin = z2! + z3!;
   }
 
   let adequacyScore: number | null = null;
-  if (actualDurationMin != null && plannedDurationMin > 0) {
-    adequacyScore = clamp(100 * actualDurationMin / plannedDurationMin, 0, 110);
+  if (productiveMin != null && plannedDurationMin > 0) {
+    adequacyScore = clamp(100 * productiveMin / plannedDurationMin, 0, 110);
   }
 
   let efficiencyScore: number | null = null;
-  let efficiencySource: "zone2_min" | "not_available" | null = null;
-  let zone2Min: number | null = null;
-
-  if (r && r.zone2_min != null && actualDurationMin != null && actualDurationMin > 0) {
-    zone2Min = Number(r.zone2_min);
-    efficiencyScore = clamp(100 * zone2Min / actualDurationMin, 0, 100);
-    efficiencySource = "zone2_min";
-  } else {
-    if (actualDurationMin != null) {
-      const { rows: vitalsRows } = await pool.query(
-        `SELECT zone2_min FROM vitals_daily WHERE date = $1 AND user_id = $2`,
-        [date, userId],
-      );
-      const v = vitalsRows[0] ?? null;
-      if (v && v.zone2_min != null && actualDurationMin > 0) {
-        zone2Min = Number(v.zone2_min);
-        efficiencyScore = clamp(100 * zone2Min / actualDurationMin, 0, 100);
-        efficiencySource = "zone2_min";
-      } else {
-        efficiencySource = "not_available";
-      }
-    } else {
-      efficiencySource = "not_available";
-    }
+  if (productiveMin != null && cardioTotalMin != null && cardioTotalMin > 0) {
+    efficiencyScore = clamp(100 * productiveMin / cardioTotalMin, 0, 100);
   }
 
   let continuityScore: number | null = null;
-  let continuitySource: "zone_data" | "not_available" | null = null;
-  let minutesOutOfZone: number | null = null;
-
-  const z1 = r?.zone1_min != null ? Number(r.zone1_min) : null;
-  const z2 = r?.zone2_min != null ? Number(r.zone2_min) : null;
-  const z3 = r?.zone3_min != null ? Number(r.zone3_min) : null;
-
-  if (z1 != null && z2 != null && z3 != null && actualDurationMin != null && actualDurationMin > 0) {
-    const totalZoneMin = z1 + z2 + z3;
-    minutesOutOfZone = Math.max(0, actualDurationMin - totalZoneMin);
-    continuityScore = clamp(100 * (1 - minutesOutOfZone / actualDurationMin), 0, 100);
-    continuitySource = "zone_data";
-  } else {
-    continuitySource = "not_available";
+  if (hasZones && cardioTotalMin != null && cardioTotalMin > 0) {
+    continuityScore = clamp(100 * (1 - z1! / cardioTotalMin), 0, 100);
   }
 
   return {
     adequacyScore,
-    actualDurationMin,
+    productiveMin,
+    cardioTotalMin,
+    cardioTotalSource,
     plannedDurationMin,
     efficiencyScore,
-    efficiencySource,
-    zone2Min,
     continuityScore,
-    continuitySource,
-    minutesOutOfZone,
+    z1Min: z1,
+    z2Min: z2,
+    z3Min: z3,
+    z4Min: z4,
+    z5Min: z5,
   };
 }
 

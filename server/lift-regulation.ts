@@ -59,10 +59,10 @@ export interface LiftOutcome {
   adequacyScore: number | null;
   actualMin: number | null;
   plannedMin: number | null;
-  efficiencyScore: null;
-  efficiencySource: "not_available";
-  continuityScore: null;
-  continuitySource: "not_available";
+  workingMin: number | null;
+  idleMin: number | null;
+  efficiencyScore: number | null;
+  continuityScore: number | null;
 }
 
 export interface LiftBlock {
@@ -199,7 +199,7 @@ export async function computeLiftOutcome(
   const plannedMin = schedule.plannedMin;
 
   const { rows } = await pool.query(
-    `SELECT lift_start_time, lift_end_time, lift_min, lift_done
+    `SELECT lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
      FROM daily_log
      WHERE day = $1 AND user_id = $2`,
     [date, userId],
@@ -226,14 +226,27 @@ export async function computeLiftOutcome(
     adequacyScore = clamp(100 * actualMin / plannedMin, 0, 110);
   }
 
+  const workingMin = r?.lift_working_min != null ? Number(r.lift_working_min) : null;
+  const idleMin = (actualMin != null && workingMin != null) ? actualMin - workingMin : null;
+
+  let efficiencyScore: number | null = null;
+  if (workingMin != null && actualMin != null && actualMin > 0) {
+    efficiencyScore = clamp(100 * workingMin / actualMin, 0, 100);
+  }
+
+  let continuityScore: number | null = null;
+  if (idleMin != null && actualMin != null && actualMin > 0) {
+    continuityScore = clamp(100 * (1 - idleMin / actualMin), 0, 100);
+  }
+
   return {
     adequacyScore,
     actualMin,
     plannedMin,
-    efficiencyScore: null,
-    efficiencySource: "not_available",
-    continuityScore: null,
-    continuitySource: "not_available",
+    workingMin,
+    idleMin,
+    efficiencyScore,
+    continuityScore,
   };
 }
 

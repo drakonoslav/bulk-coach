@@ -105,6 +105,8 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone2_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone3_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS below_zone1_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone4_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone5_min REAL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fitbit_takeout_imports (
@@ -136,6 +138,13 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_core_min INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_deep_min INTEGER`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_source_mode TEXT`);
+
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS cardio_start_time TEXT`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS cardio_end_time TEXT`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_start_time TEXT`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_end_time TEXT`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_min INTEGER`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_working_min REAL`);
 
   await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP NOT NULL`);
   await pool.query(`ALTER TABLE daily_log ALTER COLUMN morning_weight_lb DROP DEFAULT`);
