@@ -94,6 +94,8 @@ export default function ChecklistScreen() {
     rowsUpserted: number;
     timezone: string;
   }>>([]);
+  const [debugSleepExpanded, setDebugSleepExpanded] = useState(false);
+  const [debugSchedExpanded, setDebugSchedExpanded] = useState(false);
   const [readiness, setReadiness] = useState<{
     readinessScore: number;
     readinessTier: string;
@@ -957,6 +959,37 @@ export default function ChecklistScreen() {
                 </View>);
               })()}
 
+              {(() => {
+                const ss = readiness.scheduleStability;
+                const saD = sb?.sleepAlignment;
+                return (
+                  <View>
+                    <Pressable onPress={() => setDebugSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#60A5FA" }}>Debug: Schedule Stability Inputs</Text>
+                      <Ionicons name={debugSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#60A5FA" />
+                    </Pressable>
+                    {debugSchedExpanded && (
+                      <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`bedDevMin = ${saD?.bedDeviationMin?.toFixed(2) ?? "—"}\nwakeDevMin = ${saD?.wakeDeviationMin?.toFixed(2) ?? "—"}\nbedPenaltyMin = ${saD?.bedPenaltyMin?.toFixed(2) ?? "—"}\nwakePenaltyMin = ${saD?.wakePenaltyMin?.toFixed(2) ?? "—"}\ntotalPenaltyMin = ${saD?.totalPenaltyMin?.toFixed(2) ?? "—"}\nalignmentScore = ${saD?.alignmentScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`sdMin = ${ss?.scheduleConsistencySdMin?.toFixed(2) ?? "—"}\nnDays = ${ss?.scheduleConsistencyNSamples ?? 0}\ndriftMags7d = [${(ss?.debugDriftMags7d ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistencyScore = ${ss?.scheduleConsistencyScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`eventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${ss?.recoveryEventDriftMag0?.toFixed(2) ?? "—"}\nkDaysUsed = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${ss?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecoveryScore = ${ss?.scheduleRecoveryScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
               {sigRow("Cardio adherence", (() => {
                 const actual = adh?.actualCardioMin;
                 const planned = adh?.plannedCardioMin ?? 40;
@@ -1044,16 +1077,31 @@ export default function ChecklistScreen() {
                 const planned = sb.plannedSleepMin ?? 0;
                 const tib = sb.timeInBedMin ?? 0;
                 const tst = sb.estimatedSleepMin ?? 0;
+                const awake = sb.awakeInBedMin ?? 0;
+                const latency = sb.latencyMin ?? 0;
+                const waso = sb.wasoMin ?? 0;
                 const adequacyRaw = planned > 0 ? (100 * tst / planned) : 0;
                 const effRaw = tib > 0 ? (100 * tst / tib) : 0;
-                const adequacyUI = sb.sleepAdequacyScore ?? 0;
-                const eff = sb.sleepEfficiency ?? sb.sleepEfficiencyEst ?? 0;
-                const effUI = eff * 100;
-                return sigRow("Debug", (
-                  <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }} numberOfLines={3}>
-                    {`planned=${planned.toFixed(2)} | TIB=${tib.toFixed(2)} | TST=${tst.toFixed(2)} | adequacyRaw=${adequacyRaw.toFixed(2)} | effRaw=${effRaw.toFixed(2)} | adequacyUI=${adequacyUI.toFixed(2)} | effUI=${effUI.toFixed(2)}`}
-                  </Text>
-                ), true);
+                const contRaw = tib > 0 ? (100 * (1 - awake / tib)) : 0;
+                return (
+                  <View>
+                    <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#60A5FA" }}>Debug: Sleep Outcome Inputs</Text>
+                      <Ionicons name={debugSleepExpanded ? "chevron-up" : "chevron-down"} size={14} color="#60A5FA" />
+                    </Pressable>
+                    {debugSleepExpanded && (
+                      <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`plannedSleepMin = ${planned.toFixed(2)}\ntimeInBedMin (TIB) = ${tib.toFixed(2)}\ntimeAsleepMin (TST) = ${tst.toFixed(2)}\nawakeInBedMin = ${awake.toFixed(2)}\nlatencyMin = ${latency.toFixed(2)}\nwasoMin = ${waso.toFixed(2)}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`adequacyRaw = 100 × ${tst.toFixed(2)} / ${planned.toFixed(2)} = ${adequacyRaw.toFixed(2)}\nefficiencyRaw = 100 × ${tst.toFixed(2)} / ${tib.toFixed(2)} = ${effRaw.toFixed(2)}\ncontinuityRaw = 100 × (1 − ${awake.toFixed(2)} / ${tib.toFixed(2)}) = ${contRaw.toFixed(2)}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
               })()}
 
               {sectionHeader("System State", "pulse-outline", "#34D399")}
