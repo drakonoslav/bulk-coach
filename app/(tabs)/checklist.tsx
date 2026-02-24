@@ -1050,18 +1050,18 @@ export default function ChecklistScreen() {
               ))}
 
               {(() => {
-                const eff = sb?.sleepEfficiency ?? sb?.sleepEfficiencyEst ?? null;
+                const eff = sb?.sleepEfficiencyPct ?? null;
                 return eff != null ? sigRow("Efficiency", sigText(
-                  `${(eff * 100).toFixed(2)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
-                  eff >= 0.85 ? "#34D399" : eff >= 0.70 ? "#FBBF24" : "#EF4444",
+                  `${eff.toFixed(2)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
+                  eff >= 85 ? "#34D399" : eff >= 70 ? "#FBBF24" : "#EF4444",
                 ), sb?.awakeInBedMin == null) : null;
               })()}
 
               {(() => {
-                const cont = sb?.sleepContinuity ?? null;
+                const cont = sb?.sleepContinuityPct ?? null;
                 return cont != null ? sigRow("Continuity", sigText(
-                  `${(cont * 100).toFixed(2)}%`,
-                  cont >= 0.85 ? "#34D399" : cont >= 0.70 ? "#FBBF24" : "#EF4444",
+                  `${cont.toFixed(2)}%`,
+                  cont >= 85 ? "#34D399" : cont >= 70 ? "#FBBF24" : "#EF4444",
                 )) : null;
               })()}
 
@@ -1087,9 +1087,8 @@ export default function ChecklistScreen() {
                 const awake = sb.awakeInBedMin ?? 0;
                 const latency = sb.latencyMin ?? 0;
                 const waso = sb.wasoMin ?? 0;
-                const adequacyRaw = planned > 0 ? (100 * tst / planned) : 0;
-                const effRaw = tib > 0 ? (100 * tst / tib) : 0;
-                const contAPI = (sb.sleepContinuity ?? 0) * 100;
+                const contSrc = sb.continuitySource ?? "—";
+                const fragVal = contSrc === "wasoMin" ? waso : awake;
                 return (
                   <View>
                     <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1099,11 +1098,11 @@ export default function ChecklistScreen() {
                     {debugSleepExpanded && (
                       <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`plannedSleepMin = ${planned.toFixed(2)}\ntimeInBedMin (TIB) = ${tib.toFixed(2)}\ntimeAsleepMin (TST) = ${tst.toFixed(2)}\nawakeInBedMin = ${awake.toFixed(2)}\nlatencyMin = ${latency.toFixed(2)}\nwasoMin = ${waso.toFixed(2)}`}
+                          {`plannedSleepMin = ${planned}\ntimeInBedMin (TIB) = ${tib}\ntimeAsleepMin (TST) = ${tst}\nawakeInBedMin = ${awake}\nlatencyMin = ${latency}\nwasoMin = ${waso}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100 × ${tst.toFixed(2)} / ${planned.toFixed(2)} = ${adequacyRaw.toFixed(2)}\nefficiencyRaw = 100 × ${tst.toFixed(2)} / ${tib.toFixed(2)} = ${effRaw.toFixed(2)}\ncontinuity = 100 × clamp(1 − ${awake.toFixed(2)} / ${planned.toFixed(2)}, 0, 1) = ${contAPI.toFixed(2)}`}
+                          {`adequacy = 100 × TST/planned = 100 × ${tst}/${planned} = ${sb.sleepAdequacyScore?.toFixed(2) ?? "—"}\nefficiency = 100 × TST/TIB = 100 × ${tst}/${tib} = ${sb.sleepEfficiencyPct?.toFixed(2) ?? "—"}%\ncontinuity = 100 × (1 − ${contSrc}/${tib}) = 100 × (1 − ${fragVal}/${tib}) = ${sb.sleepContinuityPct?.toFixed(2) ?? "—"}% [src=${contSrc}]`}
                         </Text>
                       </View>
                     )}

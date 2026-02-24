@@ -83,6 +83,9 @@ export interface SleepBlock {
   sleepDebtMin: number | null;
   sleepDeltaMin: number | null;
   sleepAdequacyScore: number | null;
+  sleepEfficiencyPct: number | null;
+  sleepContinuityPct: number | null;
+  continuitySource: "wasoMin" | "awakeInBedMin" | null;
   sleepEfficiencyEst: number | null;
   fitbitSleepMinutes: number | null;
   napMinutes: number | null;
@@ -358,16 +361,26 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
 
   sleepEfficiencyEst = sleepEfficiency;
 
+  let sleepEfficiencyPct: number | null = null;
+  if (timeInBedMin != null && timeInBedMin > 0 && timeAsleepMin != null) {
+    sleepEfficiencyPct = clamp(100 * timeAsleepMin / timeInBedMin, 0, 100);
+  }
+
   if (timeAsleepMin != null) {
     sleepDeltaMin = timeAsleepMin - plannedSleepMin;
     shortfallMin = Math.max(0, -sleepDeltaMin);
     sleepDebtMin = -sleepDeltaMin;
-    sleepAdequacyScore = clamp(Math.floor((100 * timeAsleepMin / plannedSleepMin) * 100) / 100, 0, 110);
+    sleepAdequacyScore = clamp(100 * timeAsleepMin / plannedSleepMin, 0, 110);
   }
 
-  const sleepContinuity: number | null = (plannedSleepMin > 0 && awakeInBedMin != null)
-    ? clamp(1 - (awakeInBedMin / plannedSleepMin), 0, 1)
+  const awakeFragmentMin: number | null = wasoMin != null ? wasoMin : awakeInBedMin;
+  const continuitySource: "wasoMin" | "awakeInBedMin" | null =
+    wasoMin != null ? "wasoMin" : (awakeInBedMin != null ? "awakeInBedMin" : null);
+  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && awakeFragmentMin != null)
+    ? clamp(100 * (1 - awakeFragmentMin / timeInBedMin), 0, 100)
     : null;
+
+  const sleepContinuity: number | null = sleepContinuityPct != null ? sleepContinuityPct / 100 : null;
 
   if (hasStages && estimatedSleepMin != null && estimatedSleepMin > 0) {
     remPct = Math.round((stageRem / estimatedSleepMin) * 1000) / 10;
@@ -434,6 +447,9 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepDebtMin,
     sleepDeltaMin,
     sleepAdequacyScore,
+    sleepEfficiencyPct,
+    sleepContinuityPct,
+    continuitySource,
     sleepEfficiencyEst,
     fitbitSleepMinutes: timeAsleepMin,
     napMinutes: napMin,
