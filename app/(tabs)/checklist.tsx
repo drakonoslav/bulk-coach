@@ -898,13 +898,6 @@ export default function ChecklistScreen() {
 
               {sectionHeader("Discipline / Adherence", "checkbox-outline", "#818CF8")}
 
-              {sigRow("Alignment", sigText(
-                hasAlignment ? `${(sa!.alignmentScore!).toFixed(2)} / 100.00` : "\u2014 no observed times",
-                hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
-              ))}
-
-              {hasAlignment && sigRow("Timing", sigText(sa!.deviationLabel, Colors.textSecondary))}
-
               {sigRow("Bedtime drift",
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: (adh?.bedtimeDriftLateNights7d ?? 0) >= 3 ? "#EF4444" : Colors.textSecondary }}>
@@ -930,6 +923,39 @@ export default function ChecklistScreen() {
                   )}
                 </View>
               )}
+
+              {sectionHeader("Schedule Stability", "calendar-outline", "#60A5FA")}
+
+              {sigRow("Alignment", sigText(
+                hasAlignment ? `${(sa!.alignmentScore!).toFixed(2)} / 100.00` : "\u2014 no observed times",
+                hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+              ))}
+
+              {(() => {
+                const ss = readiness.scheduleStability;
+                const cs = ss?.scheduleConsistencyScore;
+                if (cs == null) return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  {sigText("\u2014", Colors.textTertiary)}
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>need \u22654 valid days</Text>
+                </View>);
+                return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  {sigText(`${cs.toFixed(2)} / 100.00`, cs >= 70 ? "#34D399" : cs >= 40 ? "#FBBF24" : "#EF4444")}
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>(SD {ss!.scheduleConsistencySdMin?.toFixed(1)}m, n={ss!.scheduleConsistencyNSamples})</Text>
+                </View>);
+              })()}
+
+              {(() => {
+                const ss = readiness.scheduleStability;
+                const rs = ss?.scheduleRecoveryScore;
+                if (rs == null) return sigRow("Recovery", sigText("\u2014", Colors.textTertiary));
+                const secText = !ss!.recoveryEventFound
+                  ? "no drift event in last 14d"
+                  : `event ${ss!.recoveryEventDriftMag0?.toFixed(0)}m \u2192 next avg ${ss!.recoveryFollowAvgDriftMag?.toFixed(0)}m (k=${ss!.recoveryFollowDaysK})`;
+                return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  {sigText(`${rs.toFixed(2)} / 100.00`, rs >= 70 ? "#34D399" : rs >= 40 ? "#FBBF24" : "#EF4444")}
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{secText}</Text>
+                </View>);
+              })()}
 
               {sigRow("Cardio adherence", (() => {
                 const actual = adh?.actualCardioMin;
