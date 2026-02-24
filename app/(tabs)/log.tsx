@@ -1221,7 +1221,7 @@ export default function LogScreen() {
                 style={styles.timeInput}
                 value={actualBedTime}
                 onChangeText={setActualBedTime}
-                placeholder="22:15"
+                placeholder="21:45"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />
@@ -1233,7 +1233,7 @@ export default function LogScreen() {
                 style={styles.timeInput}
                 value={actualWakeTime}
                 onChangeText={setActualWakeTime}
-                placeholder="05:45"
+                placeholder="05:30"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />

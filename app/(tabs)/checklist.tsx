@@ -972,6 +972,11 @@ export default function ChecklistScreen() {
                     </Pressable>
                     {debugSchedExpanded && (
                       <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Scoring Inputs</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`planBed = ${saD?.plannedBedTime ?? "—"}  planWake = ${saD?.plannedWakeTime ?? "—"}\nactualBed = ${saD?.observedBedLocal ?? "—"}  actualWake = ${saD?.observedWakeLocal ?? "—"}\nplannedSleepMin = ${sb?.plannedSleepMin ?? "—"}  TIB = ${sb?.timeInBedMin ?? "—"}  TST = ${sb?.estimatedSleepMin ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
                           {`bedDevMin = ${saD?.bedDeviationMin?.toFixed(2) ?? "—"}\nwakeDevMin = ${saD?.wakeDeviationMin?.toFixed(2) ?? "—"}\nbedPenaltyMin = abs(bedDev) = ${saD?.bedPenaltyMin?.toFixed(2) ?? "—"}\nwakePenaltyMin = abs(wakeDev) = ${saD?.wakePenaltyMin?.toFixed(2) ?? "—"}\ntotalPenaltyMin = clamp(bed+wake, 0, 180) = ${saD?.totalPenaltyMin?.toFixed(2) ?? "—"}\nalignmentScore = ${saD?.alignmentScore?.toFixed(2) ?? "—"}`}

@@ -9,7 +9,7 @@ import {
 } from "../lib/sleep-timing";
 
 const DEFAULT_USER_ID = 'local_default';
-const DEFAULT_PLAN_BED = "22:30";
+const DEFAULT_PLAN_BED = "21:45";
 const DEFAULT_PLAN_WAKE = "05:30";
 
 function toMin(t: string): number {

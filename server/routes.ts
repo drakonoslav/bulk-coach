@@ -1358,7 +1358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const schedStab = await computeScheduleStability(
         date,
-        sa?.plannedBedTime ?? "22:30",
+        sa?.plannedBedTime ?? "21:45",
         sa?.plannedWakeTime ?? "05:30",
         userId,
       );
@@ -1414,7 +1414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sleepBlock = await computeSleepBlock(date, userId);
       const sa = sleepBlock?.sleepAlignment ?? null;
 
-      const plannedBed = sa?.plannedBedTime ?? "22:30";
+      const plannedBed = sa?.plannedBedTime ?? "21:45";
       const plannedWake = sa?.plannedWakeTime ?? "05:30";
       const actualBed = sa?.observedBedLocal ?? null;
       const actualWake = sa?.observedWakeLocal ?? null;
@@ -2035,7 +2035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         schedStabResult = await computeScheduleStability(
           date,
-          saBlock?.plannedBedTime ?? "22:30",
+          saBlock?.plannedBedTime ?? "21:45",
           saBlock?.plannedWakeTime ?? "05:30",
           userId,
         );
