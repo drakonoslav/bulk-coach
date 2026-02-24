@@ -19,6 +19,8 @@ Core logic is modularized into several engines and modules:
 - **Muscle Planner**: Manages a 17-muscle-group taxonomy with weekly volume tracking and deficit-based isolation target picking respecting readiness.
 - **Day Classifier**: Deterministically classifies day states (LEAN_GAIN, CUT, RECOMP, DELOAD, SUPPRESSED) using weight trends, recovery signals, and training load.
 - **Adherence Metrics**: Modules for single-day and range-based adherence tracking, including bedtime/wake drift and training adherence.
+- **Cardio Regulation Engine**: Unified 3×2 regulation architecture for cardio. Schedule Stability: alignment (start time deviation from planned), consistency (SD of start times across 7 sessions), recovery (return to schedule after drift event). Outcome: adequacy (100×actual/planned, capped 110), efficiency (100×zone2Min/sessionDuration), continuity (100×(1−outOfZone/sessionDuration)). Default schedule: 06:00–06:40 (40 min). File: `server/cardio-regulation.ts`.
+- **Lift Regulation Engine**: Unified 3×2 regulation architecture for lifting. Schedule Stability: alignment, consistency, recovery (identical logic to cardio). Outcome: adequacy (100×actualMin/plannedMin, capped 110), efficiency (not_available—future: activeLiftingTime/sessionDuration), continuity (not_available—future: restInterval variance). Default schedule: 17:00–18:15 (75 min). File: `server/lift-regulation.ts`.
 - **Health Data Adapters**: Modules for translating data from Fitbit, Apple HealthKit, and Polar devices into the canonical format, supporting exercises, vitals, and sleep.
 - **Backup Module**: Provides versioned export/import functionality with schema migration safety.
 - **Fitbit Takeout Parser**: Handles parsing Google Takeout ZIP files for Fitbit data.

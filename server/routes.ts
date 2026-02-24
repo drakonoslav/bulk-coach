@@ -75,6 +75,8 @@ import { exportBackup, importBackup } from "./backup";
 import { computeDrift7d, computePrimaryDriver } from "./adherence-metrics";
 import { computeRangeAdherence } from "./adherence-metrics-range";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
+import { computeCardioBlock } from "./cardio-regulation";
+import { computeLiftBlock } from "./lift-regulation";
 import {
   upsertCalorieDecision,
   getCalorieDecisions,
@@ -1327,11 +1329,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         d.setUTCDate(d.getUTCDate() - 7);
         return d.toISOString().slice(0, 10);
       })();
-      const [sleepBlock, sleepTrending, drift, rangeAdh] = await Promise.all([
+      const [sleepBlock, sleepTrending, drift, rangeAdh, cardioBlock, liftBlock] = await Promise.all([
         computeSleepBlock(date, userId),
         computeSleepTrending(date, userId),
         computeDrift7d(date, userId),
         computeRangeAdherence(adhLookbackStart, date, userId),
+        computeCardioBlock(date, userId),
+        computeLiftBlock(date, userId),
       ]);
       let dayAdh = rangeAdh.get(date) ?? null;
       const hasCardioLift = dayAdh?.actualCardioMin != null || dayAdh?.actualLiftMin != null;
@@ -1396,6 +1400,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         primaryDriver,
         scheduleStability: schedStab,
+        cardioBlock,
+        liftBlock,
         placeholders: {
           mealTimingTracked: false,
         },

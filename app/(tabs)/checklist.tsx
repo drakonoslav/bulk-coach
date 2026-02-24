@@ -96,6 +96,10 @@ export default function ChecklistScreen() {
   }>>([]);
   const [debugSleepExpanded, setDebugSleepExpanded] = useState(false);
   const [debugSchedExpanded, setDebugSchedExpanded] = useState(false);
+  const [debugCardioSchedExpanded, setDebugCardioSchedExpanded] = useState(false);
+  const [debugCardioOutcomeExpanded, setDebugCardioOutcomeExpanded] = useState(false);
+  const [debugLiftSchedExpanded, setDebugLiftSchedExpanded] = useState(false);
+  const [debugLiftOutcomeExpanded, setDebugLiftOutcomeExpanded] = useState(false);
   const [readiness, setReadiness] = useState<{
     readinessScore: number;
     readinessTier: string;
@@ -997,37 +1001,175 @@ export default function ChecklistScreen() {
                 );
               })()}
 
-              {sigRow("Cardio adherence", (() => {
-                const actual = adh?.actualCardioMin;
-                const planned = adh?.plannedCardioMin ?? 40;
-                if (actual == null) return sigText("Not logged", Colors.textTertiary);
-                const diff = actual - planned;
-                const diffStr = diff > 0 ? `+${diff}m` : diff < 0 ? `${diff}m` : "0m";
-                const color = Math.abs(diff) <= 5 ? "#34D399" : diff > 0 ? "#EF4444" : "#FBBF24";
-                return (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{actual}</Text>
-                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ {planned}m</Text>
-                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color }}>({diffStr})</Text>
-                  </View>
-                );
-              })())}
+              {sectionHeader("Cardio Schedule", "heart-outline", "#F87171")}
 
-              {sigRow("Lift adherence", (() => {
-                const actual = adh?.actualLiftMin;
-                const planned = adh?.plannedLiftMin ?? 75;
-                if (actual == null) return sigText("Not logged", Colors.textTertiary);
-                const diff = actual - planned;
-                const diffStr = diff > 0 ? `+${diff}m` : diff < 0 ? `${diff}m` : "0m";
-                const color = Math.abs(diff) <= 5 ? "#34D399" : diff > 0 ? "#EF4444" : "#FBBF24";
+              {(() => {
+                const cs = readiness.cardioBlock?.scheduleStability;
+                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                 return (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{actual}</Text>
-                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ {planned}m</Text>
-                    <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color }}>({diffStr})</Text>
+                  <View>
+                    {sigRow("Alignment", sigText(
+                      cs?.alignmentScore != null ? `${cs.alignmentScore.toFixed(2)}` : "—",
+                      scoreColor(cs?.alignmentScore ?? null),
+                    ))}
+                    {sigRow("Consistency", sigText(
+                      cs?.consistencyScore != null ? `${cs.consistencyScore.toFixed(2)}` : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
+                      scoreColor(cs?.consistencyScore ?? null),
+                    ))}
+                    {sigRow("Recovery", sigText(
+                      cs?.recoveryScore != null ? `${cs.recoveryScore.toFixed(2)}` : "—",
+                      scoreColor(cs?.recoveryScore ?? null),
+                    ))}
+                    <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
+                      <Ionicons name={debugCardioSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F87171" />
+                    </Pressable>
+                    {debugCardioSchedExpanded && (
+                      <View style={{ backgroundColor: "#F8717108", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`planned = ${cs?.plannedStart ?? "—"}\nactual = ${cs?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${cs?.alignmentPenaltyMin?.toFixed(2) ?? "—"} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${cs?.alignmentScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`nSessions = ${cs?.consistencyNSessions ?? 0}\nsdMin = ${cs?.consistencySdMin?.toFixed(2) ?? "—"}\ndriftMags = [${(cs?.debugDriftMags ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${cs?.consistencyScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`eventFound = ${cs?.recoveryEventFound ?? false}\neventSize = ${cs?.recoveryEventDriftMag0?.toFixed(2) ?? "—"} min\nkDays = ${cs?.recoveryFollowDaysK ?? "—"}\npostEventAvg = ${cs?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecovery = ${cs?.recoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${cs?.recoveryConfidence ?? "—"}`}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 );
-              })())}
+              })()}
+
+              {sectionHeader("Cardio Outcome", "heart-outline", "#F87171")}
+
+              {(() => {
+                const co = readiness.cardioBlock?.outcome;
+                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
+                return (
+                  <View>
+                    {sigRow("Adequacy", sigText(
+                      co?.adequacyScore != null ? `${co.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
+                      scoreColor(co?.adequacyScore ?? null),
+                    ))}
+                    {sigRow("Efficiency", sigText(
+                      co?.efficiencyScore != null ? `${co.efficiencyScore.toFixed(2)}%` : "— no zone data",
+                      scoreColor(co?.efficiencyScore ?? null),
+                    ))}
+                    {sigRow("Continuity", sigText(
+                      co?.continuityScore != null ? `${co.continuityScore.toFixed(2)}%` : "— no zone data",
+                      scoreColor(co?.continuityScore ?? null),
+                    ))}
+                    <Pressable onPress={() => setDebugCardioOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Outcome</Text>
+                      <Ionicons name={debugCardioOutcomeExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F87171" />
+                    </Pressable>
+                    {debugCardioOutcomeExpanded && (
+                      <View style={{ backgroundColor: "#F8717108", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`planned = ${co?.plannedDurationMin ?? "—"} min\nactual = ${co?.actualDurationMin ?? "—"} min\nadequacy = clamp(100×actual/planned, 0, 110) = ${co?.adequacyScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`zone2Min = ${co?.zone2Min ?? "—"}\nefficiency = clamp(100×zone2/actual, 0, 100) = ${co?.efficiencyScore?.toFixed(2) ?? "—"} [src=${co?.efficiencySource ?? "—"}]`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`minutesOutOfZone = ${co?.minutesOutOfZone ?? "—"}\ncontinuity = clamp(100×(1−outOfZone/actual), 0, 100) = ${co?.continuityScore?.toFixed(2) ?? "—"} [src=${co?.continuitySource ?? "—"}]`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
+              {sectionHeader("Lift Schedule", "barbell-outline", "#F59E0B")}
+
+              {(() => {
+                const ls = readiness.liftBlock?.scheduleStability;
+                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
+                return (
+                  <View>
+                    {sigRow("Alignment", sigText(
+                      ls?.alignmentScore != null ? `${ls.alignmentScore.toFixed(2)}` : "—",
+                      scoreColor(ls?.alignmentScore ?? null),
+                    ))}
+                    {sigRow("Consistency", sigText(
+                      ls?.consistencyScore != null ? `${ls.consistencyScore.toFixed(2)}` : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
+                      scoreColor(ls?.consistencyScore ?? null),
+                    ))}
+                    {sigRow("Recovery", sigText(
+                      ls?.recoveryScore != null ? `${ls.recoveryScore.toFixed(2)}` : "—",
+                      scoreColor(ls?.recoveryScore ?? null),
+                    ))}
+                    <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
+                      <Ionicons name={debugLiftSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F59E0B" />
+                    </Pressable>
+                    {debugLiftSchedExpanded && (
+                      <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`planned = ${ls?.plannedStart ?? "—"}\nactual = ${ls?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${ls?.alignmentPenalty?.toFixed(2) ?? "—"} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${ls?.alignmentScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`nSessions = ${ls?.consistencyNSamples ?? 0}\nsdMin = ${ls?.consistencySdMin?.toFixed(2) ?? "—"}\nstartMins7d = [${(ls?.debugStartMins7d ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${ls?.consistencyScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`eventFound = ${ls?.recoveryEventFound ?? false}\neventSize = ${ls?.recoveryEventDriftMag0?.toFixed(2) ?? "—"} min\nkDays = ${ls?.recoveryFollowDaysK ?? "—"}\npostEventAvg = ${ls?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecovery = ${ls?.recoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${ls?.recoveryConfidence ?? "—"}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
+              {sectionHeader("Lift Outcome", "barbell-outline", "#F59E0B")}
+
+              {(() => {
+                const lo = readiness.liftBlock?.outcome;
+                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
+                return (
+                  <View>
+                    {sigRow("Adequacy", sigText(
+                      lo?.adequacyScore != null ? `${lo.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
+                      scoreColor(lo?.adequacyScore ?? null),
+                    ))}
+                    {sigRow("Efficiency", sigText(
+                      lo?.efficiencyScore != null ? `${lo.efficiencyScore.toFixed(2)}%` : "— not available",
+                      scoreColor(lo?.efficiencyScore ?? null),
+                    ))}
+                    {sigRow("Continuity", sigText(
+                      lo?.continuityScore != null ? `${lo.continuityScore.toFixed(2)}%` : "— not available",
+                      scoreColor(lo?.continuityScore ?? null),
+                    ))}
+                    <Pressable onPress={() => setDebugLiftOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Outcome</Text>
+                      <Ionicons name={debugLiftOutcomeExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F59E0B" />
+                    </Pressable>
+                    {debugLiftOutcomeExpanded && (
+                      <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`planned = ${lo?.plannedMin ?? "—"} min\nactual = ${lo?.actualMin ?? "—"} min\nadequacy = clamp(100×actual/planned, 0, 110) = ${lo?.adequacyScore?.toFixed(2) ?? "—"}`}
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+                          {`efficiency = ${lo?.efficiencySource ?? "not_available"}\ncontinuity = ${lo?.continuitySource ?? "not_available"}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
 
               {sigRow("Meal timing",
                 sigText(
