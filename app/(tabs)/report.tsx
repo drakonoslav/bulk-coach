@@ -1585,7 +1585,7 @@ export default function ReportScreen() {
                     {sectionHeader("Discipline / Adherence", "checkbox-outline", "#818CF8")}
 
                     {sigRow("Alignment", sigText(
-                      hasAlignment ? `${sa!.alignmentScore} / 100` : "\u2014 no observed times",
+                      hasAlignment ? `${(sa!.alignmentScore!).toFixed(2)} / 100.00` : "\u2014 no observed times",
                       hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
                     ))}
 
@@ -1660,7 +1660,7 @@ export default function ReportScreen() {
                     {sectionHeader("Sleep Outcome", "moon-outline", "#60A5FA")}
 
                     {sigRow("Adequacy", sigText(
-                      hasAdequacy ? `${sb!.sleepAdequacyScore} / 100${shortfallStr}` : "\u2014 no sleep data",
+                      hasAdequacy ? `${(sb!.sleepAdequacyScore!).toFixed(2)} / 100.00${shortfallStr}` : "\u2014 no sleep data",
                       hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
                     ))}
 
@@ -1672,7 +1672,7 @@ export default function ReportScreen() {
                     {(() => {
                       const eff = sb?.sleepEfficiency ?? sb?.sleepEfficiencyEst ?? null;
                       return eff != null ? sigRow("Efficiency", sigText(
-                        `${Math.round(eff * 100)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
+                        `${(eff * 100).toFixed(2)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
                         eff >= 0.85 ? "#34D399" : eff >= 0.70 ? "#FBBF24" : "#EF4444",
                       ), sb?.awakeInBedMin == null) : null;
                     })()}
@@ -1716,8 +1716,8 @@ export default function ReportScreen() {
                       const color = score >= 80 ? "#DC2626" : score >= 60 ? "#F87171" : score >= 40 ? "#F59E0B" : score >= 20 ? "#34D399" : Colors.textSecondary;
                       return (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score}</Text>
-                          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100</Text>
+                          <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score.toFixed(2)}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100.00</Text>
                           <View style={{ backgroundColor: color + "20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
                             <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{bucket}</Text>
                           </View>
