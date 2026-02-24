@@ -235,6 +235,12 @@ export default function LogScreen() {
   const [liftStartTime, setLiftStartTime] = useState("");
   const [liftEndTime, setLiftEndTime] = useState("");
   const [liftMin, setLiftMin] = useState("");
+  const [liftWorkingMin, setLiftWorkingMin] = useState("");
+  const [zone1, setZone1] = useState("");
+  const [zone2, setZone2] = useState("");
+  const [zone3, setZone3] = useState("");
+  const [zone4, setZone4] = useState("");
+  const [zone5, setZone5] = useState("");
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
   const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
   const [perfNote, setPerfNote] = useState("");
