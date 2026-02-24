@@ -1406,6 +1406,170 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/readiness_audit", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+
+      const sleepBlock = await computeSleepBlock(date, userId);
+      const sa = sleepBlock?.sleepAlignment ?? null;
+
+      const plannedBed = sa?.plannedBedTime ?? "22:30";
+      const plannedWake = sa?.plannedWakeTime ?? "05:30";
+      const actualBed = sa?.observedBedLocal ?? null;
+      const actualWake = sa?.observedWakeLocal ?? null;
+
+      const toMin = (t: string): number => {
+        const s = t.trim();
+        const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (ampm) {
+          let h = parseInt(ampm[1], 10);
+          const m = parseInt(ampm[2], 10);
+          const period = ampm[3].toUpperCase();
+          if (period === "AM" && h === 12) h = 0;
+          if (period === "PM" && h !== 12) h += 12;
+          return h * 60 + m;
+        }
+        const iso = s.match(/T(\d{2}):(\d{2})/);
+        if (iso) return parseInt(iso[1], 10) * 60 + parseInt(iso[2], 10);
+        const hm = s.match(/^(\d{1,2}):(\d{2})/);
+        if (hm) return parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10);
+        return 0;
+      };
+      const circDelta = (act: number, plan: number) => {
+        let d = act - plan;
+        while (d > 720) d -= 1440;
+        while (d < -720) d += 1440;
+        return d;
+      };
+
+      const plannedBedMin = toMin(plannedBed);
+      const plannedWakeMin = toMin(plannedWake);
+      const actualBedMin = actualBed ? toMin(actualBed) : null;
+      const actualWakeMin = actualWake ? toMin(actualWake) : null;
+
+      const bedDevRaw = actualBedMin != null ? circDelta(actualBedMin, plannedBedMin) : null;
+      const wakeDevRaw = actualWakeMin != null ? circDelta(actualWakeMin, plannedWakeMin) : null;
+
+      const bedPenalty = bedDevRaw != null ? Math.abs(bedDevRaw) : null;
+      const wakePenalty = wakeDevRaw != null ? Math.abs(wakeDevRaw) : null;
+      const totalPenalty = bedPenalty != null && wakePenalty != null
+        ? Math.max(0, Math.min(180, bedPenalty + wakePenalty)) : null;
+      const alignScore = totalPenalty != null
+        ? Math.round(100 - (totalPenalty * (100 / 180))) : null;
+
+      const schedStab = await computeScheduleStability(date, plannedBed, plannedWake, userId);
+
+      const { rows: driftRows } = await pool.query(
+        `SELECT day, actual_bed_time, actual_wake_time
+         FROM daily_log
+         WHERE user_id = $1 AND day <= $2
+           AND day >= ($2::date - 21)::text
+           AND actual_bed_time IS NOT NULL
+           AND actual_wake_time IS NOT NULL
+         ORDER BY day DESC
+         LIMIT 14`,
+        [userId, date],
+      );
+
+      const allDays = driftRows.map((r: any) => {
+        const bd = circDelta(toMin(r.actual_bed_time), plannedBedMin);
+        const wd = circDelta(toMin(r.actual_wake_time), plannedWakeMin);
+        const mag = (Math.abs(bd) + Math.abs(wd)) / 2;
+        return { date: r.day, bedDevMin: Math.round(bd * 100) / 100, wakeDevMin: Math.round(wd * 100) / 100, driftMag: Math.round(mag * 100) / 100 };
+      });
+      const last7 = allDays.slice(0, 7);
+
+      const stddevPop = (arr: number[]) => {
+        if (arr.length === 0) return 0;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        return Math.sqrt(arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length);
+      };
+
+      const mags7 = last7.map(d => d.driftMag);
+      const sd = mags7.length >= 4 ? stddevPop(mags7) : null;
+      const consistencyScore = sd != null ? Math.max(0, Math.min(100, Math.round(100 * (1 - sd / 60)))) : null;
+
+      const allSorted = [...allDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      let eventIdx = -1;
+      for (let i = allSorted.length - 1; i >= 0; i--) {
+        if (allSorted[i].driftMag >= 45) { eventIdx = i; break; }
+      }
+
+      let recoveryAudit: any;
+      if (eventIdx === -1) {
+        recoveryAudit = {
+          eventDetection: { threshold: 45, scannedDays: allSorted.length, found: false },
+          eventIdx: null, eventDate: null, eventSizeMin: null,
+          postEventDays: [], kDaysUsed: null, postEventAvgDevMin: null,
+          recoveryScore: 100, confidence: null,
+        };
+      } else {
+        const ev = allSorted[eventIdx];
+        const available = allSorted.slice(eventIdx + 1);
+        const follow = available.slice(0, Math.min(4, available.length));
+        const k = follow.length;
+        const avgFollow = k > 0 ? follow.reduce((s, d) => s + d.driftMag, 0) / k : null;
+        const improvement = avgFollow != null ? (ev.driftMag - avgFollow) / ev.driftMag : null;
+        const rScore = improvement != null ? Math.max(0, Math.min(100, Math.round(100 * improvement))) : null;
+        const conf: "full" | "low" | null = k >= 4 ? "full" : "low";
+
+        recoveryAudit = {
+          eventDetection: { threshold: 45, scannedDays: allSorted.length, found: true },
+          eventIdx, eventDate: ev.date, eventSizeMin: ev.driftMag,
+          postEventDays: follow.map(d => ({ date: d.date, driftMag: d.driftMag })),
+          kDaysUsed: k, postEventAvgDevMin: avgFollow != null ? Math.round(avgFollow * 100) / 100 : null,
+          recoveryScore: rScore, confidence: conf,
+        };
+      }
+
+      const uiPayload = {
+        sleepAlignment: sa,
+        scheduleStability: schedStab,
+        sleepBlock_continuity: sleepBlock?.sleepContinuity ?? null,
+        sleepBlock_adequacy: sleepBlock?.sleepAdequacyScore ?? null,
+        sleepBlock_efficiency: sleepBlock?.sleepEfficiency ?? null,
+        sleepBlock_plannedSleepMin: sleepBlock?.plannedSleepMin ?? null,
+        sleepBlock_awakeInBedMin: sleepBlock?.awakeInBedMin ?? null,
+      };
+
+      res.json({
+        date,
+        inputs: {
+          plannedBed, plannedWake,
+          plannedBedMin, plannedWakeMin,
+          actualBed, actualWake,
+          actualBedMin, actualWakeMin,
+        },
+        deviations: {
+          bedDevMin_circularWrap: bedDevRaw,
+          wakeDevMin_circularWrap: wakeDevRaw,
+          formula: "circularDelta = actual - planned; while >720 subtract 1440; while <-720 add 1440",
+        },
+        alignment: {
+          bedPenaltyMin: bedPenalty,
+          wakePenaltyMin: wakePenalty,
+          totalPenaltyMin: totalPenalty,
+          alignmentScore: alignScore,
+          formula: "bedPenalty=abs(bedDev), wakePenalty=abs(wakeDev), total=clamp(bed+wake, 0, 180), score=round(100 - total×100/180)",
+        },
+        consistency: {
+          last7days: last7,
+          driftMags7d: mags7,
+          sdMin: sd != null ? Math.round(sd * 100) / 100 : null,
+          nDays: last7.length,
+          consistencyScore,
+          formula: "driftMag=(abs(bedDev)+abs(wakeDev))/2, sd=stddevPop(mags), score=clamp(round(100×(1-sd/60)), 0, 100)",
+        },
+        recovery: recoveryAudit,
+        uiPayload,
+      });
+    } catch (err: unknown) {
+      console.error("readiness_audit error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/readiness/range", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
