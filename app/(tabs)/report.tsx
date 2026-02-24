@@ -14,6 +14,7 @@ import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadDashboard } from "@/lib/entry-storage";
 import { getApiUrl, authFetch } from "@/lib/query-client";
+import { fmtScore100, fmtScore110, fmtPct, fmtRaw, scoreColor as sharedScoreColor } from "@/lib/format";
 import {
   DailyEntry,
   weeklyDelta,
@@ -1619,8 +1620,8 @@ export default function ReportScreen() {
                     {sectionHeader("Schedule Stability", "calendar-outline", "#60A5FA")}
 
                     {sigRow("Alignment", sigText(
-                      hasAlignment ? `${(sa!.alignmentScore!).toFixed(2)} / 100.00` : "\u2014 no observed times",
-                      hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+                      hasAlignment ? fmtScore100(sa!.alignmentScore!) : "\u2014 no observed times",
+                      hasAlignment ? sharedScoreColor(sa!.alignmentScore!, { good: 80, warn: 50 }) : Colors.textTertiary,
                     ))}
 
                     {(() => {
@@ -1631,7 +1632,7 @@ export default function ReportScreen() {
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>need \u22654 valid days</Text>
                       </View>);
                       return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        {sigText(`${cs.toFixed(2)} / 100.00`, cs >= 70 ? "#34D399" : cs >= 40 ? "#FBBF24" : "#EF4444")}
+                        {sigText(fmtScore100(cs), sharedScoreColor(cs, { good: 70, warn: 40 }))}
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>(SD {ss!.scheduleConsistencySdMin?.toFixed(1)}m, n={ss!.scheduleConsistencyNSamples})</Text>
                       </View>);
                     })()}
@@ -1645,7 +1646,7 @@ export default function ReportScreen() {
                         : `event ${ss!.recoveryEventDriftMag0?.toFixed(0)}m \u2192 next avg ${ss!.recoveryFollowAvgDriftMag?.toFixed(0)}m (k=${ss!.recoveryFollowDaysK})`;
                       const conf = ss!.recoveryConfidence;
                       return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        {sigText(`${rs.toFixed(2)} / 100.00`, rs >= 70 ? "#34D399" : rs >= 40 ? "#FBBF24" : "#EF4444")}
+                        {sigText(fmtScore100(rs), sharedScoreColor(rs, { good: 70, warn: 40 }))}
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{secText}</Text>
                         {conf === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
                       </View>);
@@ -1691,20 +1692,19 @@ export default function ReportScreen() {
 
                     {(() => {
                       const cs = readiness.cardioBlock?.scheduleStability;
-                      const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                       return (
                         <View>
                           {sigRow("Alignment", sigText(
-                            cs?.alignmentScore != null ? `${cs.alignmentScore.toFixed(2)}` : "—",
-                            scoreColor(cs?.alignmentScore ?? null),
+                            cs?.alignmentScore != null ? fmtRaw(cs.alignmentScore) : "—",
+                            sharedScoreColor(cs?.alignmentScore ?? null),
                           ))}
                           {sigRow("Consistency", sigText(
-                            cs?.consistencyScore != null ? `${cs.consistencyScore.toFixed(2)}` : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
-                            scoreColor(cs?.consistencyScore ?? null),
+                            cs?.consistencyScore != null ? fmtRaw(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
+                            sharedScoreColor(cs?.consistencyScore ?? null),
                           ))}
                           {sigRow("Recovery", sigText(
-                            cs?.recoveryScore != null ? `${cs.recoveryScore.toFixed(2)}` : "—",
-                            scoreColor(cs?.recoveryScore ?? null),
+                            cs?.recoveryScore != null ? fmtRaw(cs.recoveryScore) : "—",
+                            sharedScoreColor(cs?.recoveryScore ?? null),
                           ))}
                           <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
@@ -1736,20 +1736,19 @@ export default function ReportScreen() {
 
                     {(() => {
                       const co = readiness.cardioBlock?.outcome;
-                      const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                       return (
                         <View>
                           {sigRow("Adequacy", sigText(
-                            co?.adequacyScore != null ? `${co.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
-                            scoreColor(co?.adequacyScore ?? null),
+                            co?.adequacyScore != null ? fmtScore110(co.adequacyScore) : "— not logged",
+                            sharedScoreColor(co?.adequacyScore ?? null),
                           ))}
                           {sigRow("Efficiency", sigText(
-                            co?.efficiencyScore != null ? `${co.efficiencyScore.toFixed(2)}%` : "— no zone data",
-                            scoreColor(co?.efficiencyScore ?? null),
+                            co?.efficiencyScore != null ? fmtPct(co.efficiencyScore) : "— no zone data",
+                            sharedScoreColor(co?.efficiencyScore ?? null),
                           ))}
                           {sigRow("Continuity", sigText(
-                            co?.continuityScore != null ? `${co.continuityScore.toFixed(2)}%` : "— no zone data",
-                            scoreColor(co?.continuityScore ?? null),
+                            co?.continuityScore != null ? fmtPct(co.continuityScore) : "— no zone data",
+                            sharedScoreColor(co?.continuityScore ?? null),
                           ))}
                           <Pressable onPress={() => setDebugCardioOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Outcome</Text>
@@ -1766,7 +1765,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`minutesOutOfZone = ${co?.minutesOutOfZone ?? "—"}\ncontinuity = clamp(100×(1−outOfZone/actual), 0, 100) = ${co?.continuityScore?.toFixed(2) ?? "—"} [src=${co?.continuitySource ?? "—"}]`}
+                                {`minutesOutOfZone = ${co?.minutesOutOfZone ?? "—"}\ncontinuity = clamp(100×(1−outOfZone/actual), 0, 100) = ${co?.continuityScore?.toFixed(2) ?? "—"} [src=${co?.continuityDenominator ?? co?.continuitySource ?? "—"}]`}
                               </Text>
                             </View>
                           )}
@@ -1778,20 +1777,19 @@ export default function ReportScreen() {
 
                     {(() => {
                       const ls = readiness.liftBlock?.scheduleStability;
-                      const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                       return (
                         <View>
                           {sigRow("Alignment", sigText(
-                            ls?.alignmentScore != null ? `${ls.alignmentScore.toFixed(2)}` : "—",
-                            scoreColor(ls?.alignmentScore ?? null),
+                            ls?.alignmentScore != null ? fmtRaw(ls.alignmentScore) : "—",
+                            sharedScoreColor(ls?.alignmentScore ?? null),
                           ))}
                           {sigRow("Consistency", sigText(
-                            ls?.consistencyScore != null ? `${ls.consistencyScore.toFixed(2)}` : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
-                            scoreColor(ls?.consistencyScore ?? null),
+                            ls?.consistencyScore != null ? fmtRaw(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
+                            sharedScoreColor(ls?.consistencyScore ?? null),
                           ))}
                           {sigRow("Recovery", sigText(
-                            ls?.recoveryScore != null ? `${ls.recoveryScore.toFixed(2)}` : "—",
-                            scoreColor(ls?.recoveryScore ?? null),
+                            ls?.recoveryScore != null ? fmtRaw(ls.recoveryScore) : "—",
+                            sharedScoreColor(ls?.recoveryScore ?? null),
                           ))}
                           <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
@@ -1823,20 +1821,19 @@ export default function ReportScreen() {
 
                     {(() => {
                       const lo = readiness.liftBlock?.outcome;
-                      const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                       return (
                         <View>
                           {sigRow("Adequacy", sigText(
-                            lo?.adequacyScore != null ? `${lo.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
-                            scoreColor(lo?.adequacyScore ?? null),
+                            lo?.adequacyScore != null ? fmtScore110(lo.adequacyScore) : "— not logged",
+                            sharedScoreColor(lo?.adequacyScore ?? null),
                           ))}
                           {sigRow("Efficiency", sigText(
-                            lo?.efficiencyScore != null ? `${lo.efficiencyScore.toFixed(2)}%` : "— not available",
-                            scoreColor(lo?.efficiencyScore ?? null),
+                            lo?.efficiencyScore != null ? fmtPct(lo.efficiencyScore) : "— not available",
+                            sharedScoreColor(lo?.efficiencyScore ?? null),
                           ))}
                           {sigRow("Continuity", sigText(
-                            lo?.continuityScore != null ? `${lo.continuityScore.toFixed(2)}%` : "— not available",
-                            scoreColor(lo?.continuityScore ?? null),
+                            lo?.continuityScore != null ? fmtPct(lo.continuityScore) : "— not available",
+                            sharedScoreColor(lo?.continuityScore ?? null),
                           ))}
                           <Pressable onPress={() => setDebugLiftOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Outcome</Text>
@@ -1849,7 +1846,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`efficiency = ${lo?.efficiencySource ?? "not_available"}\ncontinuity = ${lo?.continuitySource ?? "not_available"}`}
+                                {`efficiency = ${lo?.efficiencySource ?? "not_available"}\ncontinuity = ${lo?.continuityDenominator ?? lo?.continuitySource ?? "not_available"}`}
                               </Text>
                             </View>
                           )}
@@ -1868,8 +1865,8 @@ export default function ReportScreen() {
                     {sectionHeader("Sleep Outcome", "moon-outline", "#60A5FA")}
 
                     {sigRow("Adequacy", sigText(
-                      hasAdequacy ? `${(sb!.sleepAdequacyScore!).toFixed(2)} / 100.00${shortfallStr}` : "\u2014 no sleep data",
-                      hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+                      hasAdequacy ? `${fmtScore100(sb!.sleepAdequacyScore!)}${shortfallStr}` : "\u2014 no sleep data",
+                      hasAdequacy ? sharedScoreColor(sb!.sleepAdequacyScore!) : Colors.textTertiary,
                     ))}
 
                     {sigRow("Sleep delta", sigText(
@@ -1880,16 +1877,16 @@ export default function ReportScreen() {
                     {(() => {
                       const eff = sb?.sleepEfficiencyPct ?? null;
                       return eff != null ? sigRow("Efficiency", sigText(
-                        `${eff.toFixed(2)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
-                        eff >= 85 ? "#34D399" : eff >= 70 ? "#FBBF24" : "#EF4444",
+                        `${fmtPct(eff)}${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
+                        sharedScoreColor(eff, { good: 85, warn: 70 }),
                       ), sb?.awakeInBedMin == null) : null;
                     })()}
 
                     {(() => {
                       const cont = sb?.sleepContinuityPct ?? null;
                       return cont != null ? sigRow("Continuity", sigText(
-                        `${cont.toFixed(2)}%`,
-                        cont >= 85 ? "#34D399" : cont >= 70 ? "#FBBF24" : "#EF4444",
+                        fmtPct(cont),
+                        sharedScoreColor(cont, { good: 85, warn: 70 }),
                       )) : null;
                     })()}
 
@@ -1915,8 +1912,9 @@ export default function ReportScreen() {
                       const awake = sb.awakeInBedMin ?? 0;
                       const latency = sb.latencyMin ?? 0;
                       const waso = sb.wasoMin ?? 0;
-                      const contSrc = sb.continuitySource ?? "—";
-                      const fragVal = contSrc === "wasoMin" ? waso : awake;
+                      const adequacyRaw = planned > 0 ? (100 * tst / planned) : null;
+                      const efficiencyRaw = tib > 0 ? (100 * tst / tib) : null;
+                      const continuityRaw = tib > 0 ? (100 * (1 - awake / tib)) : null;
                       return (
                         <View>
                           <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1926,11 +1924,11 @@ export default function ReportScreen() {
                           {debugSleepExpanded && (
                             <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`plannedSleepMin = ${planned}\ntimeInBedMin (TIB) = ${tib}\ntimeAsleepMin (TST) = ${tst}\nawakeInBedMin = ${awake}\nlatencyMin = ${latency}\nwasoMin = ${waso}`}
+                                {`plannedSleepMin = ${planned}\ntimeInBedMin (TIB) = ${tib}\ntimeAsleepMin (TST) = ${tst}\nawakeInBedMin = ${awake}\nlatencyMin = ${latency}\nwasoMin = ${waso}\ncontinuityDenominator = TIB`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacy = 100 × TST/planned = 100 × ${tst}/${planned} = ${sb.sleepAdequacyScore?.toFixed(2) ?? "—"}\nefficiency = 100 × TST/TIB = 100 × ${tst}/${tib} = ${sb.sleepEfficiencyPct?.toFixed(2) ?? "—"}%\ncontinuity = 100 × (1 − ${contSrc}/${tib}) = 100 × (1 − ${fragVal}/${tib}) = ${sb.sleepContinuityPct?.toFixed(2) ?? "—"}% [src=${contSrc}]`}
+                                {`adequacyRaw = 100 × TST/planned = 100 × ${tst}/${planned} = ${adequacyRaw?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore100(sb.sleepAdequacyScore)}\nefficiencyRaw = 100 × TST/TIB = 100 × ${tst}/${tib} = ${efficiencyRaw?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(sb.sleepEfficiencyPct)}\ncontinuityRaw = 100 × (1 − awakeInBedMin/TIB) = 100 × (1 − ${awake}/${tib}) = ${continuityRaw?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(sb.sleepContinuityPct)}\ncontinuityDenominator = TIB`}
                               </Text>
                             </View>
                           )}

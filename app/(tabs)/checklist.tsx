@@ -18,6 +18,7 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
+import { fmtScore100, fmtScore110, fmtPct, fmtRaw, scoreColor } from "@/lib/format";
 
 function getTimeCategory(time: string): { icon: string; color: string } {
   const h = parseInt(time.split(":")[0], 10);
@@ -933,8 +934,8 @@ export default function ChecklistScreen() {
               {sectionHeader("Schedule Stability", "calendar-outline", "#60A5FA")}
 
               {sigRow("Alignment", sigText(
-                hasAlignment ? `${(sa!.alignmentScore!).toFixed(2)} / 100.00` : "\u2014 no observed times",
-                hasAlignment ? (sa!.alignmentScore! >= 80 ? "#34D399" : sa!.alignmentScore! >= 50 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+                hasAlignment ? fmtScore100(sa!.alignmentScore!) : "\u2014 no observed times",
+                hasAlignment ? scoreColor(sa!.alignmentScore!, { good: 80, warn: 50 }) : Colors.textTertiary,
               ))}
 
               {(() => {
@@ -945,7 +946,7 @@ export default function ChecklistScreen() {
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>need \u22654 valid days</Text>
                 </View>);
                 return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  {sigText(`${cs.toFixed(2)} / 100.00`, cs >= 70 ? "#34D399" : cs >= 40 ? "#FBBF24" : "#EF4444")}
+                  {sigText(fmtScore100(cs), scoreColor(cs, { good: 70, warn: 40 }))}
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>(SD {ss!.scheduleConsistencySdMin?.toFixed(1)}m, n={ss!.scheduleConsistencyNSamples})</Text>
                 </View>);
               })()}
@@ -959,7 +960,7 @@ export default function ChecklistScreen() {
                   : `event ${ss!.recoveryEventDriftMag0?.toFixed(0)}m \u2192 next avg ${ss!.recoveryFollowAvgDriftMag?.toFixed(0)}m (k=${ss!.recoveryFollowDaysK})`;
                 const conf = ss!.recoveryConfidence;
                 return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  {sigText(`${rs.toFixed(2)} / 100.00`, rs >= 70 ? "#34D399" : rs >= 40 ? "#FBBF24" : "#EF4444")}
+                  {sigText(fmtScore100(rs), scoreColor(rs, { good: 70, warn: 40 }))}
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{secText}</Text>
                   {conf === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
                 </View>);
@@ -978,7 +979,7 @@ export default function ChecklistScreen() {
                       <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Scoring Inputs</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`planBed = ${sb?.sources?.planBed?.value ?? "—"} [${sb?.sources?.planBed?.source ?? "?"}]\nplanWake = ${sb?.sources?.planWake?.value ?? "—"} [${sb?.sources?.planWake?.source ?? "?"}]\nactualBed = ${sb?.sources?.actualBed?.value ?? "—"} [${sb?.sources?.actualBed?.source ?? "?"}]\nactualWake = ${sb?.sources?.actualWake?.value ?? "—"} [${sb?.sources?.actualWake?.source ?? "?"}]\ndataDay = ${sb?.sources?.dataDay ?? "—"}\nplannedSleepMin = ${sb?.plannedSleepMin ?? "—"}\nTIB = ${sb?.sources?.tib?.valueMin ?? "—"} [${sb?.sources?.tib?.method ?? "?"}]\nTST = ${sb?.sources?.tst?.valueMin ?? "—"} [${sb?.sources?.tst?.method ?? "?"}]`}
+                          {`planBed = ${sb?.sources?.planBed?.value ?? "—"} [${sb?.sources?.planBed?.source ?? "?"}]\nplanWake = ${sb?.sources?.planWake?.value ?? "—"} [${sb?.sources?.planWake?.source ?? "?"}]\nactualBed = ${sb?.sources?.actualBed?.value ?? "—"} [${sb?.sources?.actualBed?.source ?? "?"}]\nactualWake = ${sb?.sources?.actualWake?.value ?? "—"} [${sb?.sources?.actualWake?.source ?? "?"}]\ndataDay = ${sb?.sources?.dataDay ?? "—"}\nplannedSleepMin = ${sb?.plannedSleepMin ?? "—"}\nTIB = ${sb?.sources?.tib?.valueMin ?? "—"} [${sb?.sources?.tib?.method ?? "?"}]\nTST = ${sb?.sources?.tst?.valueMin ?? "—"} [${sb?.sources?.tst?.method ?? "?"}]\ncontinuityDenominator = TIB`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
@@ -1005,20 +1006,19 @@ export default function ChecklistScreen() {
 
               {(() => {
                 const cs = readiness.cardioBlock?.scheduleStability;
-                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                 return (
                   <View>
                     {sigRow("Alignment", sigText(
-                      cs?.alignmentScore != null ? `${cs.alignmentScore.toFixed(2)}` : "—",
-                      scoreColor(cs?.alignmentScore ?? null),
+                      fmtRaw(cs?.alignmentScore),
+                      scoreColor(cs?.alignmentScore),
                     ))}
                     {sigRow("Consistency", sigText(
-                      cs?.consistencyScore != null ? `${cs.consistencyScore.toFixed(2)}` : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
-                      scoreColor(cs?.consistencyScore ?? null),
+                      cs?.consistencyScore != null ? fmtRaw(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
+                      scoreColor(cs?.consistencyScore),
                     ))}
                     {sigRow("Recovery", sigText(
-                      cs?.recoveryScore != null ? `${cs.recoveryScore.toFixed(2)}` : "—",
-                      scoreColor(cs?.recoveryScore ?? null),
+                      fmtRaw(cs?.recoveryScore),
+                      scoreColor(cs?.recoveryScore),
                     ))}
                     <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
@@ -1050,20 +1050,19 @@ export default function ChecklistScreen() {
 
               {(() => {
                 const co = readiness.cardioBlock?.outcome;
-                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                 return (
                   <View>
                     {sigRow("Adequacy", sigText(
-                      co?.adequacyScore != null ? `${co.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
-                      scoreColor(co?.adequacyScore ?? null),
+                      co?.adequacyScore != null ? fmtScore110(co.adequacyScore) : "— not logged",
+                      scoreColor(co?.adequacyScore),
                     ))}
                     {sigRow("Efficiency", sigText(
-                      co?.efficiencyScore != null ? `${co.efficiencyScore.toFixed(2)}%` : "— no zone data",
-                      scoreColor(co?.efficiencyScore ?? null),
+                      co?.efficiencyScore != null ? fmtPct(co.efficiencyScore) : "— no zone data",
+                      scoreColor(co?.efficiencyScore),
                     ))}
                     {sigRow("Continuity", sigText(
-                      co?.continuityScore != null ? `${co.continuityScore.toFixed(2)}%` : "— no zone data",
-                      scoreColor(co?.continuityScore ?? null),
+                      co?.continuityScore != null ? fmtPct(co.continuityScore) : "— no zone data",
+                      scoreColor(co?.continuityScore),
                     ))}
                     <Pressable onPress={() => setDebugCardioOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Outcome</Text>
@@ -1092,20 +1091,19 @@ export default function ChecklistScreen() {
 
               {(() => {
                 const ls = readiness.liftBlock?.scheduleStability;
-                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                 return (
                   <View>
                     {sigRow("Alignment", sigText(
-                      ls?.alignmentScore != null ? `${ls.alignmentScore.toFixed(2)}` : "—",
-                      scoreColor(ls?.alignmentScore ?? null),
+                      fmtRaw(ls?.alignmentScore),
+                      scoreColor(ls?.alignmentScore),
                     ))}
                     {sigRow("Consistency", sigText(
-                      ls?.consistencyScore != null ? `${ls.consistencyScore.toFixed(2)}` : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
-                      scoreColor(ls?.consistencyScore ?? null),
+                      ls?.consistencyScore != null ? fmtRaw(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
+                      scoreColor(ls?.consistencyScore),
                     ))}
                     {sigRow("Recovery", sigText(
-                      ls?.recoveryScore != null ? `${ls.recoveryScore.toFixed(2)}` : "—",
-                      scoreColor(ls?.recoveryScore ?? null),
+                      fmtRaw(ls?.recoveryScore),
+                      scoreColor(ls?.recoveryScore),
                     ))}
                     <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
@@ -1137,20 +1135,19 @@ export default function ChecklistScreen() {
 
               {(() => {
                 const lo = readiness.liftBlock?.outcome;
-                const scoreColor = (v: number | null) => v == null ? Colors.textTertiary : v >= 90 ? "#34D399" : v >= 70 ? "#FBBF24" : "#EF4444";
                 return (
                   <View>
                     {sigRow("Adequacy", sigText(
-                      lo?.adequacyScore != null ? `${lo.adequacyScore.toFixed(2)} / 110.00` : "— not logged",
-                      scoreColor(lo?.adequacyScore ?? null),
+                      lo?.adequacyScore != null ? fmtScore110(lo.adequacyScore) : "— not logged",
+                      scoreColor(lo?.adequacyScore),
                     ))}
                     {sigRow("Efficiency", sigText(
-                      lo?.efficiencyScore != null ? `${lo.efficiencyScore.toFixed(2)}%` : "— not available",
-                      scoreColor(lo?.efficiencyScore ?? null),
+                      lo?.efficiencyScore != null ? fmtPct(lo.efficiencyScore) : "— not available",
+                      scoreColor(lo?.efficiencyScore),
                     ))}
                     {sigRow("Continuity", sigText(
-                      lo?.continuityScore != null ? `${lo.continuityScore.toFixed(2)}%` : "— not available",
-                      scoreColor(lo?.continuityScore ?? null),
+                      lo?.continuityScore != null ? fmtPct(lo.continuityScore) : "— not available",
+                      scoreColor(lo?.continuityScore),
                     ))}
                     <Pressable onPress={() => setDebugLiftOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Outcome</Text>
@@ -1182,8 +1179,8 @@ export default function ChecklistScreen() {
               {sectionHeader("Sleep Outcome", "moon-outline", "#60A5FA")}
 
               {sigRow("Adequacy", sigText(
-                hasAdequacy ? `${(sb!.sleepAdequacyScore!).toFixed(2)} / 100.00${shortfallStr}` : "\u2014 no sleep data",
-                hasAdequacy ? (sb!.sleepAdequacyScore! >= 90 ? "#34D399" : sb!.sleepAdequacyScore! >= 70 ? "#FBBF24" : "#EF4444") : Colors.textTertiary,
+                hasAdequacy ? `${fmtScore100(sb!.sleepAdequacyScore!)}${shortfallStr}` : "\u2014 no sleep data",
+                hasAdequacy ? scoreColor(sb!.sleepAdequacyScore!) : Colors.textTertiary,
               ))}
 
               {sigRow("Sleep delta", sigText(
@@ -1194,16 +1191,16 @@ export default function ChecklistScreen() {
               {(() => {
                 const eff = sb?.sleepEfficiencyPct ?? null;
                 return eff != null ? sigRow("Efficiency", sigText(
-                  `${eff.toFixed(2)}%${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
-                  eff >= 85 ? "#34D399" : eff >= 70 ? "#FBBF24" : "#EF4444",
+                  `${fmtPct(eff)}${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
+                  scoreColor(eff, { good: 85, warn: 70 }),
                 ), sb?.awakeInBedMin == null) : null;
               })()}
 
               {(() => {
                 const cont = sb?.sleepContinuityPct ?? null;
                 return cont != null ? sigRow("Continuity", sigText(
-                  `${cont.toFixed(2)}%`,
-                  cont >= 85 ? "#34D399" : cont >= 70 ? "#FBBF24" : "#EF4444",
+                  fmtPct(cont),
+                  scoreColor(cont, { good: 85, warn: 70 }),
                 )) : null;
               })()}
 
@@ -1229,8 +1226,6 @@ export default function ChecklistScreen() {
                 const awake = sb.awakeInBedMin ?? 0;
                 const latency = sb.latencyMin ?? 0;
                 const waso = sb.wasoMin ?? 0;
-                const contSrc = sb.continuitySource ?? "—";
-                const fragVal = contSrc === "wasoMin" ? waso : awake;
                 return (
                   <View>
                     <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1240,11 +1235,11 @@ export default function ChecklistScreen() {
                     {debugSleepExpanded && (
                       <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`plannedSleepMin = ${planned}\ntimeInBedMin (TIB) = ${tib}\ntimeAsleepMin (TST) = ${tst}\nawakeInBedMin = ${awake}\nlatencyMin = ${latency}\nwasoMin = ${waso}`}
+                          {`plannedSleepMin = ${planned}\ntimeInBedMin (TIB) = ${tib}\ntimeAsleepMin (TST) = ${tst}\nawakeInBedMin = ${awake}\nlatencyMin = ${latency}\nwasoMin = ${waso}\ncontinuityDenominator = TIB`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacy = 100 × TST/planned = 100 × ${tst}/${planned} = ${sb.sleepAdequacyScore?.toFixed(2) ?? "—"}\nefficiency = 100 × TST/TIB = 100 × ${tst}/${tib} = ${sb.sleepEfficiencyPct?.toFixed(2) ?? "—"}%\ncontinuity = 100 × (1 − ${contSrc}/${tib}) = 100 × (1 − ${fragVal}/${tib}) = ${sb.sleepContinuityPct?.toFixed(2) ?? "—"}% [src=${contSrc}]`}
+                          {`adequacyRaw = 100 × TST/planned = 100 × ${tst}/${planned} = ${sb.sleepAdequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore100(sb.sleepAdequacyScore)}\nefficiencyRaw = 100 × TST/TIB = 100 × ${tst}/${tib} = ${sb.sleepEfficiencyPct?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(sb.sleepEfficiencyPct)}\ncontinuityRaw = 100 × (1 − awakeInBedMin/TIB) = 100 × (1 − ${awake}/${tib}) = ${sb.sleepContinuityPct?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(sb.sleepContinuityPct)}\ncontinuityDenominator = TIB`}
                         </Text>
                       </View>
                     )}

@@ -85,7 +85,7 @@ export interface SleepBlock {
   sleepAdequacyScore: number | null;
   sleepEfficiencyPct: number | null;
   sleepContinuityPct: number | null;
-  continuitySource: "wasoMin" | "awakeInBedMin" | null;
+  continuityDenominator: "TIB" | null;
   sleepEfficiencyEst: number | null;
   fitbitSleepMinutes: number | null;
   napMinutes: number | null;
@@ -373,11 +373,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepAdequacyScore = clamp(100 * timeAsleepMin / plannedSleepMin, 0, 110);
   }
 
-  const awakeFragmentMin: number | null = wasoMin != null ? wasoMin : awakeInBedMin;
-  const continuitySource: "wasoMin" | "awakeInBedMin" | null =
-    wasoMin != null ? "wasoMin" : (awakeInBedMin != null ? "awakeInBedMin" : null);
-  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && awakeFragmentMin != null)
-    ? clamp(100 * (1 - awakeFragmentMin / timeInBedMin), 0, 100)
+  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && awakeInBedMin != null)
+    ? clamp(100 * (1 - awakeInBedMin / timeInBedMin), 0, 100)
     : null;
 
   const sleepContinuity: number | null = sleepContinuityPct != null ? sleepContinuityPct / 100 : null;
@@ -449,7 +446,7 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepAdequacyScore,
     sleepEfficiencyPct,
     sleepContinuityPct,
-    continuitySource,
+    continuityDenominator: sleepContinuityPct != null ? "TIB" as const : null,
     sleepEfficiencyEst,
     fitbitSleepMinutes: timeAsleepMin,
     napMinutes: napMin,
