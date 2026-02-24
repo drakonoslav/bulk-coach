@@ -37,8 +37,11 @@ export function sleepAlignmentScore(
   const WAKE_OK = opts?.wakeOkMin ?? 10;
   const DECAY = opts?.decayWindowMin ?? 60;
 
-  const bedOver = Math.max(0, Math.abs(bed) - BED_OK);
-  const wakeOver = Math.max(0, Math.abs(wake) - WAKE_OK);
+  const bedPenaltyRaw = Math.max(0, bed);
+  const wakePenaltyRaw = Math.max(0, -wake);
+
+  const bedOver = Math.max(0, bedPenaltyRaw - BED_OK);
+  const wakeOver = Math.max(0, wakePenaltyRaw - WAKE_OK);
 
   const bedScore = clamp01(1 - bedOver / DECAY);
   const wakeScore = clamp01(1 - wakeOver / DECAY);
