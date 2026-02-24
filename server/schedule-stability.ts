@@ -45,6 +45,7 @@ export interface ScheduleStability {
   recoveryEventDriftMag0: number | null;
   recoveryFollowDaysK: number | null;
   recoveryFollowAvgDriftMag: number | null;
+  recoveryConfidence: "full" | "low" | null;
   debugDriftMags7d: number[];
   debugRecoveryDays: { date: string; driftMag: number }[];
 }
@@ -127,7 +128,8 @@ export async function computeScheduleStability(
     recoveryEventDriftMag0 = Math.round(d0.driftMag * 100) / 100;
     debugRecoveryDays.push({ date: d0.date, driftMag: d0.driftMag });
 
-    const followDays = allDaysSorted.slice(eventIdx + 1, eventIdx + 4);
+    const available = allDaysSorted.slice(eventIdx + 1);
+    const followDays = available.slice(0, Math.min(4, available.length));
     recoveryFollowDaysK = followDays.length;
 
     if (followDays.length > 0) {
@@ -141,6 +143,10 @@ export async function computeScheduleStability(
     }
   }
 
+  const recoveryConfidence: "full" | "low" | null =
+    !recoveryEventFound ? null :
+    recoveryFollowDaysK != null && recoveryFollowDaysK >= 4 ? "full" : "low";
+
   return {
     scheduleConsistencyScore,
     scheduleConsistencySdMin,
@@ -150,6 +156,7 @@ export async function computeScheduleStability(
     recoveryEventDriftMag0,
     recoveryFollowDaysK,
     recoveryFollowAvgDriftMag,
+    recoveryConfidence,
     debugDriftMags7d: last7.map((d) => Math.round(d.driftMag * 100) / 100),
     debugRecoveryDays,
   };

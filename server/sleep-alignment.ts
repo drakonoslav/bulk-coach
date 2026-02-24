@@ -251,8 +251,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   let wakePenaltyMin: number | null = null;
   let totalPenaltyMin: number | null = null;
   if (bedDevMin != null && wakeDevMin != null) {
-    bedPenaltyMin = Math.max(0, bedDevMin);
-    wakePenaltyMin = Math.max(0, -wakeDevMin);
+    bedPenaltyMin = Math.abs(bedDevMin);
+    wakePenaltyMin = Math.abs(wakeDevMin);
     totalPenaltyMin = clamp(bedPenaltyMin + wakePenaltyMin, 0, 180);
     alignmentScore = Math.round(100 - (totalPenaltyMin * (100 / 180)));
   }
