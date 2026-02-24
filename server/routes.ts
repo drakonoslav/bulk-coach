@@ -9,6 +9,7 @@ import { recomputeRange } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import { classifyDayRange } from "./day-classifier";
+import { computeScheduleStability } from "./schedule-stability";
 import {
   validateSleepSummaryInput,
   validateVitalsDailyInput,
@@ -1354,6 +1355,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const sa = sleepBlock?.sleepAlignment;
+
+      const schedStab = await computeScheduleStability(
+        date,
+        sa?.plannedBedTime ?? "22:30",
+        sa?.plannedWakeTime ?? "05:30",
+        userId,
+      );
+
       const primaryDriver = computePrimaryDriver(
         sa?.shortfallMin ?? null,
         sa?.wakeDeviationMin ?? null,
@@ -1386,6 +1395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plannedLiftMin: dayAdh?.plannedLiftMin ?? 75,
         },
         primaryDriver,
+        scheduleStability: schedStab,
         placeholders: {
           mealTimingTracked: false,
         },
@@ -1856,6 +1866,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [date],
       );
 
+      const saBlock = sleepBlockResult?.sleepAlignment;
+      let schedStabResult = null;
+      try {
+        schedStabResult = await computeScheduleStability(
+          date,
+          saBlock?.plannedBedTime ?? "22:30",
+          saBlock?.plannedWakeTime ?? "05:30",
+          userId,
+        );
+      } catch {}
+
       let readinessResult = null;
       try {
         readinessResult = await computeReadiness(date, userId);
@@ -1899,6 +1920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sleepContinuity: sleepBlockResult.sleepContinuity,
           sleepAlignment: sleepBlockResult.sleepAlignment,
         } : null,
+        section2d_schedule_stability: schedStabResult,
         section3_readiness_live: readinessResult ? {
           score: readinessResult.readinessScore,
           tier: readinessResult.readinessTier,
