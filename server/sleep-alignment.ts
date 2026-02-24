@@ -121,6 +121,15 @@ export interface SleepBlock {
     deep: StageBaseline;
     asleep: StageBaseline;
   } | null;
+
+  debugSources: {
+    planBedSource: string;
+    planWakeSource: string;
+    actualBedSource: string;
+    actualWakeSource: string;
+    dataDay: string;
+    tibTstPath: string;
+  } | null;
 }
 
 function buildStageBaselines(
@@ -211,9 +220,13 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     !!(row?.actual_bed_time || row?.sleep_minutes || row?.sleep_awake_min != null ||
        can?.sleep_start || can?.total_sleep_minutes);
 
+  let usedYesterday = false;
   if (!hasSleepInRow(r, canon)) {
     const yestR = logYestResult.rows[0] ?? null;
     const yestC = canonYestResult.rows[0] ?? null;
+    if (hasSleepInRow(yestR, yestC)) {
+      usedYesterday = true;
+    }
     r = yestR ?? r;
     canon = yestC ?? canon;
   }
@@ -223,8 +236,30 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   const schedule = await getSleepPlanSettings(userId);
   const plannedBed: string = schedule.bedtime;
   const plannedWake: string = schedule.wake;
+  const planBedSource = schedule.bedSource;
+  const planWakeSource = schedule.wakeSource;
+
+  let actualBedSource: string;
   const actualBed: string | null = r?.actual_bed_time || canon?.sleep_start || null;
+  if (r?.actual_bed_time) {
+    actualBedSource = usedYesterday ? "daily_log(yesterday)" : "daily_log";
+  } else if (canon?.sleep_start) {
+    actualBedSource = usedYesterday ? "sleep_summary_daily(yesterday)" : "sleep_summary_daily";
+  } else {
+    actualBedSource = "none";
+  }
+
+  let actualWakeSource: string;
   const actualWake: string | null = r?.actual_wake_time || canon?.sleep_end || null;
+  if (r?.actual_wake_time) {
+    actualWakeSource = usedYesterday ? "daily_log(yesterday)" : "daily_log";
+  } else if (canon?.sleep_end) {
+    actualWakeSource = usedYesterday ? "sleep_summary_daily(yesterday)" : "sleep_summary_daily";
+  } else {
+    actualWakeSource = "none";
+  }
+
+  const dataDay = usedYesterday ? yesterdayStr : date;
   const napMin: number | null = r?.nap_minutes != null ? Number(r.nap_minutes) : null;
   const fitbitMin: number | null = r?.sleep_minutes != null ? Number(r.sleep_minutes) : (canon?.total_sleep_minutes != null ? Number(canon.total_sleep_minutes) : null);
 
@@ -278,20 +313,25 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   let wasoMin: number | null = null;
   let tossTurnMin: number | null = null;
 
+  let tibTstPath: string = "none";
+
   if (actualBed && actualWake) {
     timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
     if (hasStages) {
       estimatedSleepMin = stageRem + stageCore + stageDeep;
       stagesTotalSleepMin = estimatedSleepMin;
       stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
+      tibTstPath = "clock_span+stages";
     } else {
       estimatedSleepMin = fitbitMin;
+      tibTstPath = fitbitMin != null ? "clock_span+sleep_minutes" : "clock_span_only";
     }
   } else if (hasStages) {
     stagesTotalSleepMin = stageRem + stageCore + stageDeep;
     stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
     timeInBedMin = stagesTotalInBedMin;
     estimatedSleepMin = stagesTotalSleepMin;
+    tibTstPath = "stages_only";
   }
 
   const timeAsleepMin = estimatedSleepMin;
@@ -415,10 +455,18 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     coreDeltaMin,
     deepDeltaMin,
     stageBaselines,
+    debugSources: {
+      planBedSource,
+      planWakeSource,
+      actualBedSource,
+      actualWakeSource,
+      dataDay,
+      tibTstPath,
+    },
   };
 }
 
-export async function getSleepPlanSettings(userId: string = DEFAULT_USER_ID): Promise<{ bedtime: string; wake: string }> {
+export async function getSleepPlanSettings(userId: string = DEFAULT_USER_ID): Promise<{ bedtime: string; wake: string; bedSource: string; wakeSource: string }> {
   const { rows } = await pool.query(
     `SELECT value FROM app_settings WHERE key = 'sleep_plan_bedtime' AND user_id = $1`,
     [userId]
@@ -430,6 +478,8 @@ export async function getSleepPlanSettings(userId: string = DEFAULT_USER_ID): Pr
   return {
     bedtime: rows[0]?.value || DEFAULT_PLAN_BED,
     wake: rows2[0]?.value || DEFAULT_PLAN_WAKE,
+    bedSource: rows[0]?.value ? "app_settings" : "DEFAULT_PLAN_BED",
+    wakeSource: rows2[0]?.value ? "app_settings" : "DEFAULT_PLAN_WAKE",
   };
 }
 
