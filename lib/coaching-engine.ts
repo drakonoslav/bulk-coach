@@ -56,6 +56,9 @@ export interface DailyEntry {
   liftStartTime?: string;
   liftEndTime?: string;
   liftMin?: number;
+  liftWorkingMin?: number;
+  zone4Min?: number;
+  zone5Min?: number;
   fatFreeMassLb?: number;
   pushupsReps?: number;
   pullupsReps?: number;

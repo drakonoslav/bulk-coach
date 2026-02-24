@@ -740,6 +740,7 @@ export default function LogScreen() {
     setLiftStartTime("");
     setLiftEndTime("");
     setLiftMin("");
+    setLiftWorkingMin("");
     setLiftDone(undefined);
     setDeloadWeek(undefined);
     setPerfNote("");
@@ -756,6 +757,11 @@ export default function LogScreen() {
     setNocturnalDuration("");
     setFirmnessAvg("");
     setPain010(null);
+    setZone1("");
+    setZone2("");
+    setZone3("");
+    setZone4("");
+    setZone5("");
   };
 
   const handleSave = async () => {
