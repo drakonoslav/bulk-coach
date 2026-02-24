@@ -1768,7 +1768,7 @@ export default function ReportScreen() {
                       const waso = sb.wasoMin ?? 0;
                       const adequacyRaw = planned > 0 ? (100 * tst / planned) : 0;
                       const effRaw = tib > 0 ? (100 * tst / tib) : 0;
-                      const contRaw = tib > 0 ? (100 * (1 - awake / tib)) : 0;
+                      const contAPI = (sb.sleepContinuity ?? 0) * 100;
                       return (
                         <View>
                           <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1782,7 +1782,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacyRaw = 100 × ${tst.toFixed(2)} / ${planned.toFixed(2)} = ${adequacyRaw.toFixed(2)}\nefficiencyRaw = 100 × ${tst.toFixed(2)} / ${tib.toFixed(2)} = ${effRaw.toFixed(2)}\ncontinuityRaw = 100 × (1 − ${awake.toFixed(2)} / ${tib.toFixed(2)}) = ${contRaw.toFixed(2)}`}
+                                {`adequacyRaw = 100 × ${tst.toFixed(2)} / ${planned.toFixed(2)} = ${adequacyRaw.toFixed(2)}\nefficiencyRaw = 100 × ${tst.toFixed(2)} / ${tib.toFixed(2)} = ${effRaw.toFixed(2)}\ncontinuity = 100 × clamp(1 − ${awake.toFixed(2)} / ${planned.toFixed(2)}, 0, 1) = ${contAPI.toFixed(2)}`}
                               </Text>
                             </View>
                           )}
