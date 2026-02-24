@@ -1292,59 +1292,59 @@ export default function LogScreen() {
               </Text>
             </View>
           )}
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="eye-off-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Awake</Text>
+                <Ionicons name="eye-off-outline" size={14} color={Colors.secondary} />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Awake</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={styles.inputCompact}
                 value={sleepAwakeMin}
                 onChangeText={handleMinuteSetter(setSleepAwakeMin)}
-                placeholder="30 or 0:30"
+                placeholder="30"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="cloudy-night-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>REM</Text>
+                <Ionicons name="cloudy-night-outline" size={14} color={Colors.secondary} />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>REM</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={styles.inputCompact}
                 value={sleepRemMin}
                 onChangeText={handleMinuteSetter(setSleepRemMin)}
-                placeholder="94 or 1:34"
+                placeholder="94"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="moon-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Core</Text>
+                <Ionicons name="moon-outline" size={14} color={Colors.secondary} />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Core</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={styles.inputCompact}
                 value={sleepCoreMin}
                 onChangeText={handleMinuteSetter(setSleepCoreMin)}
-                placeholder="210 or 3:30"
+                placeholder="210"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="bed-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Deep</Text>
+                <Ionicons name="bed-outline" size={14} color={Colors.secondary} />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Deep</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={styles.inputCompact}
                 value={sleepDeepMin}
                 onChangeText={handleMinuteSetter(setSleepDeepMin)}
-                placeholder="60 or 1:00"
+                placeholder="60"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardAppearance="dark"
               />
@@ -1427,273 +1427,208 @@ export default function LogScreen() {
             icon="footsteps-outline"
             iconColor={Colors.primary}
           />
-          <View style={[styles.sectionCard, { borderColor: "#EF444420", marginHorizontal: 0, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 }]}>
+          <View style={[styles.sectionCard, { borderColor: "#EF444420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <Ionicons name="heart-outline" size={14} color="#EF4444" />
               <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#EF4444" }}>Cardio Session</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>Z2 Rebounder 06:00-06:40</Text>
-            </View>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="play-outline" size={14} color="#60A5FA" />
-                  <Text style={styles.inputLabelText}>Start</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={cardioStartTime}
-                    onChangeText={(t) => {
-                      setCardioStartTime(t);
-                      if (t && cardioEndTime) {
-                        const [sh, sm] = t.split(":").map(Number);
-                        const [eh, em] = cardioEndTime.split(":").map(Number);
-                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-                          let dur = (eh * 60 + em) - (sh * 60 + sm);
-                          if (dur < 0) dur += 1440;
-                          setCardio(dur.toString());
-                        }
-                      }
-                    }}
-                    placeholder="06:00"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="stop-outline" size={14} color="#EF4444" />
-                  <Text style={styles.inputLabelText}>End</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={cardioEndTime}
-                    onChangeText={(t) => {
-                      setCardioEndTime(t);
-                      if (cardioStartTime && t) {
-                        const [sh, sm] = cardioStartTime.split(":").map(Number);
-                        const [eh, em] = t.split(":").map(Number);
-                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-                          let dur = (eh * 60 + em) - (sh * 60 + sm);
-                          if (dur < 0) dur += 1440;
-                          setCardio(dur.toString());
-                        }
-                      }
-                    }}
-                    placeholder="06:40"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="time-outline" size={14} color={Colors.primary} />
-                  <Text style={styles.inputLabelText}>Duration</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={cardio}
-                    onChangeText={handleMinuteSetter(setCardio)}
-                    placeholder="40 or 0:40"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                  <Text style={styles.inputSuffix}>min</Text>
-                </View>
-              </View>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, marginBottom: 4 }}>
-              <Ionicons name="speedometer-outline" size={12} color="#EF4444" />
-              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (min)</Text>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>06:00–06:40</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#9CA3AF" }}>Z1</Text>
+                  <Ionicons name="play-outline" size={12} color="#60A5FA" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Start</Text>
                 </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={zone1}
-                    onChangeText={setZone1}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    keyboardAppearance="dark"
-                  />
-                </View>
+                <TextInput
+                  style={styles.inputCompact}
+                  value={cardioStartTime}
+                  onChangeText={(t) => {
+                    setCardioStartTime(t);
+                    if (t && cardioEndTime) {
+                      const [sh, sm] = t.split(":").map(Number);
+                      const [eh, em] = cardioEndTime.split(":").map(Number);
+                      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                        let dur = (eh * 60 + em) - (sh * 60 + sm);
+                        if (dur < 0) dur += 1440;
+                        setCardio(dur.toString());
+                      }
+                    }
+                  }}
+                  placeholder="06:00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardAppearance="dark"
+                />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#34D399" }}>Z2</Text>
+                  <Ionicons name="stop-outline" size={12} color="#EF4444" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>End</Text>
                 </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={zone2}
-                    onChangeText={setZone2}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    keyboardAppearance="dark"
-                  />
-                </View>
+                <TextInput
+                  style={styles.inputCompact}
+                  value={cardioEndTime}
+                  onChangeText={(t) => {
+                    setCardioEndTime(t);
+                    if (cardioStartTime && t) {
+                      const [sh, sm] = cardioStartTime.split(":").map(Number);
+                      const [eh, em] = t.split(":").map(Number);
+                      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                        let dur = (eh * 60 + em) - (sh * 60 + sm);
+                        if (dur < 0) dur += 1440;
+                        setCardio(dur.toString());
+                      }
+                    }
+                  }}
+                  placeholder="06:40"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardAppearance="dark"
+                />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Z3</Text>
+                  <Ionicons name="time-outline" size={12} color={Colors.primary} />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Dur</Text>
                 </View>
                 <View style={styles.inputWrapper}>
                   <TextInput
-                    style={styles.input}
-                    value={zone3}
-                    onChangeText={setZone3}
-                    placeholder="0"
+                    style={styles.inputCompact}
+                    value={cardio}
+                    onChangeText={handleMinuteSetter(setCardio)}
+                    placeholder="40"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
                     keyboardAppearance="dark"
                   />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#F97316" }}>Z4</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={zone4}
-                    onChangeText={setZone4}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    keyboardAppearance="dark"
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#EF4444" }}>Z5</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={zone5}
-                    onChangeText={setZone5}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    keyboardAppearance="dark"
-                  />
+                  <Text style={styles.inputSuffix}>m</Text>
                 </View>
               </View>
             </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginBottom: 4 }}>
+              <Ionicons name="speedometer-outline" size={10} color={Colors.textTertiary} />
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (min or H:MM)</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              {([
+                { label: "Z1", color: "#9CA3AF", val: zone1, set: setZone1 },
+                { label: "Z2", color: "#34D399", val: zone2, set: setZone2 },
+                { label: "Z3", color: "#FBBF24", val: zone3, set: setZone3 },
+                { label: "Z4", color: "#F97316", val: zone4, set: setZone4 },
+                { label: "Z5", color: "#EF4444", val: zone5, set: setZone5 },
+              ] as const).map((z) => (
+                <View key={z.label} style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: z.color, textAlign: "center", marginBottom: 3 }}>{z.label}</Text>
+                  <TextInput
+                    style={{
+                      backgroundColor: Colors.inputBg,
+                      borderRadius: 8,
+                      paddingHorizontal: 4,
+                      paddingVertical: 8,
+                      fontSize: 13,
+                      fontFamily: "Rubik_400Regular",
+                      color: Colors.text,
+                      borderWidth: 1,
+                      borderColor: Colors.border,
+                      textAlign: "center",
+                    }}
+                    value={z.val}
+                    onChangeText={handleMinuteSetter(z.set)}
+                    placeholder="—"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                  />
+                </View>
+              ))}</View>
           </View>
-          <View style={[styles.sectionCard, { borderColor: "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 }]}>
+          <View style={[styles.sectionCard, { borderColor: "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <Ionicons name="barbell-outline" size={14} color="#FBBF24" />
               <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Lift Session</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>17:00-18:15</Text>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>17:00–18:15</Text>
             </View>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Ionicons name="play-outline" size={14} color="#60A5FA" />
-                  <Text style={styles.inputLabelText}>Start</Text>
+                  <Ionicons name="play-outline" size={12} color="#60A5FA" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Start</Text>
                 </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={liftStartTime}
-                    onChangeText={(t) => {
-                      setLiftStartTime(t);
-                      if (t && liftEndTime) {
-                        const [sh, sm] = t.split(":").map(Number);
-                        const [eh, em] = liftEndTime.split(":").map(Number);
-                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-                          let dur = (eh * 60 + em) - (sh * 60 + sm);
-                          if (dur < 0) dur += 1440;
-                          setLiftMin(dur.toString());
-                        }
+                <TextInput
+                  style={styles.inputCompact}
+                  value={liftStartTime}
+                  onChangeText={(t) => {
+                    setLiftStartTime(t);
+                    if (t && liftEndTime) {
+                      const [sh, sm] = t.split(":").map(Number);
+                      const [eh, em] = liftEndTime.split(":").map(Number);
+                      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                        let dur = (eh * 60 + em) - (sh * 60 + sm);
+                        if (dur < 0) dur += 1440;
+                        setLiftMin(dur.toString());
                       }
-                    }}
-                    placeholder="17:00"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                </View>
+                    }
+                  }}
+                  placeholder="17:00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardAppearance="dark"
+                />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Ionicons name="stop-outline" size={14} color="#EF4444" />
-                  <Text style={styles.inputLabelText}>End</Text>
+                  <Ionicons name="stop-outline" size={12} color="#EF4444" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>End</Text>
                 </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={liftEndTime}
-                    onChangeText={(t) => {
-                      setLiftEndTime(t);
-                      if (liftStartTime && t) {
-                        const [sh, sm] = liftStartTime.split(":").map(Number);
-                        const [eh, em] = t.split(":").map(Number);
-                        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-                          let dur = (eh * 60 + em) - (sh * 60 + sm);
-                          if (dur < 0) dur += 1440;
-                          setLiftMin(dur.toString());
-                        }
+                <TextInput
+                  style={styles.inputCompact}
+                  value={liftEndTime}
+                  onChangeText={(t) => {
+                    setLiftEndTime(t);
+                    if (liftStartTime && t) {
+                      const [sh, sm] = liftStartTime.split(":").map(Number);
+                      const [eh, em] = t.split(":").map(Number);
+                      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                        let dur = (eh * 60 + em) - (sh * 60 + sm);
+                        if (dur < 0) dur += 1440;
+                        setLiftMin(dur.toString());
                       }
-                    }}
-                    placeholder="18:15"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                </View>
+                    }
+                  }}
+                  placeholder="18:15"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardAppearance="dark"
+                />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Ionicons name="time-outline" size={14} color="#FBBF24" />
-                  <Text style={styles.inputLabelText}>Duration</Text>
+                  <Ionicons name="time-outline" size={12} color="#FBBF24" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Dur</Text>
                 </View>
                 <View style={styles.inputWrapper}>
                   <TextInput
-                    style={styles.input}
+                    style={styles.inputCompact}
                     value={liftMin}
                     onChangeText={handleMinuteSetter(setLiftMin)}
-                    placeholder="75 or 1:15"
+                    placeholder="75"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardAppearance="dark"
                   />
-                  <Text style={styles.inputSuffix}>min</Text>
+                  <Text style={styles.inputSuffix}>m</Text>
                 </View>
               </View>
-            </View>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
                 <View style={styles.inputLabel}>
-                  <Ionicons name="fitness-outline" size={14} color="#FBBF24" />
-                  <Text style={styles.inputLabelText}>Working</Text>
+                  <Ionicons name="fitness-outline" size={12} color="#FBBF24" />
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Work</Text>
                 </View>
                 <View style={styles.inputWrapper}>
                   <TextInput
-                    style={styles.input}
+                    style={styles.inputCompact}
                     value={liftWorkingMin}
                     onChangeText={handleMinuteSetter(setLiftWorkingMin)}
-                    placeholder="e.g. 50"
+                    placeholder="50"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardAppearance="dark"
                   />
-                  <Text style={styles.inputSuffix}>min</Text>
+                  <Text style={styles.inputSuffix}>m</Text>
                 </View>
-              </View>
-              <View style={{ flex: 2 }}>
-                <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 16 }}>
-                  Time under load (sets + reps). Used for efficiency & continuity scores.
-                </Text>
               </View>
             </View>
           </View>
@@ -1715,33 +1650,33 @@ export default function LogScreen() {
           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 12 }}>
             Enter manually or auto-filled from device sync
           </Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="moon-outline" size={16} color="#60A5FA" />
-                <Text style={styles.inputLabelText}>{hasStagesTST ? "TST" : "Sleep"}</Text>
+                <Ionicons name="moon-outline" size={14} color="#60A5FA" />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{hasStagesTST ? "TST" : "Sleep"}</Text>
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={[styles.input, hasStagesTST ? { color: Colors.textTertiary } : undefined]}
+                  style={[styles.inputCompact, hasStagesTST ? { color: Colors.textTertiary } : undefined]}
                   value={sleepMinutesManual}
                   onChangeText={hasStagesTST ? undefined : handleMinuteSetter(setSleepMinutesManual)}
                   editable={!hasStagesTST}
-                  placeholder="420 or 7:00"
+                  placeholder="420"
                   placeholderTextColor={Colors.textTertiary}
                   keyboardAppearance="dark"
                 />
-                <Text style={styles.inputSuffix}>min</Text>
+                <Text style={styles.inputSuffix}>m</Text>
               </View>
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="pulse-outline" size={16} color="#8B5CF6" />
-                <Text style={styles.inputLabelText}>HRV</Text>
+                <Ionicons name="pulse-outline" size={14} color="#8B5CF6" />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>HRV</Text>
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={styles.input}
+                  style={styles.inputCompact}
                   value={hrvManual}
                   onChangeText={setHrvManual}
                   placeholder="45"
@@ -1754,12 +1689,12 @@ export default function LogScreen() {
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <View style={styles.inputLabel}>
-                <Ionicons name="heart-outline" size={16} color="#EF4444" />
-                <Text style={styles.inputLabelText}>RHR</Text>
+                <Ionicons name="heart-outline" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>RHR</Text>
               </View>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={styles.input}
+                  style={styles.inputCompact}
                   value={restingHrManual}
                   onChangeText={setRestingHrManual}
                   placeholder="62"
@@ -2528,20 +2463,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.inputBg,
     borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  inputCompact: {
+    flex: 1,
+    backgroundColor: Colors.inputBg,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.text,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   inputSuffix: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: "Rubik_500Medium",
     color: Colors.textTertiary,
-    marginLeft: 8,
-    width: 24,
+    marginLeft: 6,
   },
   textArea: {
     minHeight: 80,
