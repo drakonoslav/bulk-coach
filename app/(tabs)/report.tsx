@@ -1639,9 +1639,11 @@ export default function ReportScreen() {
                       const secText = !ss!.recoveryEventFound
                         ? "no drift event in last 14d"
                         : `event ${ss!.recoveryEventDriftMag0?.toFixed(0)}m \u2192 next avg ${ss!.recoveryFollowAvgDriftMag?.toFixed(0)}m (k=${ss!.recoveryFollowDaysK})`;
+                      const conf = ss!.recoveryConfidence;
                       return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         {sigText(`${rs.toFixed(2)} / 100.00`, rs >= 70 ? "#34D399" : rs >= 40 ? "#FBBF24" : "#EF4444")}
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{secText}</Text>
+                        {conf === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
                       </View>);
                     })()}
 
@@ -1658,7 +1660,7 @@ export default function ReportScreen() {
                             <View style={{ backgroundColor: "#60A5FA08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`bedDevMin = ${saD?.bedDeviationMin?.toFixed(2) ?? "—"}\nwakeDevMin = ${saD?.wakeDeviationMin?.toFixed(2) ?? "—"}\nbedPenaltyMin = ${saD?.bedPenaltyMin?.toFixed(2) ?? "—"}\nwakePenaltyMin = ${saD?.wakePenaltyMin?.toFixed(2) ?? "—"}\ntotalPenaltyMin = ${saD?.totalPenaltyMin?.toFixed(2) ?? "—"}\nalignmentScore = ${saD?.alignmentScore?.toFixed(2) ?? "—"}`}
+                                {`bedDevMin = ${saD?.bedDeviationMin?.toFixed(2) ?? "—"}\nwakeDevMin = ${saD?.wakeDeviationMin?.toFixed(2) ?? "—"}\nbedPenaltyMin = abs(bedDev) = ${saD?.bedPenaltyMin?.toFixed(2) ?? "—"}\nwakePenaltyMin = abs(wakeDev) = ${saD?.wakePenaltyMin?.toFixed(2) ?? "—"}\ntotalPenaltyMin = clamp(bed+wake, 0, 180) = ${saD?.totalPenaltyMin?.toFixed(2) ?? "—"}\nalignmentScore = ${saD?.alignmentScore?.toFixed(2) ?? "—"}`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
@@ -1668,7 +1670,7 @@ export default function ReportScreen() {
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`eventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${ss?.recoveryEventDriftMag0?.toFixed(2) ?? "—"}\nkDaysUsed = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${ss?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecoveryScore = ${ss?.scheduleRecoveryScore?.toFixed(2) ?? "—"}`}
+                                {`eventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${ss?.recoveryEventDriftMag0?.toFixed(2) ?? "—"}\nkDaysUsed = min(4, available) = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${ss?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecoveryScore = ${ss?.scheduleRecoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${ss?.recoveryConfidence ?? "—"}`}
                               </Text>
                             </View>
                           )}
