@@ -122,13 +122,14 @@ export interface SleepBlock {
     asleep: StageBaseline;
   } | null;
 
-  debugSources: {
-    planBedSource: string;
-    planWakeSource: string;
-    actualBedSource: string;
-    actualWakeSource: string;
+  sources: {
+    planBed: { value: string | null; source: "app_settings" | "DEFAULT_PLAN_BED" | "none" };
+    planWake: { value: string | null; source: "app_settings" | "DEFAULT_PLAN_WAKE" | "none" };
+    actualBed: { value: string | null; source: "daily_log" | "sleep_summary_daily" | "daily_log(yesterday)" | "sleep_summary_daily(yesterday)" | "none" };
+    actualWake: { value: string | null; source: "daily_log" | "sleep_summary_daily" | "daily_log(yesterday)" | "sleep_summary_daily(yesterday)" | "none" };
     dataDay: string;
-    tibTstPath: string;
+    tib: { valueMin: number | null; method: "stages_sum" | "spanMinutes(actualBed,actualWake)" | "none" };
+    tst: { valueMin: number | null; method: "stages_sum" | "sleep_minutes" | "canonical_total_sleep_minutes" | "none" };
   } | null;
 }
 
@@ -313,25 +314,28 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   let wasoMin: number | null = null;
   let tossTurnMin: number | null = null;
 
-  let tibTstPath: string = "none";
+  let tibMethod: "stages_sum" | "spanMinutes(actualBed,actualWake)" | "none" = "none";
+  let tstMethod: "stages_sum" | "sleep_minutes" | "canonical_total_sleep_minutes" | "none" = "none";
 
   if (actualBed && actualWake) {
     timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
+    tibMethod = "spanMinutes(actualBed,actualWake)";
     if (hasStages) {
       estimatedSleepMin = stageRem + stageCore + stageDeep;
       stagesTotalSleepMin = estimatedSleepMin;
       stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
-      tibTstPath = "clock_span+stages";
+      tstMethod = "stages_sum";
     } else {
       estimatedSleepMin = fitbitMin;
-      tibTstPath = fitbitMin != null ? "clock_span+sleep_minutes" : "clock_span_only";
+      tstMethod = r?.sleep_minutes != null ? "sleep_minutes" : (canon?.total_sleep_minutes != null ? "canonical_total_sleep_minutes" : "none");
     }
   } else if (hasStages) {
     stagesTotalSleepMin = stageRem + stageCore + stageDeep;
     stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
     timeInBedMin = stagesTotalInBedMin;
     estimatedSleepMin = stagesTotalSleepMin;
-    tibTstPath = "stages_only";
+    tibMethod = "stages_sum";
+    tstMethod = "stages_sum";
   }
 
   const timeAsleepMin = estimatedSleepMin;
@@ -455,13 +459,14 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     coreDeltaMin,
     deepDeltaMin,
     stageBaselines,
-    debugSources: {
-      planBedSource,
-      planWakeSource,
-      actualBedSource,
-      actualWakeSource,
+    sources: {
+      planBed: { value: plannedBed, source: planBedSource as "app_settings" | "DEFAULT_PLAN_BED" | "none" },
+      planWake: { value: plannedWake, source: planWakeSource as "app_settings" | "DEFAULT_PLAN_WAKE" | "none" },
+      actualBed: { value: actualBed, source: actualBedSource as any },
+      actualWake: { value: actualWake, source: actualWakeSource as any },
       dataDay,
-      tibTstPath,
+      tib: { valueMin: timeInBedMin, method: tibMethod },
+      tst: { valueMin: timeAsleepMin, method: tstMethod },
     },
   };
 }

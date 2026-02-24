@@ -1533,7 +1533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleepBlock_awakeInBedMin: sleepBlock?.awakeInBedMin ?? null,
       };
 
-      const sources = sleepBlock?.debugSources ?? null;
+      const sources = sleepBlock?.sources ?? null;
 
       res.json({
         date,
@@ -1543,7 +1543,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actualBed, actualWake,
           actualBedMin, actualWakeMin,
         },
-        sources: sources ?? { planBedSource: "unknown", planWakeSource: "unknown", actualBedSource: "unknown", actualWakeSource: "unknown", dataDay: date, tibTstPath: "unknown" },
+        sources: sources ?? {
+          planBed: { value: null, source: "none" },
+          planWake: { value: null, source: "none" },
+          actualBed: { value: null, source: "none" },
+          actualWake: { value: null, source: "none" },
+          dataDay: date,
+          tib: { valueMin: null, method: "none" },
+          tst: { valueMin: null, method: "none" },
+        },
         deviations: {
           bedDevMin_circularWrap: bedDevRaw,
           wakeDevMin_circularWrap: wakeDevRaw,
