@@ -205,8 +205,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   const hasSleepToday = !!(r?.actual_bed_time || r?.sleep_minutes || r?.sleep_awake_min != null || canon?.sleep_start || canon?.total_sleep_minutes);
 
   if (!hasSleepToday) {
-    r = r || logYestResult.rows[0];
-    canon = canon || canonYestResult.rows[0];
+    r = logYestResult.rows[0] || r;
+    canon = canonYestResult.rows[0] || canon;
   }
 
   if (!r && !canon) return null;
