@@ -1690,7 +1690,23 @@ export default function ReportScreen() {
                     {sb?.deepMin != null && sigRow("Deep", sigText(
                       `${sb.deepMin}m${sb.deepDeltaMin != null ? ` (${sb.deepDeltaMin >= 0 ? "+" : ""}${Math.round(sb.deepDeltaMin)}m)` : ""}`,
                       sb.deepDeltaMin == null ? "#9CA3AF" : sb.deepDeltaMin >= -5 ? "#34D399" : sb.deepDeltaMin >= -15 ? "#FBBF24" : "#EF4444",
-                    ), true)}
+                    ))}
+
+                    {sb != null && (() => {
+                      const planned = sb.plannedSleepMin ?? 0;
+                      const tib = sb.timeInBedMin ?? 0;
+                      const tst = sb.estimatedSleepMin ?? 0;
+                      const adequacyRaw = planned > 0 ? (100 * tst / planned) : 0;
+                      const effRaw = tib > 0 ? (100 * tst / tib) : 0;
+                      const adequacyUI = sb.sleepAdequacyScore ?? 0;
+                      const eff = sb.sleepEfficiency ?? sb.sleepEfficiencyEst ?? 0;
+                      const effUI = eff * 100;
+                      return sigRow("Debug", (
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }} numberOfLines={3}>
+                          {`planned=${planned.toFixed(2)} | TIB=${tib.toFixed(2)} | TST=${tst.toFixed(2)} | adequacyRaw=${adequacyRaw.toFixed(2)} | effRaw=${effRaw.toFixed(2)} | adequacyUI=${adequacyUI.toFixed(2)} | effUI=${effUI.toFixed(2)}`}
+                        </Text>
+                      ), true);
+                    })()}
 
                     {sectionHeader("System State", "pulse-outline", "#34D399")}
 
