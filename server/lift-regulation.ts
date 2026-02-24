@@ -63,6 +63,7 @@ export interface LiftOutcome {
   idleMin: number | null;
   efficiencyScore: number | null;
   continuityScore: number | null;
+  continuityDenominator: "actual" | null;
 }
 
 export interface LiftBlock {
@@ -247,6 +248,7 @@ export async function computeLiftOutcome(
     idleMin,
     efficiencyScore,
     continuityScore,
+    continuityDenominator: continuityScore != null ? "actual" as const : null,
   };
 }
 

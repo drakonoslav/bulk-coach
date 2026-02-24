@@ -1009,15 +1009,15 @@ export default function ChecklistScreen() {
                 return (
                   <View>
                     {sigRow("Alignment", sigText(
-                      fmtRaw(cs?.alignmentScore),
+                      fmtScore100(cs?.alignmentScore),
                       scoreColor(cs?.alignmentScore),
                     ))}
                     {sigRow("Consistency", sigText(
-                      cs?.consistencyScore != null ? fmtRaw(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
+                      cs?.consistencyScore != null ? fmtScore100(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
                       scoreColor(cs?.consistencyScore),
                     ))}
                     {sigRow("Recovery", sigText(
-                      fmtRaw(cs?.recoveryScore),
+                      fmtScore100(cs?.recoveryScore),
                       scoreColor(cs?.recoveryScore),
                     ))}
                     <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1075,7 +1075,7 @@ export default function ChecklistScreen() {
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−z1/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}`}
+                          {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−z1/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}
@@ -1090,15 +1090,15 @@ export default function ChecklistScreen() {
                 return (
                   <View>
                     {sigRow("Alignment", sigText(
-                      fmtRaw(ls?.alignmentScore),
+                      fmtScore100(ls?.alignmentScore),
                       scoreColor(ls?.alignmentScore),
                     ))}
                     {sigRow("Consistency", sigText(
-                      ls?.consistencyScore != null ? fmtRaw(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
+                      ls?.consistencyScore != null ? fmtScore100(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
                       scoreColor(ls?.consistencyScore),
                     ))}
                     {sigRow("Recovery", sigText(
-                      fmtRaw(ls?.recoveryScore),
+                      fmtScore100(ls?.recoveryScore),
                       scoreColor(ls?.recoveryScore),
                     ))}
                     <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
@@ -1156,7 +1156,7 @@ export default function ChecklistScreen() {
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = 100×working/actual = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−idle/actual) = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}`}
+                          {`adequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = 100×working/actual = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−idle/actual) = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}

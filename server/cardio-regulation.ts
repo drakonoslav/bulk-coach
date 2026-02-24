@@ -63,6 +63,7 @@ export interface CardioOutcome {
   plannedDurationMin: number | null;
   efficiencyScore: number | null;
   continuityScore: number | null;
+  continuityDenominator: "total" | null;
   z1Min: number | null;
   z2Min: number | null;
   z3Min: number | null;
@@ -266,6 +267,7 @@ export async function computeCardioOutcome(
     plannedDurationMin,
     efficiencyScore,
     continuityScore,
+    continuityDenominator: continuityScore != null ? "total" as const : null,
     z1Min: z1,
     z2Min: z2,
     z3Min: z3,
