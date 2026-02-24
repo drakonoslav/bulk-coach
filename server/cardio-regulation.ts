@@ -64,6 +64,7 @@ export interface CardioOutcome {
   efficiencyScore: number | null;
   continuityScore: number | null;
   continuityDenominator: "total" | null;
+  productiveMinSource: "zones_sum" | "none";
   z1Min: number | null;
   z2Min: number | null;
   z3Min: number | null;
@@ -268,6 +269,7 @@ export async function computeCardioOutcome(
     efficiencyScore,
     continuityScore,
     continuityDenominator: continuityScore != null ? "total" as const : null,
+    productiveMinSource: hasZones ? "zones_sum" as const : "none" as const,
     z1Min: z1,
     z2Min: z2,
     z3Min: z3,

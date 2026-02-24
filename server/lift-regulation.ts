@@ -64,6 +64,8 @@ export interface LiftOutcome {
   efficiencyScore: number | null;
   continuityScore: number | null;
   continuityDenominator: "actual" | null;
+  actualSource: "duration_span" | "duration_field" | "none";
+  workingSource: "daily_log" | "none";
 }
 
 export interface LiftBlock {
@@ -209,6 +211,7 @@ export async function computeLiftOutcome(
   const r = rows[0] ?? null;
 
   let actualMin: number | null = null;
+  let actualSource: "duration_span" | "duration_field" | "none" = "none";
 
   if (r) {
     if (r.lift_start_time && r.lift_end_time) {
@@ -217,8 +220,10 @@ export async function computeLiftOutcome(
       let dur = endM - startM;
       if (dur < 0) dur += 1440;
       actualMin = dur;
+      actualSource = "duration_span";
     } else if (r.lift_min != null) {
       actualMin = Number(r.lift_min);
+      actualSource = "duration_field";
     }
   }
 
@@ -228,6 +233,7 @@ export async function computeLiftOutcome(
   }
 
   const workingMin = r?.lift_working_min != null ? Number(r.lift_working_min) : null;
+  const workingSource: "daily_log" | "none" = workingMin != null ? "daily_log" : "none";
   const idleMin = (actualMin != null && workingMin != null) ? actualMin - workingMin : null;
 
   let efficiencyScore: number | null = null;
@@ -249,6 +255,8 @@ export async function computeLiftOutcome(
     efficiencyScore,
     continuityScore,
     continuityDenominator: continuityScore != null ? "actual" as const : null,
+    actualSource,
+    workingSource,
   };
 }
 
