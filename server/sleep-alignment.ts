@@ -268,14 +268,20 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   let wasoMin: number | null = null;
   let tossTurnMin: number | null = null;
 
-  if (hasStages) {
+  if (actualBed && actualWake) {
+    timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
+    if (hasStages) {
+      estimatedSleepMin = stageRem + stageCore + stageDeep;
+      stagesTotalSleepMin = estimatedSleepMin;
+      stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
+    } else {
+      estimatedSleepMin = fitbitMin;
+    }
+  } else if (hasStages) {
     stagesTotalSleepMin = stageRem + stageCore + stageDeep;
     stagesTotalInBedMin = stageAwake + stageRem + stageCore + stageDeep;
     timeInBedMin = stagesTotalInBedMin;
     estimatedSleepMin = stagesTotalSleepMin;
-  } else if (actualBed && actualWake) {
-    timeInBedMin = spanMinutes(toMin(actualBed), toMin(actualWake));
-    estimatedSleepMin = fitbitMin;
   }
 
   const timeAsleepMin = estimatedSleepMin;
