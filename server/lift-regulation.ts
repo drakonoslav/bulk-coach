@@ -47,12 +47,14 @@ export interface LiftScheduleStability {
   consistencyNSamples: number;
   recoveryScore: number | null;
   recoveryEventFound: boolean;
-  recoveryEventDriftMag0: number | null;
+  recoveryEventDay: string | null;
+  recoveryEventMetric: string | null;
+  recoveryThresholdUsed: string | null;
   recoveryFollowDaysK: number | null;
-  recoveryFollowAvgDriftMag: number | null;
+  recoveryFollowAvgDeviation: number | null;
   recoveryConfidence: "full" | "low" | null;
+  recoveryReason: string | null;
   debugStartMins7d: number[];
-  debugRecoveryDays: { date: string; driftMag: number }[];
 }
 
 export interface LiftOutcome {
@@ -128,44 +130,104 @@ export async function computeLiftScheduleStability(
     consistencyScore = clamp(100 * (1 - sd / 60), 0, 100);
   }
 
+  const liftPlannedMin = schedule.plannedMin;
+  const outcomeRows = await pool.query(
+    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
+     FROM daily_log
+     WHERE user_id = $1
+       AND day <= $2
+       AND day >= ($2::date - 21)::text
+     ORDER BY day DESC
+     LIMIT 14`,
+    [userId, date],
+  );
+
+  interface LiftSessionDay {
+    date: string;
+    actualMin: number | null;
+    workingMin: number | null;
+    idleRatio: number | null;
+    missed: boolean;
+  }
+
+  const sessionDays: LiftSessionDay[] = outcomeRows.rows.map((r: any) => {
+    let actualMin: number | null = null;
+    if (r.lift_start_time && r.lift_end_time) {
+      const s = toMin(r.lift_start_time);
+      const e = toMin(r.lift_end_time);
+      let d = e - s; if (d < 0) d += 1440;
+      actualMin = d;
+    } else if (r.lift_min != null) {
+      actualMin = Number(r.lift_min);
+    }
+    const workingMin = r.lift_working_min != null ? Number(r.lift_working_min) : null;
+    const idleMin = (actualMin != null && workingMin != null) ? actualMin - workingMin : null;
+    const idleRatio = (idleMin != null && actualMin != null && actualMin > 0) ? idleMin / actualMin : null;
+    const missed = actualMin == null || actualMin === 0;
+
+    return { date: r.day as string, actualMin, workingMin, idleRatio, missed };
+  });
+
+  const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
   let recoveryScore: number | null = null;
   let recoveryEventFound = false;
-  let recoveryEventDriftMag0: number | null = null;
+  let recoveryEventDay: string | null = null;
+  let recoveryEventMetric: string | null = null;
+  let recoveryThresholdUsed: string | null = null;
   let recoveryFollowDaysK: number | null = null;
-  let recoveryFollowAvgDriftMag: number | null = null;
-  const debugRecoveryDays: { date: string; driftMag: number }[] = [];
-
-  const DRIFT_EVENT_THRESHOLD = 45;
-
-  const allDaysSorted = [...allDays].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let recoveryFollowAvgDeviation: number | null = null;
+  let recoveryReason: string | null = null;
 
   let eventIdx = -1;
-  for (let i = allDaysSorted.length - 1; i >= 0; i--) {
-    if (allDaysSorted[i].driftMag >= DRIFT_EVENT_THRESHOLD) {
+  for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
+    const s = sessionDaysSorted[i];
+    if (s.missed) {
       eventIdx = i;
+      recoveryEventMetric = "session_missed";
+      recoveryThresholdUsed = "no session data";
+      break;
+    }
+    if (s.workingMin != null && liftPlannedMin > 0 && s.workingMin / liftPlannedMin < 0.80) {
+      eventIdx = i;
+      recoveryEventMetric = `workingMin/plannedMin = ${(s.workingMin / liftPlannedMin).toFixed(4)}`;
+      recoveryThresholdUsed = "< 0.80";
+      break;
+    }
+    if (s.actualMin != null && liftPlannedMin > 0 && s.actualMin < liftPlannedMin) {
+      eventIdx = i;
+      recoveryEventMetric = `actualMin < plannedMin (${s.actualMin} < ${liftPlannedMin})`;
+      recoveryThresholdUsed = "actualMin < plannedMin";
+      break;
+    }
+    if (s.idleRatio != null && s.idleRatio > 0.25) {
+      eventIdx = i;
+      recoveryEventMetric = `idleMin/actualMin = ${s.idleRatio.toFixed(4)}`;
+      recoveryThresholdUsed = "> 0.25";
       break;
     }
   }
 
   if (eventIdx === -1) {
-    recoveryScore = 100;
+    recoveryScore = null;
     recoveryEventFound = false;
+    recoveryReason = "no outcome event in last 21d";
   } else {
     recoveryEventFound = true;
-    const d0 = allDaysSorted[eventIdx];
-    recoveryEventDriftMag0 = d0.driftMag;
-    debugRecoveryDays.push({ date: d0.date, driftMag: d0.driftMag });
+    recoveryEventDay = sessionDaysSorted[eventIdx].date;
 
-    const available = allDaysSorted.slice(eventIdx + 1);
+    const available = sessionDaysSorted.slice(eventIdx + 1).filter(s => !s.missed);
     const followDays = available.slice(0, Math.min(4, available.length));
     recoveryFollowDaysK = followDays.length;
 
-    if (followDays.length > 0) {
-      const avgFollow = followDays.reduce((s, d) => s + d.driftMag, 0) / followDays.length;
-      recoveryFollowAvgDriftMag = avgFollow;
-      const improvement = (d0.driftMag - avgFollow) / d0.driftMag;
-      recoveryScore = clamp(100 * improvement, 0, 100);
-      followDays.forEach((d) => debugRecoveryDays.push({ date: d.date, driftMag: d.driftMag }));
+    if (followDays.length > 0 && liftPlannedMin > 0) {
+      const deviations = followDays.map(s => {
+        const ratio = (s.workingMin ?? s.actualMin ?? 0) / liftPlannedMin;
+        return Math.abs(1 - ratio);
+      });
+      const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+      recoveryFollowAvgDeviation = avgDev;
+      recoveryScore = clamp(100 - avgDev * 100, 0, 100);
     } else {
       recoveryScore = null;
     }
@@ -185,12 +247,14 @@ export async function computeLiftScheduleStability(
     consistencyNSamples,
     recoveryScore,
     recoveryEventFound,
-    recoveryEventDriftMag0,
+    recoveryEventDay,
+    recoveryEventMetric,
+    recoveryThresholdUsed,
     recoveryFollowDaysK,
-    recoveryFollowAvgDriftMag,
+    recoveryFollowAvgDeviation,
     recoveryConfidence,
+    recoveryReason,
     debugStartMins7d: last7.map((d) => d.startMin),
-    debugRecoveryDays,
   };
 }
 

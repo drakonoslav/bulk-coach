@@ -47,12 +47,14 @@ export interface CardioScheduleStability {
   consistencyNSessions: number;
   recoveryScore: number | null;
   recoveryEventFound: boolean;
-  recoveryEventDriftMag0: number | null;
+  recoveryEventDay: string | null;
+  recoveryEventMetric: string | null;
+  recoveryThresholdUsed: string | null;
   recoveryFollowDaysK: number | null;
-  recoveryFollowAvgDriftMag: number | null;
+  recoveryFollowAvgDeviation: number | null;
   recoveryConfidence: "full" | "low" | null;
+  recoveryReason: string | null;
   debugDriftMags: number[];
-  debugRecoveryDays: { date: string; driftMag: number }[];
 }
 
 export interface CardioOutcome {
@@ -120,54 +122,120 @@ export async function computeCardioScheduleStability(
     consistencyScore = clamp(100 * (1 - sd / 60), 0, 100);
   }
 
-  interface DayDrift {
-    date: string;
-    driftMag: number;
-  }
-
-  const allDays: DayDrift[] = rows.map((r: any) => {
+  const allDays = rows.map((r: any) => {
     const actualMin = toMin(r.cardio_start_time);
     const driftMag = Math.abs(circularDeltaMinutes(actualMin, plannedStartMin));
-    return { date: r.day, driftMag };
+    return { date: r.day as string, driftMag };
   });
+
+  const plannedDurationMin = schedule.plannedMin;
+  const outcomeRows = await pool.query(
+    `SELECT day, zone1_min, zone2_min, zone3_min, zone4_min, zone5_min,
+            cardio_start_time, cardio_end_time, cardio_min
+     FROM daily_log
+     WHERE user_id = $1
+       AND day <= $2
+       AND day >= ($2::date - 21)::text
+     ORDER BY day DESC
+     LIMIT 14`,
+    [userId, date],
+  );
+
+  interface CardioSessionDay {
+    date: string;
+    productiveMin: number | null;
+    totalMin: number | null;
+    z1Ratio: number | null;
+    missed: boolean;
+  }
+
+  const sessionDays: CardioSessionDay[] = outcomeRows.rows.map((r: any) => {
+    const z1 = r.zone1_min != null ? Number(r.zone1_min) : null;
+    const z2 = r.zone2_min != null ? Number(r.zone2_min) : null;
+    const z3 = r.zone3_min != null ? Number(r.zone3_min) : null;
+    const z4 = r.zone4_min != null ? Number(r.zone4_min) : null;
+    const z5 = r.zone5_min != null ? Number(r.zone5_min) : null;
+    const hasZones = z1 != null && z2 != null && z3 != null;
+
+    let totalMin: number | null = null;
+    if (hasZones) {
+      totalMin = z1 + z2 + z3 + (z4 ?? 0) + (z5 ?? 0);
+    } else if (r.cardio_start_time && r.cardio_end_time) {
+      const s = toMin(r.cardio_start_time);
+      const e = toMin(r.cardio_end_time);
+      let d = e - s; if (d < 0) d += 1440;
+      totalMin = d;
+    } else if (r.cardio_min != null) {
+      totalMin = Number(r.cardio_min);
+    }
+
+    const productiveMin = hasZones ? z2! + z3! : null;
+    const z1Ratio = (z1 != null && totalMin != null && totalMin > 0) ? z1 / totalMin : null;
+    const missed = totalMin == null || totalMin === 0;
+
+    return { date: r.day as string, productiveMin, totalMin, z1Ratio, missed };
+  });
+
+  const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
   let recoveryScore: number | null = null;
   let recoveryEventFound = false;
-  let recoveryEventDriftMag0: number | null = null;
+  let recoveryEventDay: string | null = null;
+  let recoveryEventMetric: string | null = null;
+  let recoveryThresholdUsed: string | null = null;
   let recoveryFollowDaysK: number | null = null;
-  let recoveryFollowAvgDriftMag: number | null = null;
-  const debugRecoveryDays: { date: string; driftMag: number }[] = [];
-  const DRIFT_EVENT_THRESHOLD = 45;
-
-  const allDaysSorted = [...allDays].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let recoveryFollowAvgDeviation: number | null = null;
+  let recoveryReason: string | null = null;
 
   let eventIdx = -1;
-  for (let i = allDaysSorted.length - 1; i >= 0; i--) {
-    if (allDaysSorted[i].driftMag >= DRIFT_EVENT_THRESHOLD) {
+  for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
+    const s = sessionDaysSorted[i];
+    if (s.missed) {
       eventIdx = i;
+      recoveryEventMetric = "session_missed";
+      recoveryThresholdUsed = "no session data";
+      break;
+    }
+    if (s.productiveMin != null && plannedDurationMin > 0 && s.productiveMin / plannedDurationMin < 0.75) {
+      eventIdx = i;
+      recoveryEventMetric = `productiveMin/plannedMin = ${(s.productiveMin / plannedDurationMin).toFixed(4)}`;
+      recoveryThresholdUsed = "< 0.75";
+      break;
+    }
+    if (s.totalMin != null && plannedDurationMin > 0 && s.totalMin / plannedDurationMin < 0.75) {
+      eventIdx = i;
+      recoveryEventMetric = `totalMin/plannedMin = ${(s.totalMin / plannedDurationMin).toFixed(4)}`;
+      recoveryThresholdUsed = "< 0.75";
+      break;
+    }
+    if (s.z1Ratio != null && s.z1Ratio > 0.30) {
+      eventIdx = i;
+      recoveryEventMetric = `z1/totalMin = ${s.z1Ratio.toFixed(4)}`;
+      recoveryThresholdUsed = "> 0.30";
       break;
     }
   }
 
   if (eventIdx === -1) {
-    recoveryScore = 100;
+    recoveryScore = null;
     recoveryEventFound = false;
+    recoveryReason = "no outcome event in last 21d";
   } else {
     recoveryEventFound = true;
-    const d0 = allDaysSorted[eventIdx];
-    recoveryEventDriftMag0 = d0.driftMag;
-    debugRecoveryDays.push({ date: d0.date, driftMag: d0.driftMag });
+    recoveryEventDay = sessionDaysSorted[eventIdx].date;
 
-    const available = allDaysSorted.slice(eventIdx + 1);
+    const available = sessionDaysSorted.slice(eventIdx + 1).filter(s => !s.missed);
     const followDays = available.slice(0, Math.min(4, available.length));
     recoveryFollowDaysK = followDays.length;
 
-    if (followDays.length > 0) {
-      const avgFollow = followDays.reduce((s, d) => s + d.driftMag, 0) / followDays.length;
-      recoveryFollowAvgDriftMag = avgFollow;
-      const improvement = (d0.driftMag - avgFollow) / d0.driftMag;
-      recoveryScore = clamp(100 * improvement, 0, 100);
-      followDays.forEach((d) => debugRecoveryDays.push({ date: d.date, driftMag: d.driftMag }));
+    if (followDays.length > 0 && plannedDurationMin > 0) {
+      const deviations = followDays.map(s => {
+        const ratio = (s.productiveMin ?? s.totalMin ?? 0) / plannedDurationMin;
+        return Math.abs(1 - ratio);
+      });
+      const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+      recoveryFollowAvgDeviation = avgDev;
+      recoveryScore = clamp(100 - avgDev * 100, 0, 100);
     } else {
       recoveryScore = null;
     }
@@ -187,12 +255,14 @@ export async function computeCardioScheduleStability(
     consistencyNSessions,
     recoveryScore,
     recoveryEventFound,
-    recoveryEventDriftMag0,
+    recoveryEventDay,
+    recoveryEventMetric,
+    recoveryThresholdUsed,
     recoveryFollowDaysK,
-    recoveryFollowAvgDriftMag,
+    recoveryFollowAvgDeviation,
     recoveryConfidence,
+    recoveryReason,
     debugDriftMags: allDays.slice(0, 7).map((d) => d.driftMag),
-    debugRecoveryDays,
   };
 }
 

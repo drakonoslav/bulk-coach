@@ -1702,10 +1702,13 @@ export default function ReportScreen() {
                             cs?.consistencyScore != null ? fmtScore100(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
                             sharedScoreColor(cs?.consistencyScore ?? null),
                           ))}
-                          {sigRow("Recovery", sigText(
-                            fmtScore100(cs?.recoveryScore),
-                            sharedScoreColor(cs?.recoveryScore ?? null),
-                          ))}
+                          {sigRow("Recovery", (() => {
+                            if (!cs?.recoveryEventFound) return sigText("—", Colors.textTertiary);
+                            return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              {sigText(fmtScore100(cs?.recoveryScore), sharedScoreColor(cs?.recoveryScore ?? null))}
+                              {cs?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
+                            </View>;
+                          })())}
                           <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
                             <Ionicons name={debugCardioSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F87171" />
@@ -1722,9 +1725,9 @@ export default function ReportScreen() {
                                 {`nSessions = ${cs?.consistencyNSessions ?? 0}\nsdMin = ${cs?.consistencySdMin?.toFixed(2) ?? "—"}\ndriftMags = [${(cs?.debugDriftMags ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${cs?.consistencyScore?.toFixed(2) ?? "—"}`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`eventFound = ${cs?.recoveryEventFound ?? false}\neventSize = ${cs?.recoveryEventDriftMag0?.toFixed(2) ?? "—"} min\nkDays = ${cs?.recoveryFollowDaysK ?? "—"}\npostEventAvg = ${cs?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecovery = ${cs?.recoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${cs?.recoveryConfidence ?? "—"}`}
+                                {`eventFound = ${cs?.recoveryEventFound ?? false}\neventDay = ${cs?.recoveryEventDay ?? "—"}\neventMetric = ${cs?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${cs?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${cs?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${cs?.recoveryFollowAvgDeviation?.toFixed(6) ?? "—"}\nrecoveryScore = ${cs?.recoveryScore?.toFixed(6) ?? "null"}\nconfidence = ${cs?.recoveryConfidence ?? "—"}\nreason = ${cs?.recoveryReason ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1783,10 +1786,13 @@ export default function ReportScreen() {
                             ls?.consistencyScore != null ? fmtScore100(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
                             sharedScoreColor(ls?.consistencyScore ?? null),
                           ))}
-                          {sigRow("Recovery", sigText(
-                            fmtScore100(ls?.recoveryScore),
-                            sharedScoreColor(ls?.recoveryScore ?? null),
-                          ))}
+                          {sigRow("Recovery", (() => {
+                            if (!ls?.recoveryEventFound) return sigText("—", Colors.textTertiary);
+                            return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              {sigText(fmtScore100(ls?.recoveryScore), sharedScoreColor(ls?.recoveryScore ?? null))}
+                              {ls?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
+                            </View>;
+                          })())}
                           <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
                             <Ionicons name={debugLiftSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F59E0B" />
@@ -1803,9 +1809,9 @@ export default function ReportScreen() {
                                 {`nSessions = ${ls?.consistencyNSamples ?? 0}\nsdMin = ${ls?.consistencySdMin?.toFixed(2) ?? "—"}\nstartMins7d = [${(ls?.debugStartMins7d ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${ls?.consistencyScore?.toFixed(2) ?? "—"}`}
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`eventFound = ${ls?.recoveryEventFound ?? false}\neventSize = ${ls?.recoveryEventDriftMag0?.toFixed(2) ?? "—"} min\nkDays = ${ls?.recoveryFollowDaysK ?? "—"}\npostEventAvg = ${ls?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecovery = ${ls?.recoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${ls?.recoveryConfidence ?? "—"}`}
+                                {`eventFound = ${ls?.recoveryEventFound ?? false}\neventDay = ${ls?.recoveryEventDay ?? "—"}\neventMetric = ${ls?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${ls?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${ls?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${ls?.recoveryFollowAvgDeviation?.toFixed(6) ?? "—"}\nrecoveryScore = ${ls?.recoveryScore?.toFixed(6) ?? "null"}\nconfidence = ${ls?.recoveryConfidence ?? "—"}\nreason = ${ls?.recoveryReason ?? "—"}`}
                               </Text>
                             </View>
                           )}
