@@ -101,6 +101,8 @@ export interface SleepBlock {
   stagesTotalSleepMin: number | null;
   stagesTotalInBedMin: number | null;
 
+  sleepContinuity: number | null;
+
   remPct: number | null;
   deepPct: number | null;
 
@@ -313,6 +315,10 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepAdequacyScore = clamp(Math.floor((100 * timeAsleepMin / plannedSleepMin) * 100) / 100, 0, 110);
   }
 
+  const sleepContinuity: number | null = (plannedSleepMin > 0 && awakeInBedMin != null)
+    ? clamp(1 - (awakeInBedMin / plannedSleepMin), 0, 1)
+    : null;
+
   if (hasStages && estimatedSleepMin != null && estimatedSleepMin > 0) {
     remPct = Math.round((stageRem / estimatedSleepMin) * 1000) / 10;
     deepPct = Math.round((stageDeep / estimatedSleepMin) * 1000) / 10;
@@ -392,6 +398,7 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     deepMin: stageDeep,
     stagesTotalSleepMin,
     stagesTotalInBedMin,
+    sleepContinuity,
     remPct,
     deepPct,
     awakeInBedDeltaMin,

@@ -991,6 +991,14 @@ export default function ChecklistScreen() {
                 ), sb?.awakeInBedMin == null) : null;
               })()}
 
+              {(() => {
+                const cont = sb?.sleepContinuity ?? null;
+                return cont != null ? sigRow("Continuity", sigText(
+                  `${(cont * 100).toFixed(2)}%`,
+                  cont >= 0.85 ? "#34D399" : cont >= 0.70 ? "#FBBF24" : "#EF4444",
+                )) : null;
+              })()}
+
               {sb?.awakeInBedMin != null && sigRow("Awake in bed", sigText(
                 `${sb.awakeInBedMin}m`,
                 sb.awakeInBedMin <= 30 ? "#34D399" : sb.awakeInBedMin <= 60 ? "#FBBF24" : "#EF4444",

@@ -1896,6 +1896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           deepMin: sleepBlockResult.deepMin,
           coreMin: sleepBlockResult.coreMin,
           awakeMin: sleepBlockResult.awakeMin,
+          sleepContinuity: sleepBlockResult.sleepContinuity,
           sleepAlignment: sleepBlockResult.sleepAlignment,
         } : null,
         section3_readiness_live: readinessResult ? {
