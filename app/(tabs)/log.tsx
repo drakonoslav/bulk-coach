@@ -2353,7 +2353,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   header: {
     marginBottom: 24,
@@ -2428,10 +2428,11 @@ const styles = StyleSheet.create({
   sectionCard: {
     backgroundColor: Colors.cardBg,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.border,
+    overflow: "hidden" as const,
   },
   sectionLabel: {
     fontSize: 13,
