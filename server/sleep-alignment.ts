@@ -83,7 +83,9 @@ export interface SleepBlock {
   sleepDebtMin: number | null;
   sleepDeltaMin: number | null;
   sleepAdequacyScore: number | null;
+  sleepEfficiencyFrac: number | null;
   sleepEfficiencyPct: number | null;
+  sleepContinuityFrac: number | null;
   sleepContinuityPct: number | null;
   continuityDenominator: "TIB" | null;
   sleepEfficiencyEst: number | null;
@@ -444,7 +446,9 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepDebtMin,
     sleepDeltaMin,
     sleepAdequacyScore,
+    sleepEfficiencyFrac: sleepEfficiency,
     sleepEfficiencyPct,
+    sleepContinuityFrac: sleepContinuity,
     sleepContinuityPct,
     continuityDenominator: sleepContinuityPct != null ? "TIB" as const : null,
     sleepEfficiencyEst,

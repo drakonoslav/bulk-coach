@@ -1529,12 +1529,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }
 
+      const effFrac = sleepBlock?.sleepEfficiencyFrac ?? null;
+      const effPct = sleepBlock?.sleepEfficiencyPct ?? null;
+      const contFrac = sleepBlock?.sleepContinuityFrac ?? null;
+      const contPct = sleepBlock?.sleepContinuityPct ?? null;
+
+      const unitInvariants = {
+        efficiency: {
+          frac: effFrac,
+          pct: effPct,
+          pctFromFrac: effFrac != null ? effFrac * 100 : null,
+          delta: (effFrac != null && effPct != null) ? Math.abs(effPct - effFrac * 100) : null,
+          pass: (effFrac != null && effPct != null) ? Math.abs(effPct - effFrac * 100) < 0.01 : null,
+        },
+        continuity: {
+          frac: contFrac,
+          pct: contPct,
+          pctFromFrac: contFrac != null ? contFrac * 100 : null,
+          delta: (contFrac != null && contPct != null) ? Math.abs(contPct - contFrac * 100) : null,
+          pass: (contFrac != null && contPct != null) ? Math.abs(contPct - contFrac * 100) < 0.01 : null,
+        },
+      };
+
       const uiPayload = {
         sleepAlignment: sa,
         scheduleStability: schedStab,
-        sleepBlock_continuity: sleepBlock?.sleepContinuity ?? null,
+        sleepBlock_continuity: sleepBlock?.sleepContinuityFrac ?? null,
         sleepBlock_adequacy: sleepBlock?.sleepAdequacyScore ?? null,
-        sleepBlock_efficiency: sleepBlock?.sleepEfficiency ?? null,
+        sleepBlock_efficiency: sleepBlock?.sleepEfficiencyFrac ?? null,
         sleepBlock_plannedSleepMin: sleepBlock?.plannedSleepMin ?? null,
         sleepBlock_awakeInBedMin: sleepBlock?.awakeInBedMin ?? null,
       };
@@ -1579,6 +1601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           formula: "driftMag=(abs(bedDev)+abs(wakeDev))/2, sd=stddevPop(mags), score=clamp(round(100×(1-sd/60)), 0, 100)",
         },
         recovery: recoveryAudit,
+        unitInvariants,
         uiPayload,
       });
     } catch (err: unknown) {
@@ -2087,8 +2110,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         section2b_canonical_sleep: canonSleep,
         section2c_sleep_block: sleepBlockResult ? {
           sleepAdequacyScore: sleepBlockResult.sleepAdequacyScore,
-          sleepEfficiency: sleepBlockResult.sleepEfficiency,
+          sleepEfficiencyFrac: sleepBlockResult.sleepEfficiencyFrac,
+          sleepEfficiencyPct: sleepBlockResult.sleepEfficiencyPct,
           sleepEfficiencyEst: sleepBlockResult.sleepEfficiencyEst,
+          sleepContinuityFrac: sleepBlockResult.sleepContinuityFrac,
+          sleepContinuityPct: sleepBlockResult.sleepContinuityPct,
+          continuityDenominator: sleepBlockResult.continuityDenominator,
+          unitInvariants: {
+            efficiency: {
+              delta: (sleepBlockResult.sleepEfficiencyFrac != null && sleepBlockResult.sleepEfficiencyPct != null)
+                ? Math.abs(sleepBlockResult.sleepEfficiencyPct - sleepBlockResult.sleepEfficiencyFrac * 100) : null,
+              pass: (sleepBlockResult.sleepEfficiencyFrac != null && sleepBlockResult.sleepEfficiencyPct != null)
+                ? Math.abs(sleepBlockResult.sleepEfficiencyPct - sleepBlockResult.sleepEfficiencyFrac * 100) < 0.01 : null,
+            },
+            continuity: {
+              delta: (sleepBlockResult.sleepContinuityFrac != null && sleepBlockResult.sleepContinuityPct != null)
+                ? Math.abs(sleepBlockResult.sleepContinuityPct - sleepBlockResult.sleepContinuityFrac * 100) : null,
+              pass: (sleepBlockResult.sleepContinuityFrac != null && sleepBlockResult.sleepContinuityPct != null)
+                ? Math.abs(sleepBlockResult.sleepContinuityPct - sleepBlockResult.sleepContinuityFrac * 100) < 0.01 : null,
+            },
+          },
           plannedSleepMin: sleepBlockResult.plannedSleepMin,
           estimatedSleepMin: sleepBlockResult.estimatedSleepMin,
           timeInBedMin: sleepBlockResult.timeInBedMin,
@@ -2098,7 +2139,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           deepMin: sleepBlockResult.deepMin,
           coreMin: sleepBlockResult.coreMin,
           awakeMin: sleepBlockResult.awakeMin,
-          sleepContinuity: sleepBlockResult.sleepContinuity,
           sleepAlignment: sleepBlockResult.sleepAlignment,
         } : null,
         section2d_schedule_stability: schedStabResult,
