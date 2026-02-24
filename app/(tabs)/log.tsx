@@ -1504,7 +1504,7 @@ export default function LogScreen() {
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginBottom: 4 }}>
               <Ionicons name="speedometer-outline" size={10} color={Colors.textTertiary} />
-              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (min or H:MM)</Text>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (minutes)</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 4 }}>
               {([
@@ -1530,10 +1530,10 @@ export default function LogScreen() {
                       textAlign: "center",
                     }}
                     value={z.val}
-                    onChangeText={handleMinuteSetter(z.set)}
+                    onChangeText={z.set}
                     placeholder="—"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
+                    keyboardType="number-pad"
                     keyboardAppearance="dark"
                   />
                 </View>
