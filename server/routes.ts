@@ -1805,11 +1805,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT day, steps, cardio_min, active_zone_minutes, sleep_minutes,
                 energy_burned_kcal, resting_hr, hrv,
                 zone1_min, zone2_min, zone3_min, below_zone1_min,
-                morning_weight_lb, waist_in, sleep_start, sleep_end
+                morning_weight_lb, waist_in, sleep_start, sleep_end,
+                actual_bed_time, actual_wake_time, planned_bed_time, planned_wake_time,
+                sleep_awake_min, sleep_rem_min, sleep_core_min, sleep_deep_min,
+                sleep_latency_min, sleep_waso_min, nap_minutes
          FROM daily_log WHERE day = $1 AND user_id = $2`,
         [date, userId],
       );
       const dailyLog = logRows[0] ? snakeToCamel(logRows[0]) : null;
+
+      const { rows: canonSleepRows } = await pool.query(
+        `SELECT date, sleep_start, sleep_end, total_sleep_minutes, time_in_bed_minutes,
+                sleep_efficiency, awake_minutes, rem_minutes, deep_minutes, light_or_core_minutes,
+                sleep_latency_min, waso_min, source
+         FROM sleep_summary_daily WHERE date = $1 AND user_id = $2`,
+        [date, userId],
+      );
+      const canonSleep = canonSleepRows[0] ? snakeToCamel(canonSleepRows[0]) : null;
+
+      let sleepBlockResult = null;
+      try {
+        sleepBlockResult = await computeSleepBlock(date, userId);
+      } catch {}
+
 
       const { rows: sourceRows } = await pool.query(
         `SELECT metric, source, file_path, rows_consumed, value
@@ -1864,6 +1882,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           conflicts: conflictRows,
         },
         section2_daily_log: dailyLog,
+        section2b_canonical_sleep: canonSleep,
+        section2c_sleep_block: sleepBlockResult ? {
+          sleepAdequacyScore: sleepBlockResult.sleepAdequacyScore,
+          sleepEfficiency: sleepBlockResult.sleepEfficiency,
+          sleepEfficiencyEst: sleepBlockResult.sleepEfficiencyEst,
+          plannedSleepMin: sleepBlockResult.plannedSleepMin,
+          estimatedSleepMin: sleepBlockResult.estimatedSleepMin,
+          timeInBedMin: sleepBlockResult.timeInBedMin,
+          awakeInBedMin: sleepBlockResult.awakeInBedMin,
+          fitbitSleepMinutes: sleepBlockResult.fitbitSleepMinutes,
+          remMin: sleepBlockResult.remMin,
+          deepMin: sleepBlockResult.deepMin,
+          coreMin: sleepBlockResult.coreMin,
+          awakeMin: sleepBlockResult.awakeMin,
+          sleepAlignment: sleepBlockResult.sleepAlignment,
+        } : null,
         section3_readiness_live: readinessResult ? {
           score: readinessResult.readinessScore,
           tier: readinessResult.readinessTier,

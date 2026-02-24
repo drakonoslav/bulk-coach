@@ -199,14 +199,18 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     ),
   ]);
 
-  let r = logResult.rows[0];
-  let canon = canonResult.rows[0];
+  let r = logResult.rows[0] ?? null;
+  let canon = canonResult.rows[0] ?? null;
 
-  const hasSleepToday = !!(r?.actual_bed_time || r?.sleep_minutes || r?.sleep_awake_min != null || canon?.sleep_start || canon?.total_sleep_minutes);
+  const hasSleepInRow = (row: any, can: any) =>
+    !!(row?.actual_bed_time || row?.sleep_minutes || row?.sleep_awake_min != null ||
+       can?.sleep_start || can?.total_sleep_minutes);
 
-  if (!hasSleepToday) {
-    r = logYestResult.rows[0] || r;
-    canon = canonYestResult.rows[0] || canon;
+  if (!hasSleepInRow(r, canon)) {
+    const yestR = logYestResult.rows[0] ?? null;
+    const yestC = canonYestResult.rows[0] ?? null;
+    r = yestR ?? r;
+    canon = yestC ?? canon;
   }
 
   if (!r && !canon) return null;
@@ -307,10 +311,11 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
   }
 
   if (!hasStages) {
-    if (canon?.sleep_efficiency != null) {
+    if (sleepEfficiency == null && canon?.sleep_efficiency != null) {
       const raw = Number(canon.sleep_efficiency);
       sleepEfficiency = raw > 1 ? raw / 100 : raw;
       sleepEfficiency = clamp(sleepEfficiency, 0, 1);
+      sleepEfficiencyEst = sleepEfficiency;
     }
     if (estimatedSleepMin != null && fitbitMin != null) {
       fitbitVsReportedDeltaMin = fitbitMin - estimatedSleepMin;
