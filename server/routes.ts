@@ -1512,8 +1512,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } : null,
         },
         primaryDriver,
-        cardioBlock: { domainOutcome: cardioBlock.domainOutcome },
-        liftBlock: { domainOutcome: liftBlock.domainOutcome },
+        scheduleStability: schedStab,
+        cardioBlock,
+        liftBlock,
         placeholders: {
           mealTimingTracked: false,
         },
