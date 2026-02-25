@@ -941,27 +941,17 @@ export default function ChecklistScreen() {
               {(() => {
                 const ss = readiness.scheduleStability;
                 const cs = ss?.scheduleConsistencyScore;
-                if (cs == null) return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  {sigText("\u2014", Colors.textTertiary)}
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>need \u22654 valid days</Text>
-                </View>);
-                return sigRow("Consistency", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  {sigText(fmtScore100(cs), scoreColor(cs, { good: 70, warn: 40 }))}
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>(SD {ss!.scheduleConsistencySdMin?.toFixed(1)}m, n={ss!.scheduleConsistencyNSamples})</Text>
-                </View>);
+                if (cs == null) return sigRow("Consistency", sigText("\u2014", Colors.textTertiary));
+                return sigRow("Consistency", sigText(fmtScore100(cs), scoreColor(cs, { good: 70, warn: 40 })));
               })()}
 
               {(() => {
                 const ss = readiness.scheduleStability;
                 const rs = ss?.scheduleRecoveryScore;
                 if (rs == null) return sigRow("Recovery", sigText("\u2014", Colors.textTertiary));
-                const secText = !ss!.recoveryEventFound
-                  ? "no drift event in last 14d"
-                  : `event ${ss!.recoveryEventDriftMag0?.toFixed(0)}m \u2192 next avg ${ss!.recoveryFollowAvgDriftMag?.toFixed(0)}m (k=${ss!.recoveryFollowDaysK})`;
                 const conf = ss!.recoveryConfidence;
                 return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                   {sigText(fmtScore100(rs), scoreColor(rs, { good: 70, warn: 40 }))}
-                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{secText}</Text>
                   {conf === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
                 </View>);
               })()}
