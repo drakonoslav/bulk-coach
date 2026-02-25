@@ -2,6 +2,8 @@ import { pool } from "./db";
 import { getLiftScheduleSettings } from "./adherence-metrics-range";
 import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
 import { deriveScheduledToday } from "./schedule/deriveScheduledToday";
+import { toDomainOutcomeLift } from "./lift/toDomainOutcomeLift";
+import { DomainOutcome } from "./types/domainOutcome";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -94,6 +96,7 @@ export interface LiftOutcome {
 export interface LiftBlock {
   scheduleStability: LiftScheduleStability;
   outcome: LiftOutcome;
+  domainOutcome: DomainOutcome;
 }
 
 export async function computeLiftScheduleStability(
@@ -458,5 +461,10 @@ export async function computeLiftBlock(
     computeLiftScheduleStability(date, userId),
     computeLiftOutcome(date, userId),
   ]);
-  return { scheduleStability, outcome };
+  const domainOutcome = toDomainOutcomeLift({
+    dateISO: date,
+    scheduleStability,
+    outcome,
+  });
+  return { scheduleStability, outcome, domainOutcome };
 }

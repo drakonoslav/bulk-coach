@@ -3,6 +3,8 @@ import { getCardioScheduleSettings } from "./adherence-metrics-range";
 import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
 import { deriveScheduledToday } from "./schedule/deriveScheduledToday";
 import { computeCardioContinuity } from "./cardio/computeCardioContinuity";
+import { toDomainOutcomeCardio } from "./cardio/toDomainOutcomeCardio";
+import { DomainOutcome } from "./types/domainOutcome";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -94,6 +96,7 @@ export interface CardioOutcome {
 export interface CardioBlock {
   scheduleStability: CardioScheduleStability;
   outcome: CardioOutcome;
+  domainOutcome: DomainOutcome;
 }
 
 export async function computeCardioScheduleStability(
@@ -471,5 +474,10 @@ export async function computeCardioBlock(
     computeCardioScheduleStability(date, userId),
     computeCardioOutcome(date, userId),
   ]);
-  return { scheduleStability, outcome };
+  const domainOutcome = toDomainOutcomeCardio({
+    dateISO: date,
+    scheduleStability,
+    outcome,
+  });
+  return { scheduleStability, outcome, domainOutcome };
 }

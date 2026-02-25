@@ -77,6 +77,7 @@ import { computeRangeAdherence } from "./adherence-metrics-range";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import { computeCardioBlock } from "./cardio-regulation";
 import { computeLiftBlock } from "./lift-regulation";
+import { toDomainOutcomeSleep } from "./sleep/toDomainOutcomeSleep";
 import {
   upsertCalorieDecision,
   getCalorieDecisions,
@@ -1473,10 +1474,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn(`[recovery-shape-violation] date=${date}:`, recoveryShapeChecks.join("; "));
       }
 
+      const sleepDomainOutcome = toDomainOutcomeSleep({
+        dateISO: date,
+        scheduledToday: schedStab.scheduledToday,
+        scheduledTodayReason: schedStab.scheduledTodayReason,
+        scheduledTodayConfidence: schedStab.scheduledTodayConfidence,
+        scheduleStability: schedStab,
+        sleepBlock,
+      });
+
       res.json({
         ...result,
         sleepBlock,
         sleepTrending,
+        sleepDomainOutcome,
         adherence: {
           alignmentScore: sa?.alignmentScore ?? null,
           bedDevMin: sa?.bedDeviationMin ?? null,
