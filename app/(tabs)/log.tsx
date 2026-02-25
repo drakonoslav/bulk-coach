@@ -1035,6 +1035,28 @@ export default function LogScreen() {
           </View>
         </View>
 
+        <Pressable
+          onPress={handleSave}
+          disabled={saving}
+          style={({ pressed }) => [
+            styles.saveBtn,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+            saved && { backgroundColor: Colors.success },
+          ]}
+        >
+          {saved ? (
+            <View style={styles.saveBtnContent}>
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={styles.saveBtnText}>Saved</Text>
+            </View>
+          ) : (
+            <View style={styles.saveBtnContent}>
+              <Ionicons name={hasExisting ? "refresh-outline" : "save-outline"} size={20} color="#fff" />
+              <Text style={styles.saveBtnText}>{saving ? "Saving..." : hasExisting ? "Update Entry" : "Save Entry"}</Text>
+            </View>
+          )}
+        </Pressable>
+
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Weight</Text>
           <InputField
