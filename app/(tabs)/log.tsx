@@ -1657,7 +1657,7 @@ export default function LogScreen() {
                     onChangeText={handleMinuteSetter(z.set)}
                     placeholder="—"
                     placeholderTextColor={Colors.textTertiary}
-                    keyboardType="default"
+                    keyboardType="numeric"
                     keyboardAppearance="dark"
                   />
                 </View>
