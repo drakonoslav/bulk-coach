@@ -19,6 +19,7 @@ import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, scoreColor } from "@/lib/format";
+import { FuelGaugeGroup } from "@/components/FuelGauge";
 
 function getTimeCategory(time: string): { icon: string; color: string } {
   const h = parseInt(time.split(":")[0], 10);
@@ -933,27 +934,13 @@ export default function ChecklistScreen() {
 
               {sectionHeader("Schedule Stability", "calendar-outline", "#60A5FA")}
 
-              {sigRow("Alignment", sigText(
-                hasAlignment ? fmtScore100(sa!.alignmentScore!) : "\u2014 no observed times",
-                hasAlignment ? scoreColor(sa!.alignmentScore!, { good: 80, warn: 50 }) : Colors.textTertiary,
-              ))}
-
               {(() => {
                 const ss = readiness.scheduleStability;
-                const cs = ss?.scheduleConsistencyScore;
-                if (cs == null) return sigRow("Consistency", sigText("\u2014", Colors.textTertiary));
-                return sigRow("Consistency", sigText(fmtScore100(cs), scoreColor(cs, { good: 70, warn: 40 })));
-              })()}
-
-              {(() => {
-                const ss = readiness.scheduleStability;
-                const rs = ss?.scheduleRecoveryScore;
-                if (rs == null) return sigRow("Recovery", sigText("\u2014", Colors.textTertiary));
-                const conf = ss!.recoveryConfidence;
-                return sigRow("Recovery", <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  {sigText(fmtScore100(rs), scoreColor(rs, { good: 70, warn: 40 }))}
-                  {conf === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
-                </View>);
+                return <FuelGaugeGroup items={[
+                  { label: "Alignment", value: hasAlignment ? sa!.alignmentScore! : null, nullLabel: "no observed times", thresholds: { good: 80, warn: 50 } },
+                  { label: "Consistency", value: ss?.scheduleConsistencyScore ?? null, nullLabel: ss?.scheduleConsistencyNSamples != null && (ss.scheduleConsistencyNSamples ?? 0) < 4 ? `${ss.scheduleConsistencyNSamples}/4 days` : undefined, thresholds: { good: 70, warn: 40 } },
+                  { label: "Recovery", value: ss?.scheduleRecoveryScore ?? null, confidence: ss?.recoveryConfidence === "low" ? "low" : ss?.scheduleRecoveryScore != null ? "high" : "low", thresholds: { good: 70, warn: 40 } },
+                ]} />;
               })()}
 
               {(() => {
@@ -998,20 +985,11 @@ export default function ChecklistScreen() {
                 const cs = readiness.cardioBlock?.scheduleStability;
                 return (
                   <View>
-                    {sigRow("Alignment", sigText(
-                      fmtScore100(cs?.alignmentScore),
-                      scoreColor(cs?.alignmentScore),
-                    ))}
-                    {sigRow("Consistency", sigText(
-                      cs?.consistencyScore != null ? fmtScore100(cs.consistencyScore) : cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `— (${cs.consistencyNSessions}/4 sessions)` : "—",
-                      scoreColor(cs?.consistencyScore),
-                    ))}
-                    {sigRow("Recovery", (() => {
-                      return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        {sigText(fmtScore100(cs?.recoveryScore), scoreColor(cs?.recoveryScore))}
-                        {cs?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
-                      </View>;
-                    })())}
+                    <FuelGaugeGroup items={[
+                      { label: "Alignment", value: cs?.alignmentScore ?? null },
+                      { label: "Consistency", value: cs?.consistencyScore ?? null, nullLabel: cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `${cs.consistencyNSessions}/4 sessions` : undefined },
+                      { label: "Recovery", value: cs?.recoveryScore ?? null, confidence: cs?.recoveryConfidence ?? "low" },
+                    ]} />
                     <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
                       <Ionicons name={debugCardioSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F87171" />
@@ -1044,18 +1022,11 @@ export default function ChecklistScreen() {
                 const co = readiness.cardioBlock?.outcome;
                 return (
                   <View>
-                    {sigRow("Adequacy", sigText(
-                      co?.adequacyScore != null ? fmtScore110(co.adequacyScore) : "— not logged",
-                      scoreColor(co?.adequacyScore),
-                    ))}
-                    {sigRow("Efficiency", sigText(
-                      co?.efficiencyScore != null ? fmtPct(co.efficiencyScore) : "— no zone data",
-                      scoreColor(co?.efficiencyScore),
-                    ))}
-                    {sigRow("Continuity", sigText(
-                      co?.continuityScore != null ? fmtPct(co.continuityScore) : "— no zone data",
-                      scoreColor(co?.continuityScore),
-                    ))}
+                    <FuelGaugeGroup items={[
+                      { label: "Adequacy", value: co?.adequacyScore ?? null, max: 110, nullLabel: "not logged" },
+                      { label: "Efficiency", value: co?.efficiencyScore ?? null, suffix: "%", nullLabel: "no zone data" },
+                      { label: "Continuity", value: co?.continuityScore ?? null, suffix: "%", nullLabel: "no zone data" },
+                    ]} />
                     <Pressable onPress={() => setDebugCardioOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Outcome</Text>
                       <Ionicons name={debugCardioOutcomeExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F87171" />
@@ -1081,20 +1052,11 @@ export default function ChecklistScreen() {
                 const ls = readiness.liftBlock?.scheduleStability;
                 return (
                   <View>
-                    {sigRow("Alignment", sigText(
-                      fmtScore100(ls?.alignmentScore),
-                      scoreColor(ls?.alignmentScore),
-                    ))}
-                    {sigRow("Consistency", sigText(
-                      ls?.consistencyScore != null ? fmtScore100(ls.consistencyScore) : ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `— (${ls.consistencyNSamples}/4 sessions)` : "—",
-                      scoreColor(ls?.consistencyScore),
-                    ))}
-                    {sigRow("Recovery", (() => {
-                      return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        {sigText(fmtScore100(ls?.recoveryScore), scoreColor(ls?.recoveryScore))}
-                        {ls?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
-                      </View>;
-                    })())}
+                    <FuelGaugeGroup items={[
+                      { label: "Alignment", value: ls?.alignmentScore ?? null },
+                      { label: "Consistency", value: ls?.consistencyScore ?? null, nullLabel: ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `${ls.consistencyNSamples}/4 sessions` : undefined },
+                      { label: "Recovery", value: ls?.recoveryScore ?? null, confidence: ls?.recoveryConfidence ?? "low" },
+                    ]} />
                     <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
                       <Ionicons name={debugLiftSchedExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F59E0B" />
@@ -1127,18 +1089,11 @@ export default function ChecklistScreen() {
                 const lo = readiness.liftBlock?.outcome;
                 return (
                   <View>
-                    {sigRow("Adequacy", sigText(
-                      lo?.adequacyScore != null ? fmtScore110(lo.adequacyScore) : "— not logged",
-                      scoreColor(lo?.adequacyScore),
-                    ))}
-                    {sigRow("Efficiency", sigText(
-                      lo?.efficiencyScore != null ? fmtPct(lo.efficiencyScore) : "— not available",
-                      scoreColor(lo?.efficiencyScore),
-                    ))}
-                    {sigRow("Continuity", sigText(
-                      lo?.continuityScore != null ? fmtPct(lo.continuityScore) : "— not available",
-                      scoreColor(lo?.continuityScore),
-                    ))}
+                    <FuelGaugeGroup items={[
+                      { label: "Adequacy", value: lo?.adequacyScore ?? null, max: 110, nullLabel: "not logged" },
+                      { label: "Efficiency", value: lo?.efficiencyScore ?? null, suffix: "%", nullLabel: "not available" },
+                      { label: "Continuity", value: lo?.continuityScore ?? null, suffix: "%", nullLabel: "not available" },
+                    ]} />
                     <Pressable onPress={() => setDebugLiftOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Outcome</Text>
                       <Ionicons name={debugLiftOutcomeExpanded ? "chevron-up" : "chevron-down"} size={14} color="#F59E0B" />
@@ -1168,31 +1123,16 @@ export default function ChecklistScreen() {
 
               {sectionHeader("Sleep Outcome", "moon-outline", "#60A5FA")}
 
-              {sigRow("Adequacy", sigText(
-                hasAdequacy ? `${fmtScore100(sb!.sleepAdequacyScore!)}${shortfallStr}` : "\u2014 no sleep data",
-                hasAdequacy ? scoreColor(sb!.sleepAdequacyScore!) : Colors.textTertiary,
-              ))}
+              <FuelGaugeGroup items={[
+                { label: hasAdequacy && shortfallStr ? `Adequacy ${shortfallStr}` : "Adequacy", value: hasAdequacy ? sb!.sleepAdequacyScore! : null, nullLabel: "no sleep data", thresholds: { good: 90, warn: 70 } },
+                { label: "Efficiency", value: sb?.sleepEfficiencyPct ?? null, suffix: "%", thresholds: { good: 85, warn: 70 } },
+                { label: "Continuity", value: sb?.sleepContinuityPct ?? null, suffix: "%", thresholds: { good: 85, warn: 70 } },
+              ]} />
 
               {sigRow("Sleep delta", sigText(
                 insufficientData ? "\u2014" : (readiness.deltas?.sleep_str ?? "\u2014"),
                 insufficientData ? "#6B7280" : ((readiness.deltas?.sleep_pct ?? 0) >= 0 ? "#34D399" : "#EF4444"),
               ))}
-
-              {(() => {
-                const eff = sb?.sleepEfficiencyPct ?? null;
-                return eff != null ? sigRow("Efficiency", sigText(
-                  `${fmtPct(eff)}${sb?.fitbitVsReportedDeltaMin != null ? ` (Fitbit ${sb!.fitbitVsReportedDeltaMin! > 0 ? "+" : ""}${sb!.fitbitVsReportedDeltaMin}m)` : ""}`,
-                  scoreColor(eff, { good: 85, warn: 70 }),
-                ), sb?.awakeInBedMin == null) : null;
-              })()}
-
-              {(() => {
-                const cont = sb?.sleepContinuityPct ?? null;
-                return cont != null ? sigRow("Continuity", sigText(
-                  fmtPct(cont),
-                  scoreColor(cont, { good: 85, warn: 70 }),
-                )) : null;
-              })()}
 
               {sb?.awakeInBedMin != null && sigRow("Awake in bed", sigText(
                 `${sb.awakeInBedMin}m`,
