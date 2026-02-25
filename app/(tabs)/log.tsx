@@ -266,6 +266,8 @@ export default function LogScreen() {
   const [zone5, setZone5] = useState("");
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
   const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
+  const [cardioSkipped, setCardioSkipped] = useState(false);
+  const [liftSkipped, setLiftSkipped] = useState(false);
   const [perfNote, setPerfNote] = useState("");
   const [adherence, setAdherence] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
@@ -487,6 +489,8 @@ export default function LogScreen() {
       setZone5(existing.zone5Min?.toString() || "");
       setLiftDone(existing.liftDone);
       setDeloadWeek(existing.deloadWeek);
+      setCardioSkipped(existing.cardioSkipped ?? false);
+      setLiftSkipped(existing.liftSkipped ?? false);
       setPerfNote(existing.performanceNote || "");
       setAdherence(existing.adherence ?? null);
       setNotes(existing.notes || "");
@@ -791,6 +795,8 @@ export default function LogScreen() {
     setLiftZ5("");
     setLiftDone(undefined);
     setDeloadWeek(undefined);
+    setCardioSkipped(false);
+    setLiftSkipped(false);
     setPerfNote("");
     setAdherence(null);
     setNotes("");
@@ -899,6 +905,8 @@ export default function LogScreen() {
         ohpWeightLb: ohpWeight ? parseFloat(ohpWeight) : undefined,
         pain010: pain010 ?? undefined,
         mealChecklist: Object.values(mealChecklist).some(v => v) ? mealChecklist : undefined,
+        cardioSkipped: cardioSkipped || undefined,
+        liftSkipped: liftSkipped || undefined,
       };
 
       await saveEntry(entry);
@@ -1552,11 +1560,18 @@ export default function LogScreen() {
             icon="footsteps-outline"
             iconColor={Colors.primary}
           />
-          <View style={[styles.sectionCard, { borderColor: "#EF444420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
+          <View style={[styles.sectionCard, { borderColor: cardioSkipped ? "#6B728020" : "#EF444420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <Ionicons name="heart-outline" size={14} color="#EF4444" />
-              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#EF4444" }}>Cardio Session</Text>
-              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>06:00–06:40</Text>
+              <Ionicons name="heart-outline" size={14} color={cardioSkipped ? "#6B7280" : "#EF4444"} />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: cardioSkipped ? "#6B7280" : "#EF4444" }}>Cardio Session</Text>
+              <Pressable
+                onPress={() => setCardioSkipped(!cardioSkipped)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: "auto", backgroundColor: cardioSkipped ? "#EF444418" : "#1A1A2E", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: cardioSkipped ? "#EF444440" : "#333" }}
+              >
+                <Ionicons name={cardioSkipped ? "close-circle" : "checkmark-circle-outline"} size={12} color={cardioSkipped ? "#EF4444" : "#6B7280"} />
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: cardioSkipped ? "#EF4444" : "#6B7280" }}>{cardioSkipped ? "Skipped" : "Skip"}</Text>
+              </Pressable>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>06:00–06:40</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
               <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
@@ -1664,11 +1679,18 @@ export default function LogScreen() {
                 </View>
               ))}</View>
           </View>
-          <View style={[styles.sectionCard, { borderColor: "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
+          <View style={[styles.sectionCard, { borderColor: liftSkipped ? "#6B728020" : "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <Ionicons name="barbell-outline" size={14} color="#FBBF24" />
-              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>Lift Session</Text>
-              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>17:00–18:15</Text>
+              <Ionicons name="barbell-outline" size={14} color={liftSkipped ? "#6B7280" : "#FBBF24"} />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: liftSkipped ? "#6B7280" : "#FBBF24" }}>Lift Session</Text>
+              <Pressable
+                onPress={() => setLiftSkipped(!liftSkipped)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: "auto", backgroundColor: liftSkipped ? "#EF444418" : "#1A1A2E", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: liftSkipped ? "#EF444440" : "#333" }}
+              >
+                <Ionicons name={liftSkipped ? "close-circle" : "checkmark-circle-outline"} size={12} color={liftSkipped ? "#EF4444" : "#6B7280"} />
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: liftSkipped ? "#EF4444" : "#6B7280" }}>{liftSkipped ? "Skipped" : "Skip"}</Text>
+              </Pressable>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>17:00–18:15</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
               <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>

@@ -746,6 +746,11 @@ async function runMigrations(): Promise<void> {
   await runMigration('014_meal_checklist', `
     ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS meal_checklist JSONB;
   `);
+
+  await runMigration('015_session_skipped_flags', `
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS cardio_skipped BOOLEAN DEFAULT false;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_skipped BOOLEAN DEFAULT false;
+  `);
 }
 
 export { pool };

@@ -113,6 +113,7 @@ export async function computeCardioScheduleStability(
        AND day <= $2
        AND day >= ($2::date - 21)::text
        AND cardio_start_time IS NOT NULL
+       AND (cardio_skipped IS NULL OR cardio_skipped = false)
      ORDER BY day DESC
      LIMIT 14`,
     [userId, date],
@@ -151,7 +152,7 @@ export async function computeCardioScheduleStability(
   const plannedDurationMin = schedule.plannedMin;
   const outcomeRows = await pool.query(
     `SELECT day, zone1_min, zone2_min, zone3_min, zone4_min, zone5_min,
-            cardio_start_time, cardio_end_time, cardio_min
+            cardio_start_time, cardio_end_time, cardio_min, cardio_skipped
      FROM daily_log
      WHERE user_id = $1
        AND day <= $2
@@ -170,6 +171,10 @@ export async function computeCardioScheduleStability(
   }
 
   const sessionDays: CardioSessionDay[] = outcomeRows.rows.map((r: any) => {
+    const skipped = r.cardio_skipped === true;
+    if (skipped) {
+      return { date: r.day as string, productiveMin: null, totalMin: null, z1Ratio: null, missed: true };
+    }
     const z1 = r.zone1_min != null ? Number(r.zone1_min) : null;
     const z2 = r.zone2_min != null ? Number(r.zone2_min) : null;
     const z3 = r.zone3_min != null ? Number(r.zone3_min) : null;

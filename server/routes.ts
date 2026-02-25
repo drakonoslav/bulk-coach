@@ -359,9 +359,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pushups_reps, pullups_reps, bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
           pain_0_10,
           meal_checklist,
+          cardio_skipped,
+          lift_skipped,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -431,6 +433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ohp_weight_lb = COALESCE(EXCLUDED.ohp_weight_lb, daily_log.ohp_weight_lb),
           pain_0_10 = COALESCE(EXCLUDED.pain_0_10, daily_log.pain_0_10),
           meal_checklist = COALESCE(EXCLUDED.meal_checklist, daily_log.meal_checklist),
+          cardio_skipped = EXCLUDED.cardio_skipped,
+          lift_skipped = EXCLUDED.lift_skipped,
           updated_at = NOW()`,
         [
           userId,
@@ -502,6 +506,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.ohpWeightLb ?? null,
           b.pain010 ?? null,
           b.mealChecklist ? JSON.stringify(b.mealChecklist) : null,
+          b.cardioSkipped ?? false,
+          b.liftSkipped ?? false,
         ],
       );
 

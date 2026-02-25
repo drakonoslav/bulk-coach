@@ -113,6 +113,7 @@ export async function computeLiftScheduleStability(
        AND day <= $2
        AND day >= ($2::date - 21)::text
        AND lift_start_time IS NOT NULL
+       AND (lift_skipped IS NULL OR lift_skipped = false)
      ORDER BY day DESC`,
     [userId, date],
   );
@@ -156,7 +157,7 @@ export async function computeLiftScheduleStability(
 
   const liftPlannedMin = schedule.plannedMin;
   const outcomeRows = await pool.query(
-    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
+    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min, lift_skipped
      FROM daily_log
      WHERE user_id = $1
        AND day <= $2
@@ -175,6 +176,10 @@ export async function computeLiftScheduleStability(
   }
 
   const sessionDays: LiftSessionDay[] = outcomeRows.rows.map((r: any) => {
+    const skipped = r.lift_skipped === true;
+    if (skipped) {
+      return { date: r.day as string, actualMin: null, workingMin: null, idleRatio: null, missed: true };
+    }
     let actualMin: number | null = null;
     if (r.lift_start_time && r.lift_end_time) {
       const s = toMin(r.lift_start_time);
