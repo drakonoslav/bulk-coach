@@ -78,6 +78,8 @@ import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleep
 import { computeCardioBlock } from "./cardio-regulation";
 import { computeLiftBlock } from "./lift-regulation";
 import { buildReadinessResponse } from "./readiness/buildReadinessResponse";
+import { MEAL_PLAN, BASELINE_KCAL, MEAL_KEYS } from "./meal/mealPlan";
+import { computeMealAdherenceRange } from "./meal/computeMealAdherenceRange";
 import { toDomainOutcomeSleep } from "./sleep/toDomainOutcomeSleep";
 import {
   upsertCalorieDecision,
@@ -1421,16 +1423,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleepBlock?.awakeInBedDeltaMin ?? null,
       );
 
-      const MEAL_CALORIES: Record<string, { kcal: number; label: string }> = {
-        preCardio: { kcal: 104, label: "Pre-cardio" },
-        postCardio: { kcal: 644, label: "Post-cardio" },
-        midday: { kcal: 303, label: "Midday" },
-        preLift: { kcal: 385, label: "Pre-lift" },
-        postLift: { kcal: 268, label: "Post-lift" },
-        evening: { kcal: 992, label: "Evening" },
-      };
-      const BASELINE_KCAL = 2696;
-
       const mealLogRow = await pool.query(
         `SELECT day, meal_checklist FROM daily_log WHERE day <= $1 AND user_id = $2 AND meal_checklist IS NOT NULL ORDER BY day DESC LIMIT 1`,
         [date, userId],
@@ -1439,16 +1431,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mealDay = mealLogRow.rows[0]?.day ?? null;
       const hasLogEntry = mealLogRow.rows.length > 0;
       const mealChecklist: Record<string, boolean> = rawChecklist ?? {};
-      const mealKeys = Object.keys(MEAL_CALORIES);
-      const mealsChecked = mealKeys.filter(k => mealChecklist[k]);
-      const mealsTotal = mealKeys.length;
-      const earnedKcal = mealsChecked.reduce((s, k) => s + MEAL_CALORIES[k].kcal, 0);
+      const mealsChecked = MEAL_KEYS.filter(k => mealChecklist[k]);
+      const mealsTotal = MEAL_KEYS.length;
+      const earnedKcal = mealsChecked.reduce((s, k) => s + MEAL_PLAN[k].kcal, 0);
       const missedKcal = Math.max(0, BASELINE_KCAL - earnedKcal);
       const baselineHitPct = Math.round((earnedKcal / BASELINE_KCAL) * 100);
-      const missedMeals = mealKeys
+      const missedMeals = MEAL_KEYS
         .filter(k => !mealChecklist[k])
-        .sort((a, b) => MEAL_CALORIES[b].kcal - MEAL_CALORIES[a].kcal);
-      const biggestMiss = missedMeals.length > 0 ? MEAL_CALORIES[missedMeals[0]].label : null;
+        .sort((a, b) => MEAL_PLAN[b].kcal - MEAL_PLAN[a].kcal);
+      const biggestMiss = missedMeals.length > 0 ? MEAL_PLAN[missedMeals[0]].label : null;
+
+      const rangeStartDate = new Date(date);
+      rangeStartDate.setDate(rangeStartDate.getDate() - 13);
+      const rangeStartISO = rangeStartDate.toISOString().slice(0, 10);
+      const mealRange = await computeMealAdherenceRange(pool, rangeStartISO, date, userId);
 
       const recoveryShapeChecks: string[] = [];
       if (schedStab.scheduledToday && schedStab.scheduleRecoveryScore == null) {
@@ -1517,6 +1513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             biggestMiss,
             mealDay,
           } : null,
+          mealAdherence14d: mealRange.daysWithLogs > 0 ? mealRange : null,
         },
         primaryDriver,
         cardioDomainOutcome: cardioBlock.domainOutcome,

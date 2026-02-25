@@ -58,6 +58,7 @@ function makeInput(): BuildReadinessInput {
       actualLiftMin: 70,
       plannedLiftMin: 75,
       mealAdherence: null,
+      mealAdherence14d: null,
     },
     primaryDriver: null,
     cardioDomainOutcome: makeDomainOutcome("cardio"),

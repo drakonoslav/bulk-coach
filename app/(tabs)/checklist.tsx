@@ -981,6 +981,44 @@ export default function ChecklistScreen() {
                 );
               })()}
 
+              {(() => {
+                const ma14 = adh?.mealAdherence14d as any;
+                if (!ma14) return sigRow("14-day trend", <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary }}>No meal logs in last 14 days</Text>);
+                const hitColor = (ma14.avgBaselineHitPct ?? 0) >= 90 ? "#34D399" : (ma14.avgBaselineHitPct ?? 0) >= 70 ? "#FBBF24" : "#EF4444";
+                return (
+                  <>
+                    {sigRow("14d avg kcal",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hitColor }}>
+                        {fmtInt(ma14.avgEarnedKcal)}
+                      </Text>
+                    )}
+                    {sigRow("14d baseline hit",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hitColor }}>
+                        {fmtRaw(ma14.avgBaselineHitPct)}%
+                      </Text>
+                    )}
+                    {sigRow("14d avg missed",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
+                        {fmtRaw(ma14.avgMealsMissed)} meals/day
+                      </Text>
+                    )}
+                    {(ma14.perMeal ?? []).map((pm: any) => {
+                      const pmColor = (pm.hitPct ?? 0) >= 90 ? "#34D399" : (pm.hitPct ?? 0) >= 70 ? "#FBBF24" : "#EF4444";
+                      return sigRow(pm.label,
+                        <Text key={pm.key} style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: pmColor }}>
+                          {pm.hitDays}/{ma14.daysWithLogs} ({fmtRaw(pm.hitPct)}%)
+                        </Text>
+                      );
+                    })}
+                    {ma14.biggestMiss && sigRow("Most missed",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#EF4444" }}>
+                        {ma14.biggestMiss}
+                      </Text>
+                    )}
+                  </>
+                );
+              })()}
+
               {sectionHeader("Sleep Schedule Stability", "calendar-outline", "#60A5FA")}
 
               {(() => {

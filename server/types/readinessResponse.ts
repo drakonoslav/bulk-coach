@@ -1,4 +1,5 @@
 import { DomainOutcome } from "./domainOutcome";
+import { MealAdherence14d } from "../meal/computeMealAdherenceRange";
 
 export type DomainBlock = {
   domainOutcome: DomainOutcome;
@@ -37,6 +38,7 @@ export type ReadinessResponse = {
       biggestMiss: string | null;
       mealDay: string | null;
     } | null;
+    mealAdherence14d: MealAdherence14d | null;
   };
   primaryDriver: string | null;
   cardioBlock: DomainBlock;
