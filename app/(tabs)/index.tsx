@@ -144,7 +144,7 @@ function EntryRow({ entry }: { entry: DailyEntry }) {
             <Text style={[styles.entryPillText, { color: "#A78BFA" }]}>{entry.bfMorningPct.toFixed(1)}%</Text>
           </View>
         ) : null}
-        {entry.adherence < 1 ? (
+        {entry.adherence != null && entry.adherence < 1 ? (
           <View style={[styles.entryPill, { backgroundColor: Colors.dangerMuted }]}>
             <Ionicons name="alert-circle-outline" size={12} color={Colors.danger} />
             <Text style={[styles.entryPillText, { color: Colors.danger }]}>{Math.round(entry.adherence * 100)}%</Text>
@@ -223,8 +223,9 @@ export default function DashboardScreen() {
   const trendIcon = trend === "up" ? "arrow-up" : trend === "down" ? "arrow-down" : "remove";
   const trendColor = trend === "up" ? Colors.success : trend === "down" ? Colors.danger : Colors.textSecondary;
 
-  const avgAdherence = entries.length > 0
-    ? entries.slice(-7).reduce((s, e) => s + (e.adherence ?? 1), 0) / Math.min(entries.length, 7)
+  const recentWithAdh = entries.slice(-7).filter(e => e.adherence != null);
+  const avgAdherence = recentWithAdh.length > 0
+    ? recentWithAdh.reduce((s, e) => s + e.adherence!, 0) / recentWithAdh.length
     : null;
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;

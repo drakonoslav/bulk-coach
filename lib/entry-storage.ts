@@ -160,7 +160,7 @@ function rowToEntry(row: any): DailyEntry {
     liftDone: row.liftDone ?? undefined,
     deloadWeek: row.deloadWeek ?? undefined,
     performanceNote: row.performanceNote ?? undefined,
-    adherence: row.adherence != null ? Number(row.adherence) : 1,
+    adherence: row.adherence != null ? Number(row.adherence) : undefined,
     notes: row.notes ?? undefined,
     sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : undefined,
     activeZoneMinutes: row.activeZoneMinutes != null ? Number(row.activeZoneMinutes) : undefined,

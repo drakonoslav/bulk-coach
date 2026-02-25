@@ -651,6 +651,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/logs/reset-adherence", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const result = await pool.query(
+        `UPDATE daily_log SET adherence = NULL, updated_at = NOW() WHERE user_id = $1 AND adherence IS NOT NULL`,
+        [userId],
+      );
+      res.json({ ok: true, rowsCleared: result.rowCount });
+    } catch (err: unknown) {
+      console.error("reset-adherence error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/androgen/manual", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);

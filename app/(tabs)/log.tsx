@@ -147,7 +147,7 @@ function ToggleButton({
   );
 }
 
-function AdherenceSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function AdherenceSelector({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
   const options = [
     { label: "100%", value: 1.0, color: Colors.success },
     { label: "90%", value: 0.9, color: Colors.primary },
@@ -165,7 +165,7 @@ function AdherenceSelector({ value, onChange }: { value: number; onChange: (v: n
             key={opt.label}
             onPress={() => {
               if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onChange(opt.value);
+              onChange(isSelected ? null : opt.value);
             }}
             style={[
               styles.adherenceBtn,
@@ -266,7 +266,7 @@ export default function LogScreen() {
   const [liftDone, setLiftDone] = useState<boolean | undefined>();
   const [deloadWeek, setDeloadWeek] = useState<boolean | undefined>();
   const [perfNote, setPerfNote] = useState("");
-  const [adherence, setAdherence] = useState(1.0);
+  const [adherence, setAdherence] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [mealChecklist, setMealChecklist] = useState<Record<string, boolean>>({
     preCardio: false, postCardio: false, midday: false,
@@ -487,7 +487,7 @@ export default function LogScreen() {
       setLiftDone(existing.liftDone);
       setDeloadWeek(existing.deloadWeek);
       setPerfNote(existing.performanceNote || "");
-      setAdherence(existing.adherence ?? 1);
+      setAdherence(existing.adherence ?? null);
       setNotes(existing.notes || "");
       setPain010(existing.pain010 != null ? Number(existing.pain010) : null);
       setMealChecklist(existing.mealChecklist ?? {
@@ -791,7 +791,7 @@ export default function LogScreen() {
     setLiftDone(undefined);
     setDeloadWeek(undefined);
     setPerfNote("");
-    setAdherence(1.0);
+    setAdherence(null);
     setNotes("");
     setSaved(false);
     setFitbitData(null);
@@ -882,7 +882,7 @@ export default function LogScreen() {
         liftDone,
         deloadWeek,
         performanceNote: perfNote || undefined,
-        adherence,
+        adherence: adherence ?? undefined,
         notes: notes || undefined,
         sleepMinutes: sleepMinutesManual ? parseInt(sleepMinutesManual, 10) : undefined,
         hrv: hrvManual ? parseFloat(hrvManual) : undefined,
@@ -2031,9 +2031,40 @@ export default function LogScreen() {
             suffix="L"
           />
           <View style={styles.inputGroup}>
-            <View style={styles.inputLabel}>
-              <Ionicons name="checkmark-circle-outline" size={16} color={Colors.success} />
-              <Text style={styles.inputLabelText}>Plan Adherence</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={styles.inputLabel}>
+                <Ionicons name="checkmark-circle-outline" size={16} color={Colors.success} />
+                <Text style={styles.inputLabelText}>Plan Adherence</Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  Alert.alert(
+                    "Reset All Adherence",
+                    "Clear adherence values from ALL daily log entries? This cannot be undone.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Reset All",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            const baseUrl = getApiUrl();
+                            const res = await authFetch(new URL("/api/logs/reset-adherence", baseUrl).toString(), { method: "POST" });
+                            const data = await res.json();
+                            Alert.alert("Done", `Cleared adherence from ${data.rowsCleared} entries.`);
+                            setAdherence(null);
+                          } catch {
+                            Alert.alert("Error", "Failed to reset adherence.");
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+                style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.danger }}>Reset All</Text>
+              </Pressable>
             </View>
             <AdherenceSelector value={adherence} onChange={setAdherence} />
           </View>

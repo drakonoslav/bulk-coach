@@ -35,7 +35,7 @@ export interface DailyEntry {
   liftDone?: boolean;
   deloadWeek?: boolean;
   performanceNote?: string;
-  adherence: number;
+  adherence?: number;
   notes?: string;
   sleepMinutes?: number;
   activeZoneMinutes?: number;
@@ -423,7 +423,10 @@ export function diagnoseDietVsTraining(entries: DailyEntry[]): Diagnosis {
     return { type: "insufficient", message: "Need at least 7 days of data to analyze trends." };
   }
 
-  const avgAdherence = recent.reduce((s, e) => s + (e.adherence ?? 1), 0) / recent.length;
+  const withAdherence = recent.filter((e) => e.adherence != null);
+  const avgAdherence = withAdherence.length > 0
+    ? withAdherence.reduce((s, e) => s + e.adherence!, 0) / withAdherence.length
+    : 1;
   const wkGain = weeklyDelta(entries);
   const wDelta = waistDelta(entries, 14);
   const deload = recent.some((e) => e.deloadWeek === true);
