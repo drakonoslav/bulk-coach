@@ -1434,6 +1434,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .sort((a, b) => MEAL_CALORIES[b].kcal - MEAL_CALORIES[a].kcal);
       const biggestMiss = missedMeals.length > 0 ? MEAL_CALORIES[missedMeals[0]].label : null;
 
+      const recoveryShapeChecks: string[] = [];
+      if (schedStab.scheduledToday && schedStab.scheduleRecoveryScore == null) {
+        recoveryShapeChecks.push(`SLEEP: scheduledToday=true but scheduleRecoveryScore is null`);
+      }
+      if (schedStab.scheduledToday && !schedStab.hasActualDataToday && (schedStab.scheduleRecoveryScore !== 0 || schedStab.recoveryConfidence !== "high")) {
+        recoveryShapeChecks.push(`SLEEP: scheduledToday+noData but recoveryScore=${schedStab.scheduleRecoveryScore}, confidence=${schedStab.recoveryConfidence}`);
+      }
+      const cs = cardioBlock.scheduleStability;
+      if (cs.scheduledToday && cs.recoveryScore == null) {
+        recoveryShapeChecks.push(`CARDIO: scheduledToday=true but recoveryScore is null`);
+      }
+      if (cs.scheduledToday && !cs.hasActualDataToday && (cs.recoveryScore !== 0 || cs.recoveryConfidence !== "high")) {
+        recoveryShapeChecks.push(`CARDIO: scheduledToday+noData but recoveryScore=${cs.recoveryScore}, confidence=${cs.recoveryConfidence}`);
+      }
+      const ls = liftBlock.scheduleStability;
+      if (ls.scheduledToday && ls.recoveryScore == null) {
+        recoveryShapeChecks.push(`LIFT: scheduledToday=true but recoveryScore is null`);
+      }
+      if (ls.scheduledToday && !ls.hasActualDataToday && (ls.recoveryScore !== 0 || ls.recoveryConfidence !== "high")) {
+        recoveryShapeChecks.push(`LIFT: scheduledToday+noData but recoveryScore=${ls.recoveryScore}, confidence=${ls.recoveryConfidence}`);
+      }
+      if (recoveryShapeChecks.length > 0) {
+        console.warn(`[recovery-shape-violation] date=${date}:`, recoveryShapeChecks.join("; "));
+      }
+
       res.json({
         ...result,
         sleepBlock,
