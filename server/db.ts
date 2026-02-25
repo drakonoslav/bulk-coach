@@ -107,6 +107,11 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS below_zone1_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone4_min REAL`);
   await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS zone5_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_z1_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_z2_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_z3_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_z4_min REAL`);
+  await pool.query(`ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_z5_min REAL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fitbit_takeout_imports (

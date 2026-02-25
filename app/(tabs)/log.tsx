@@ -236,6 +236,11 @@ export default function LogScreen() {
   const [liftEndTime, setLiftEndTime] = useState("");
   const [liftMin, setLiftMin] = useState("");
   const [liftWorkingMin, setLiftWorkingMin] = useState("");
+  const [liftZ1, setLiftZ1] = useState("");
+  const [liftZ2, setLiftZ2] = useState("");
+  const [liftZ3, setLiftZ3] = useState("");
+  const [liftZ4, setLiftZ4] = useState("");
+  const [liftZ5, setLiftZ5] = useState("");
   const [zone1, setZone1] = useState("");
   const [zone2, setZone2] = useState("");
   const [zone3, setZone3] = useState("");
@@ -448,6 +453,11 @@ export default function LogScreen() {
       setLiftEndTime(existing.liftEndTime || "");
       setLiftMin(existing.liftMin?.toString() || "");
       setLiftWorkingMin(existing.liftWorkingMin?.toString() || "");
+      setLiftZ1(existing.liftZ1Min?.toString() || "");
+      setLiftZ2(existing.liftZ2Min?.toString() || "");
+      setLiftZ3(existing.liftZ3Min?.toString() || "");
+      setLiftZ4(existing.liftZ4Min?.toString() || "");
+      setLiftZ5(existing.liftZ5Min?.toString() || "");
       setZone1(existing.zone1Min?.toString() || "");
       setZone2(existing.zone2Min?.toString() || "");
       setZone3(existing.zone3Min?.toString() || "");
@@ -741,6 +751,11 @@ export default function LogScreen() {
     setLiftEndTime("");
     setLiftMin("");
     setLiftWorkingMin("");
+    setLiftZ1("");
+    setLiftZ2("");
+    setLiftZ3("");
+    setLiftZ4("");
+    setLiftZ5("");
     setLiftDone(undefined);
     setDeloadWeek(undefined);
     setPerfNote("");
@@ -818,6 +833,11 @@ export default function LogScreen() {
         liftEndTime: liftEndTime || undefined,
         liftMin: liftMin ? parseInt(liftMin, 10) : undefined,
         liftWorkingMin: liftWorkingMin ? parseInt(liftWorkingMin, 10) : undefined,
+        liftZ1Min: liftZ1 ? parseFloat(liftZ1) : undefined,
+        liftZ2Min: liftZ2 ? parseFloat(liftZ2) : undefined,
+        liftZ3Min: liftZ3 ? parseFloat(liftZ3) : undefined,
+        liftZ4Min: liftZ4 ? parseFloat(liftZ4) : undefined,
+        liftZ5Min: liftZ5 ? parseFloat(liftZ5) : undefined,
         zone1Min: zone1 ? parseFloat(zone1) : undefined,
         zone2Min: zone2 ? parseFloat(zone2) : undefined,
         zone3Min: zone3 ? parseFloat(zone3) : undefined,
@@ -1635,6 +1655,31 @@ export default function LogScreen() {
                   />
                   <Text style={styles.inputSuffix}>m</Text>
                 </View>
+              </View>
+            </View>
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Lift HR Zones (min)</Text>
+              <View style={{ flexDirection: "row", gap: 4, marginTop: 4 }}>
+                {[
+                  { label: "Z1", color: "#9CA3AF", val: liftZ1, set: setLiftZ1 },
+                  { label: "Z2", color: "#34D399", val: liftZ2, set: setLiftZ2 },
+                  { label: "Z3", color: "#FBBF24", val: liftZ3, set: setLiftZ3 },
+                  { label: "Z4", color: "#F97316", val: liftZ4, set: setLiftZ4 },
+                  { label: "Z5", color: "#EF4444", val: liftZ5, set: setLiftZ5 },
+                ].map((z) => (
+                  <View key={z.label} style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: z.color, textAlign: "center", marginBottom: 2 }}>{z.label}</Text>
+                    <TextInput
+                      style={[styles.inputCompact, { textAlign: "center" }]}
+                      value={z.val}
+                      onChangeText={handleMinuteSetter(z.set)}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="numeric"
+                      keyboardAppearance="dark"
+                    />
+                  </View>
+                ))}
               </View>
             </View>
           </View>

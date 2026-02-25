@@ -974,17 +974,17 @@ export default function ChecklistScreen() {
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`bedDevMin = ${saD?.bedDeviationMin?.toFixed(2) ?? "—"}\nwakeDevMin = ${saD?.wakeDeviationMin?.toFixed(2) ?? "—"}\nbedPenaltyMin = abs(bedDev) = ${saD?.bedPenaltyMin?.toFixed(2) ?? "—"}\nwakePenaltyMin = abs(wakeDev) = ${saD?.wakePenaltyMin?.toFixed(2) ?? "—"}\ntotalPenaltyMin = clamp(bed+wake, 0, 180) = ${saD?.totalPenaltyMin?.toFixed(2) ?? "—"}\nalignmentScore = ${saD?.alignmentScore?.toFixed(2) ?? "—"}`}
+                          {`bedDevMin = ${fmtRaw(saD?.bedDeviationMin)}\nwakeDevMin = ${fmtRaw(saD?.wakeDeviationMin)}\nbedPenaltyMin = abs(bedDev) = ${fmtRaw(saD?.bedPenaltyMin)}\nwakePenaltyMin = abs(wakeDev) = ${fmtRaw(saD?.wakePenaltyMin)}\ntotalPenaltyMin = clamp(bed+wake, 0, 180) = ${fmtRaw(saD?.totalPenaltyMin)}\nalignmentScore = ${fmtRaw(saD?.alignmentScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`sdMin = ${ss?.scheduleConsistencySdMin?.toFixed(2) ?? "—"}\nnDays = ${ss?.scheduleConsistencyNSamples ?? 0}\ndriftMags7d = [${(ss?.debugDriftMags7d ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistencyScore = ${ss?.scheduleConsistencyScore?.toFixed(2) ?? "—"}`}
+                          {`sdMin = ${fmtRaw(ss?.scheduleConsistencySdMin)}\nnDays = ${ss?.scheduleConsistencyNSamples ?? 0}\ndriftMags7d = [${(ss?.debugDriftMags7d ?? []).map((v: number) => fmtRaw(v)).join(", ")}]\nconsistencyScore = ${fmtRaw(ss?.scheduleConsistencyScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`eventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${ss?.recoveryEventDriftMag0?.toFixed(2) ?? "—"}\nkDaysUsed = min(4, available) = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${ss?.recoveryFollowAvgDriftMag?.toFixed(2) ?? "—"}\nrecoveryScore = ${ss?.scheduleRecoveryScore?.toFixed(2) ?? "—"}\nconfidence = ${ss?.recoveryConfidence ?? "—"}`}
+                          {`eventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${fmtRaw(ss?.recoveryEventDriftMag0)}\nkDaysUsed = min(4, available) = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${fmtRaw(ss?.recoveryFollowAvgDriftMag)}\nrecoveryScore = ${fmtRaw(ss?.scheduleRecoveryScore)}\nconfidence = ${ss?.recoveryConfidence ?? "—"}`}
                         </Text>
                       </View>
                     )}
@@ -1020,12 +1020,12 @@ export default function ChecklistScreen() {
                       <View style={{ backgroundColor: "#F8717108", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`planned = ${cs?.plannedStart ?? "—"}\nactual = ${cs?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${cs?.alignmentPenaltyMin?.toFixed(2) ?? "—"} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${cs?.alignmentScore?.toFixed(2) ?? "—"}`}
+                          {`planned = ${cs?.plannedStart ?? "—"}\nactual = ${cs?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${fmtRaw(cs?.alignmentPenaltyMin)} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${fmtRaw(cs?.alignmentScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`nSessions = ${cs?.consistencyNSessions ?? 0}\nsdMin = ${cs?.consistencySdMin?.toFixed(2) ?? "—"}\ndriftMags = [${(cs?.debugDriftMags ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${cs?.consistencyScore?.toFixed(2) ?? "—"}`}
+                          {`nSessions = ${cs?.consistencyNSessions ?? 0}\nsdMin = ${fmtRaw(cs?.consistencySdMin)}\ndriftMags = [${(cs?.debugDriftMags ?? []).map((v: number) => fmtRaw(v)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${fmtRaw(cs?.consistencyScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
@@ -1067,7 +1067,7 @@ export default function ChecklistScreen() {
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−z1/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
+                          {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\ncontinuityRaw = 100×(1−offBand/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}
@@ -1103,12 +1103,12 @@ export default function ChecklistScreen() {
                       <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Alignment</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`planned = ${ls?.plannedStart ?? "—"}\nactual = ${ls?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${ls?.alignmentPenalty?.toFixed(2) ?? "—"} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${ls?.alignmentScore?.toFixed(2) ?? "—"}`}
+                          {`planned = ${ls?.plannedStart ?? "—"}\nactual = ${ls?.actualStart ?? "—"}\npenalty = abs(circDelta) = ${fmtRaw(ls?.alignmentPenalty)} min\nalignment = clamp(100 − penalty×100/180, 0, 100) = ${fmtRaw(ls?.alignmentScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Consistency</Text>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`nSessions = ${ls?.consistencyNSamples ?? 0}\nsdMin = ${ls?.consistencySdMin?.toFixed(2) ?? "—"}\nstartMins7d = [${(ls?.debugStartMins7d ?? []).map((v: number) => v.toFixed(2)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${ls?.consistencyScore?.toFixed(2) ?? "—"}`}
+                          {`nSessions = ${ls?.consistencyNSamples ?? 0}\nsdMin = ${fmtRaw(ls?.consistencySdMin)}\nstartMins7d = [${(ls?.debugStartMins7d ?? []).map((v: number) => fmtRaw(v)).join(", ")}]\nconsistency = clamp(100×(1−sd/60), 0, 100) = ${fmtRaw(ls?.consistencyScore)}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
@@ -1146,11 +1146,11 @@ export default function ChecklistScreen() {
                     {debugLiftOutcomeExpanded && (
                       <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`outcomeDay = ${lo?.outcomeDay ?? "—"}\nplannedMin = ${lo?.plannedMin ?? "—"}\nactualMin = ${lo?.actualMin ?? "—"} [actualSource=${lo?.actualSource ?? "none"}]\nworkingMin = ${lo?.workingMin ?? "—"} [workingSource=${lo?.workingSource ?? "none"}]\nidleMin = ${lo?.idleMin ?? "—"}`}
+                          {`outcomeDay = ${lo?.outcomeDay ?? "—"}\nplannedMin = ${lo?.plannedMin ?? "—"}\nactualMin = ${lo?.actualMin ?? "—"} [actualSource=${lo?.actualSource ?? "none"}]\nworkingMin = ${lo?.workingMin ?? "—"} [workingSource=${lo?.workingSource ?? "none"}]\nidleMin = ${lo?.idleMin ?? "—"}\nhrTotalMin = ${lo?.hrTotalMin ?? "—"}\nliftZ1=${lo?.liftZ1Min ?? "—"} liftZ2=${lo?.liftZ2Min ?? "—"} liftZ3=${lo?.liftZ3Min ?? "—"} liftZ4=${lo?.liftZ4Min ?? "—"} liftZ5=${lo?.liftZ5Min ?? "—"}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = 100×working/actual = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = 100×(1−idle/actual) = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
+                          {`workFrac = ${lo?.workFrac?.toFixed(6) ?? "—"}\nhrEngageFrac = (lz2+lz3)/hrTotal = ${lo?.hrEngageFrac?.toFixed(6) ?? "—"}\n\nadequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = ${lo?.hrTotalMin != null ? "100×(0.6×workFrac+0.4×hrEngageFrac)" : "100×working/actual"} = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = ${lo?.hrTotalMin != null ? "100×(1−0.5×idle/actual−0.5×lz1/hrTotal)" : "100×(1−idle/actual)"} = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}
@@ -1261,7 +1261,7 @@ export default function ChecklistScreen() {
                 const color = score >= 80 ? "#DC2626" : score >= 60 ? "#F87171" : score >= 40 ? "#F59E0B" : score >= 20 ? "#34D399" : Colors.textSecondary;
                 return (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{score.toFixed(2)}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color }}>{fmtRaw(score)}</Text>
                     <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>/ 100.00</Text>
                     <View style={{ backgroundColor: color + "20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
                       <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color }}>{bucket}</Text>

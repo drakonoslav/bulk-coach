@@ -350,12 +350,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cardio_start_time, cardio_end_time,
           lift_start_time, lift_end_time, lift_min, lift_working_min,
           zone1_min, zone2_min, zone3_min, zone4_min, zone5_min,
+          lift_z1_min, lift_z2_min, lift_z3_min, lift_z4_min, lift_z5_min,
           fat_free_mass_lb,
           pushups_reps, pullups_reps, bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
           pain_0_10,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -411,6 +412,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           zone3_min = COALESCE(EXCLUDED.zone3_min, daily_log.zone3_min),
           zone4_min = COALESCE(EXCLUDED.zone4_min, daily_log.zone4_min),
           zone5_min = COALESCE(EXCLUDED.zone5_min, daily_log.zone5_min),
+          lift_z1_min = COALESCE(EXCLUDED.lift_z1_min, daily_log.lift_z1_min),
+          lift_z2_min = COALESCE(EXCLUDED.lift_z2_min, daily_log.lift_z2_min),
+          lift_z3_min = COALESCE(EXCLUDED.lift_z3_min, daily_log.lift_z3_min),
+          lift_z4_min = COALESCE(EXCLUDED.lift_z4_min, daily_log.lift_z4_min),
+          lift_z5_min = COALESCE(EXCLUDED.lift_z5_min, daily_log.lift_z5_min),
           fat_free_mass_lb = COALESCE(EXCLUDED.fat_free_mass_lb, daily_log.fat_free_mass_lb),
           pushups_reps = COALESCE(EXCLUDED.pushups_reps, daily_log.pushups_reps),
           pullups_reps = COALESCE(EXCLUDED.pullups_reps, daily_log.pullups_reps),
@@ -476,6 +482,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.zone3Min ?? null,
           b.zone4Min ?? null,
           b.zone5Min ?? null,
+          b.liftZ1Min ?? null,
+          b.liftZ2Min ?? null,
+          b.liftZ3Min ?? null,
+          b.liftZ4Min ?? null,
+          b.liftZ5Min ?? null,
           b.fatFreeMassLb ?? null,
           b.pushupsReps ?? null,
           b.pullupsReps ?? null,

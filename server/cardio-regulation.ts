@@ -67,6 +67,7 @@ export interface CardioOutcome {
   efficiencyScore: number | null;
   continuityScore: number | null;
   continuityDenominator: "total" | null;
+  offBandMin: number | null;
   productiveMinSource: "zones_sum" | "none";
   outcomeDay: string | null;
   z1Min: number | null;
@@ -346,8 +347,10 @@ export async function computeCardioOutcome(
   }
 
   let continuityScore: number | null = null;
+  let offBandMin: number | null = null;
   if (hasZones && cardioTotalMin != null && cardioTotalMin > 0) {
-    continuityScore = clamp(100 * (1 - z1! / cardioTotalMin), 0, 100);
+    offBandMin = z1! + (z4 ?? 0) + (z5 ?? 0);
+    continuityScore = clamp(100 * (1 - offBandMin / cardioTotalMin), 0, 100);
   }
 
   const adequacySource: "productive" | "total" | "none" =
@@ -363,6 +366,7 @@ export async function computeCardioOutcome(
     efficiencyScore,
     continuityScore,
     continuityDenominator: continuityScore != null ? "total" as const : null,
+    offBandMin,
     productiveMinSource: hasZones ? "zones_sum" as const : "none" as const,
     outcomeDay: r?.day ?? null,
     z1Min: z1,

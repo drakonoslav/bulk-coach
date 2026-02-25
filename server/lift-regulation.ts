@@ -65,10 +65,18 @@ export interface LiftOutcome {
   idleMin: number | null;
   efficiencyScore: number | null;
   continuityScore: number | null;
-  continuityDenominator: "actual" | null;
+  continuityDenominator: "actual" | "actual+hrTotal" | null;
   actualSource: "duration_span" | "duration_field" | "none";
   workingSource: "daily_log" | "none";
   outcomeDay: string | null;
+  hrTotalMin: number | null;
+  liftZ1Min: number | null;
+  liftZ2Min: number | null;
+  liftZ3Min: number | null;
+  liftZ4Min: number | null;
+  liftZ5Min: number | null;
+  hrEngageFrac: number | null;
+  workFrac: number | null;
 }
 
 export interface LiftBlock {
@@ -278,7 +286,8 @@ export async function computeLiftOutcome(
   const plannedMin = schedule.plannedMin;
 
   const { rows } = await pool.query(
-    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
+    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min,
+            lift_z1_min, lift_z2_min, lift_z3_min, lift_z4_min, lift_z5_min
      FROM daily_log
      WHERE user_id = $2
        AND day <= $1
@@ -317,14 +326,34 @@ export async function computeLiftOutcome(
   const workingSource: "daily_log" | "none" = workingMin != null ? "daily_log" : "none";
   const idleMin = (actualMin != null && workingMin != null) ? actualMin - workingMin : null;
 
+  const lz1 = r?.lift_z1_min != null ? Number(r.lift_z1_min) : null;
+  const lz2 = r?.lift_z2_min != null ? Number(r.lift_z2_min) : null;
+  const lz3 = r?.lift_z3_min != null ? Number(r.lift_z3_min) : null;
+  const lz4 = r?.lift_z4_min != null ? Number(r.lift_z4_min) : null;
+  const lz5 = r?.lift_z5_min != null ? Number(r.lift_z5_min) : null;
+  const hrTotalMin = (lz1 ?? 0) + (lz2 ?? 0) + (lz3 ?? 0) + (lz4 ?? 0) + (lz5 ?? 0);
+  const hasHrZones = hrTotalMin > 0;
+
+  const workFrac = (workingMin != null && actualMin != null && actualMin > 0) ? workingMin / actualMin : null;
+  const hrEngageFrac = hasHrZones ? ((lz2 ?? 0) + (lz3 ?? 0)) / hrTotalMin : null;
+
   let efficiencyScore: number | null = null;
-  if (workingMin != null && actualMin != null && actualMin > 0) {
+  if (hasHrZones && workFrac != null && hrEngageFrac != null) {
+    efficiencyScore = clamp(100 * (0.6 * workFrac + 0.4 * hrEngageFrac), 0, 100);
+  } else if (workingMin != null && actualMin != null && actualMin > 0) {
     efficiencyScore = clamp(100 * workingMin / actualMin, 0, 100);
   }
 
   let continuityScore: number | null = null;
-  if (idleMin != null && actualMin != null && actualMin > 0) {
+  let continuityDenominator: "actual" | "actual+hrTotal" | null = null;
+  if (hasHrZones && idleMin != null && actualMin != null && actualMin > 0) {
+    const idleFrac = idleMin / actualMin;
+    const z1Frac = (lz1 ?? 0) / hrTotalMin;
+    continuityScore = clamp(100 * (1 - 0.5 * idleFrac - 0.5 * z1Frac), 0, 100);
+    continuityDenominator = "actual+hrTotal";
+  } else if (idleMin != null && actualMin != null && actualMin > 0) {
     continuityScore = clamp(100 * (1 - idleMin / actualMin), 0, 100);
+    continuityDenominator = "actual";
   }
 
   return {
@@ -335,10 +364,18 @@ export async function computeLiftOutcome(
     idleMin,
     efficiencyScore,
     continuityScore,
-    continuityDenominator: continuityScore != null ? "actual" as const : null,
+    continuityDenominator,
     actualSource,
     workingSource,
     outcomeDay: r?.day ?? null,
+    hrTotalMin: hasHrZones ? hrTotalMin : null,
+    liftZ1Min: lz1,
+    liftZ2Min: lz2,
+    liftZ3Min: lz3,
+    liftZ4Min: lz4,
+    liftZ5Min: lz5,
+    hrEngageFrac,
+    workFrac,
   };
 }
 
