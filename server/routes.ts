@@ -1677,7 +1677,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-      const result = await getHpaForDate(date, userId);
+      let result = await getHpaForDate(date, userId);
+      if (!result || result.hpaScore == null) {
+        const computed = await computeAndUpsertHpa(date, userId);
+        if (computed) {
+          result = { hpaScore: computed.score, suppressionFlag: computed.suppressionFlag, drivers: computed.drivers };
+        }
+      }
       if (!result || result.hpaScore == null) {
         return res.json({ hpaScore: null, suppressionFlag: false, drivers: null, hpaBucket: null, stateLabel: null, stateTooltipText: null });
       }

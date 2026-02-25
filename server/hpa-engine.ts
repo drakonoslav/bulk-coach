@@ -88,20 +88,33 @@ export async function computeAndUpsertHpa(
   userId: string = DEFAULT_USER_ID
 ): Promise<{ score: number; suppressionFlag: boolean; drivers: any } | null> {
 
+  const LOOKBACK_DAYS = 14;
+
   const [sleepRes, vitalsRes, painRes, baselineSleepRes, baselineVitalsRes, proxyRes] = await Promise.all([
     pool.query(
-      `SELECT total_sleep_minutes FROM sleep_summary_daily
-       WHERE date = $1::date AND user_id = $2`,
+      `SELECT total_sleep_minutes, date::text as src_date FROM sleep_summary_daily
+       WHERE user_id = $2
+         AND date <= $1::date
+         AND date >= ($1::date - ${LOOKBACK_DAYS})
+       ORDER BY date DESC LIMIT 1`,
       [date, userId]
     ),
     pool.query(
-      `SELECT hrv_rmssd_ms, resting_hr_bpm FROM vitals_daily
-       WHERE date = $1::date AND user_id = $2`,
+      `SELECT hrv_rmssd_ms, resting_hr_bpm, date::text as src_date FROM vitals_daily
+       WHERE user_id = $2
+         AND date <= $1::date
+         AND date >= ($1::date - ${LOOKBACK_DAYS})
+         AND (hrv_rmssd_ms IS NOT NULL OR resting_hr_bpm IS NOT NULL)
+       ORDER BY date DESC LIMIT 1`,
       [date, userId]
     ),
     pool.query(
-      `SELECT pain_0_10 FROM daily_log
-       WHERE day = $1 AND user_id = $2`,
+      `SELECT pain_0_10, day as src_date FROM daily_log
+       WHERE user_id = $2
+         AND day <= $1
+         AND day >= ($1::date - ${LOOKBACK_DAYS})::text
+         AND pain_0_10 IS NOT NULL
+       ORDER BY day DESC LIMIT 1`,
       [date, userId]
     ),
     pool.query(
