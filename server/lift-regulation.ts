@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { getLiftScheduleSettings } from "./adherence-metrics-range";
+import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -53,8 +54,18 @@ export interface LiftScheduleStability {
   recoveryFollowDaysK: number;
   recoveryFollowAvgDeviation: number | null;
   recoveryConfidence: "high" | "low";
-  recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed";
+  recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data";
   debugStartMins7d: number[];
+  scheduledToday: boolean;
+  hasActualDataToday: boolean;
+  missStreak: number;
+  suppressionFactor: number;
+  avgDeviationMin: number | null;
+  driftPenalty: number;
+  driftFactor: number;
+  recoveryRaw: number | null;
+  recoverySuppressed: number | null;
+  recoveryFinal: number | null;
 }
 
 export interface LiftOutcome {
@@ -179,6 +190,31 @@ export async function computeLiftScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
+  const scheduledToday = true;
+  const todaySession = sessionDaysSorted.find(s => s.date === date);
+  const hasActualDataToday = todaySession != null && !todaySession.missed;
+
+  let missStreak = 0;
+  {
+    const priorDays = sessionDaysSorted.filter(s => s.date < date).sort((a, b) => b.date < a.date ? -1 : b.date > a.date ? 1 : 0);
+    const allPriorRows = await pool.query(
+      `SELECT day FROM daily_log WHERE user_id = $1 AND day < $2 AND day >= ($2::date - 14)::text ORDER BY day DESC`,
+      [userId, date],
+    );
+    const allPriorDates = allPriorRows.rows.map((r: any) => r.day as string);
+    const priorSessionDates = new Set(priorDays.filter(s => !s.missed).map(s => s.date));
+    for (const d of allPriorDates) {
+      if (priorSessionDates.has(d)) break;
+      missStreak++;
+    }
+  }
+
+  const avgDeviationMin = allDays.length > 0
+    ? allDays.slice(0, 7).reduce((s, d) => s + d.driftMag, 0) / Math.min(allDays.length, 7)
+    : null;
+
+  const mods = computeRecoveryModifiers(missStreak, avgDeviationMin);
+
   let recoveryScore: number | null = null;
   let recoveryEventFound = false;
   let recoveryEventDay: string | null = null;
@@ -186,71 +222,90 @@ export async function computeLiftScheduleStability(
   let recoveryThresholdUsed: string | null = null;
   let recoveryFollowDaysK: number = 0;
   let recoveryFollowAvgDeviation: number | null = null;
-  let recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" = "no_event";
+  let recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data" = "no_event";
   let recoveryConfidence: "high" | "low" = "low";
+  let recoveryRaw: number | null = null;
+  let recoverySuppressed: number | null = null;
+  let recoveryFinal: number | null = null;
 
-  let eventIdx = -1;
-  for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
-    const s = sessionDaysSorted[i];
-    if (s.missed) {
-      eventIdx = i;
-      recoveryEventMetric = "session_missed";
-      recoveryThresholdUsed = "no session data";
-      break;
-    }
-    if (s.workingMin != null && liftPlannedMin > 0 && s.workingMin / liftPlannedMin < 0.80) {
-      eventIdx = i;
-      recoveryEventMetric = `workingMin/plannedMin = ${(s.workingMin / liftPlannedMin).toFixed(4)}`;
-      recoveryThresholdUsed = "< 0.80";
-      break;
-    }
-    if (s.actualMin != null && liftPlannedMin > 0 && s.actualMin < liftPlannedMin) {
-      eventIdx = i;
-      recoveryEventMetric = `actualMin < plannedMin (${s.actualMin} < ${liftPlannedMin})`;
-      recoveryThresholdUsed = "actualMin < plannedMin";
-      break;
-    }
-    if (s.idleRatio != null && s.idleRatio > 0.25) {
-      eventIdx = i;
-      recoveryEventMetric = `idleMin/actualMin = ${s.idleRatio.toFixed(4)}`;
-      recoveryThresholdUsed = "> 0.25";
-      break;
-    }
-  }
-
-  if (eventIdx === -1) {
-    recoveryEventFound = false;
-    recoveryReason = "no_event";
-    recoveryConfidence = "low";
-  } else {
+  if (scheduledToday && !hasActualDataToday) {
     recoveryEventFound = true;
-    recoveryEventDay = sessionDaysSorted[eventIdx].date;
-
-    const available = sessionDaysSorted.slice(eventIdx + 1).filter(s => !s.missed);
-    const followDays = available.slice(0, Math.min(4, available.length));
-    recoveryFollowDaysK = followDays.length;
-
-    if (followDays.length === 0) {
-      recoveryReason = "insufficient_post_event_days";
-      recoveryConfidence = "low";
-    } else if (liftPlannedMin > 0) {
-      const deviations = followDays.map(s => {
-        const ratio = (s.workingMin ?? s.actualMin ?? 0) / liftPlannedMin;
-        return Math.abs(1 - ratio);
-      });
-      const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
-      recoveryFollowAvgDeviation = avgDev;
-      recoveryScore = clamp(100 - avgDev * 100, 0, 100);
-      if (followDays.length < 4) {
-        recoveryReason = "partial_post_event_window";
-        recoveryConfidence = "low";
-      } else {
-        recoveryReason = "computed";
-        recoveryConfidence = "high";
+    recoveryEventDay = date;
+    recoveryEventMetric = "scheduled_miss";
+    recoveryThresholdUsed = "no session data on scheduled day";
+    recoveryReason = "missing_scheduled_data";
+    recoveryConfidence = "high";
+    recoveryRaw = 0;
+    recoverySuppressed = 0;
+    recoveryFinal = 0;
+    recoveryScore = 0;
+  } else {
+    let eventIdx = -1;
+    for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
+      const s = sessionDaysSorted[i];
+      if (s.missed) {
+        eventIdx = i;
+        recoveryEventMetric = "session_missed";
+        recoveryThresholdUsed = "no session data";
+        break;
       }
-    } else {
-      recoveryReason = "insufficient_post_event_days";
+      if (s.workingMin != null && liftPlannedMin > 0 && s.workingMin / liftPlannedMin < 0.80) {
+        eventIdx = i;
+        recoveryEventMetric = `workingMin/plannedMin = ${(s.workingMin / liftPlannedMin).toFixed(4)}`;
+        recoveryThresholdUsed = "< 0.80";
+        break;
+      }
+      if (s.actualMin != null && liftPlannedMin > 0 && s.actualMin < liftPlannedMin) {
+        eventIdx = i;
+        recoveryEventMetric = `actualMin < plannedMin (${s.actualMin} < ${liftPlannedMin})`;
+        recoveryThresholdUsed = "actualMin < plannedMin";
+        break;
+      }
+      if (s.idleRatio != null && s.idleRatio > 0.25) {
+        eventIdx = i;
+        recoveryEventMetric = `idleMin/actualMin = ${s.idleRatio.toFixed(4)}`;
+        recoveryThresholdUsed = "> 0.25";
+        break;
+      }
+    }
+
+    if (eventIdx === -1) {
+      recoveryEventFound = false;
+      recoveryReason = "no_event";
       recoveryConfidence = "low";
+    } else {
+      recoveryEventFound = true;
+      recoveryEventDay = sessionDaysSorted[eventIdx].date;
+
+      const available = sessionDaysSorted.slice(eventIdx + 1).filter(s => !s.missed);
+      const followDays = available.slice(0, Math.min(4, available.length));
+      recoveryFollowDaysK = followDays.length;
+
+      if (followDays.length === 0) {
+        recoveryReason = "insufficient_post_event_days";
+        recoveryConfidence = "low";
+      } else if (liftPlannedMin > 0) {
+        const deviations = followDays.map(s => {
+          const ratio = (s.workingMin ?? s.actualMin ?? 0) / liftPlannedMin;
+          return Math.abs(1 - ratio);
+        });
+        const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+        recoveryFollowAvgDeviation = avgDev;
+        recoveryRaw = clamp(100 - avgDev * 100, 0, 100);
+        recoverySuppressed = recoveryRaw * mods.suppressionFactor;
+        recoveryFinal = applyRecoveryModifiers(recoveryRaw, mods);
+        recoveryScore = recoveryFinal;
+        if (followDays.length < 4) {
+          recoveryReason = "partial_post_event_window";
+          recoveryConfidence = "low";
+        } else {
+          recoveryReason = "computed";
+          recoveryConfidence = "high";
+        }
+      } else {
+        recoveryReason = "insufficient_post_event_days";
+        recoveryConfidence = "low";
+      }
     }
   }
 
@@ -272,6 +327,16 @@ export async function computeLiftScheduleStability(
     recoveryConfidence,
     recoveryReason,
     debugStartMins7d: last7.map((d) => d.startMin),
+    scheduledToday,
+    hasActualDataToday,
+    missStreak: mods.missStreak,
+    suppressionFactor: mods.suppressionFactor,
+    avgDeviationMin: mods.avgDeviationMin,
+    driftPenalty: mods.driftPenalty,
+    driftFactor: mods.driftFactor,
+    recoveryRaw,
+    recoverySuppressed,
+    recoveryFinal,
   };
 }
 

@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -46,8 +47,19 @@ export interface ScheduleStability {
   recoveryFollowDaysK: number | null;
   recoveryFollowAvgDriftMag: number | null;
   recoveryConfidence: "high" | "low";
+  recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data";
   debugDriftMags7d: number[];
   debugRecoveryDays: { date: string; driftMag: number }[];
+  scheduledToday: boolean;
+  hasActualDataToday: boolean;
+  missStreak: number;
+  suppressionFactor: number;
+  avgDeviationMin: number | null;
+  driftPenalty: number;
+  driftFactor: number;
+  recoveryRaw: number | null;
+  recoverySuppressed: number | null;
+  recoveryFinal: number | null;
 }
 
 export async function computeScheduleStability(
@@ -106,45 +118,95 @@ export async function computeScheduleStability(
   let recoveryFollowDaysK: number | null = null;
   let recoveryFollowAvgDriftMag: number | null = null;
   const debugRecoveryDays: { date: string; driftMag: number }[] = [];
+  let recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data" = "no_event";
+  let recoveryRaw: number | null = null;
+  let recoverySuppressed: number | null = null;
+  let recoveryFinal: number | null = null;
+
+  const scheduledToday = true;
+  const todayData = allDays.find(d => d.date === date);
+  const hasActualDataToday = todayData != null;
+
+  let missStreak = 0;
+  {
+    const allPriorRows = await pool.query(
+      `SELECT day,
+              CASE WHEN actual_bed_time IS NOT NULL AND actual_wake_time IS NOT NULL THEN true ELSE false END AS has_sleep
+       FROM daily_log
+       WHERE user_id = $1 AND day < $2 AND day >= ($2::date - 14)::text
+       ORDER BY day DESC`,
+      [userId, date],
+    );
+    for (const r of allPriorRows.rows) {
+      if (r.has_sleep) break;
+      missStreak++;
+    }
+  }
+
+  const avgDeviationMin = allDays.length > 0
+    ? allDays.slice(0, 7).reduce((s, d) => s + d.driftMag, 0) / Math.min(allDays.length, 7)
+    : null;
+
+  const mods = computeRecoveryModifiers(missStreak, avgDeviationMin);
 
   const DRIFT_EVENT_THRESHOLD = 45;
 
   const allDaysSorted = [...allDays].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  let eventIdx = -1;
-  for (let i = allDaysSorted.length - 1; i >= 0; i--) {
-    if (allDaysSorted[i].driftMag >= DRIFT_EVENT_THRESHOLD) {
-      eventIdx = i;
-      break;
-    }
-  }
-
-  if (eventIdx === -1) {
-    scheduleRecoveryScore = null;
-    recoveryEventFound = false;
-  } else {
+  if (scheduledToday && !hasActualDataToday) {
     recoveryEventFound = true;
-    const d0 = allDaysSorted[eventIdx];
-    recoveryEventDriftMag0 = Math.round(d0.driftMag * 100) / 100;
-    debugRecoveryDays.push({ date: d0.date, driftMag: d0.driftMag });
+    recoveryEventDriftMag0 = null;
+    recoveryReason = "missing_scheduled_data";
+    recoveryRaw = 0;
+    recoverySuppressed = 0;
+    recoveryFinal = 0;
+    scheduleRecoveryScore = 0;
+  } else {
+    let eventIdx = -1;
+    for (let i = allDaysSorted.length - 1; i >= 0; i--) {
+      if (allDaysSorted[i].driftMag >= DRIFT_EVENT_THRESHOLD) {
+        eventIdx = i;
+        break;
+      }
+    }
 
-    const available = allDaysSorted.slice(eventIdx + 1);
-    const followDays = available.slice(0, Math.min(4, available.length));
-    recoveryFollowDaysK = followDays.length;
-
-    if (followDays.length > 0) {
-      const avgFollow = followDays.reduce((s, d) => s + d.driftMag, 0) / followDays.length;
-      recoveryFollowAvgDriftMag = Math.round(avgFollow * 100) / 100;
-      const improvement = (d0.driftMag - avgFollow) / d0.driftMag;
-      scheduleRecoveryScore = clamp(Math.round(100 * improvement), 0, 100);
-      followDays.forEach((d) => debugRecoveryDays.push({ date: d.date, driftMag: d.driftMag }));
+    if (eventIdx === -1) {
+      recoveryEventFound = false;
+      recoveryReason = "no_event";
     } else {
-      scheduleRecoveryScore = null;
+      recoveryEventFound = true;
+      const d0 = allDaysSorted[eventIdx];
+      recoveryEventDriftMag0 = Math.round(d0.driftMag * 100) / 100;
+      debugRecoveryDays.push({ date: d0.date, driftMag: d0.driftMag });
+
+      const available = allDaysSorted.slice(eventIdx + 1);
+      const followDays = available.slice(0, Math.min(4, available.length));
+      recoveryFollowDaysK = followDays.length;
+
+      if (followDays.length > 0) {
+        const avgFollow = followDays.reduce((s, d) => s + d.driftMag, 0) / followDays.length;
+        recoveryFollowAvgDriftMag = Math.round(avgFollow * 100) / 100;
+        const improvement = (d0.driftMag - avgFollow) / d0.driftMag;
+        recoveryRaw = clamp(Math.round(100 * improvement), 0, 100);
+        recoverySuppressed = recoveryRaw * mods.suppressionFactor;
+        recoveryFinal = applyRecoveryModifiers(recoveryRaw, mods);
+        scheduleRecoveryScore = recoveryFinal;
+        followDays.forEach((d) => debugRecoveryDays.push({ date: d.date, driftMag: d.driftMag }));
+        if (followDays.length < 4) {
+          recoveryReason = "partial_post_event_window";
+        } else {
+          recoveryReason = "computed";
+        }
+      } else {
+        recoveryReason = "insufficient_post_event_days";
+        scheduleRecoveryScore = null;
+      }
     }
   }
 
   const recoveryConfidence: "high" | "low" =
-    recoveryEventFound && recoveryFollowDaysK != null && recoveryFollowDaysK >= 4 ? "high" : "low";
+    recoveryReason === "missing_scheduled_data" ? "high" :
+    recoveryReason === "computed" ? "high" : "low";
 
   return {
     scheduleConsistencyScore,
@@ -156,7 +218,18 @@ export async function computeScheduleStability(
     recoveryFollowDaysK,
     recoveryFollowAvgDriftMag,
     recoveryConfidence,
+    recoveryReason,
     debugDriftMags7d: last7.map((d) => Math.round(d.driftMag * 100) / 100),
     debugRecoveryDays,
+    scheduledToday,
+    hasActualDataToday,
+    missStreak: mods.missStreak,
+    suppressionFactor: mods.suppressionFactor,
+    avgDeviationMin: mods.avgDeviationMin,
+    driftPenalty: mods.driftPenalty,
+    driftFactor: mods.driftFactor,
+    recoveryRaw,
+    recoverySuppressed,
+    recoveryFinal,
   };
 }
