@@ -1420,8 +1420,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [date, userId],
       );
       const rawChecklist = mealLogRow.rows[0]?.meal_checklist;
+      const hasLogEntry = mealLogRow.rows.length > 0;
       const mealChecklist: Record<string, boolean> = rawChecklist ?? {};
-      const hasLoggedMeals = rawChecklist != null && Object.values(rawChecklist).some((v: unknown) => v === true);
       const mealKeys = Object.keys(MEAL_CALORIES);
       const mealsChecked = mealKeys.filter(k => mealChecklist[k]);
       const mealsTotal = mealKeys.length;
@@ -1452,7 +1452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plannedCardioMin: dayAdh?.plannedCardioMin ?? 40,
           actualLiftMin: dayAdh?.actualLiftMin ?? null,
           plannedLiftMin: dayAdh?.plannedLiftMin ?? 75,
-          mealAdherence: hasLoggedMeals ? {
+          mealAdherence: hasLogEntry ? {
             mealsChecked: mealsChecked.length,
             mealsTotal,
             earnedKcal,
