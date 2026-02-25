@@ -932,7 +932,7 @@ export default function ChecklistScreen() {
                 </View>
               )}
 
-              {sectionHeader("Schedule Stability", "calendar-outline", "#60A5FA")}
+              {sectionHeader("Sleep Schedule Stability", "calendar-outline", "#60A5FA")}
 
               {(() => {
                 const ss = readiness.scheduleStability;
