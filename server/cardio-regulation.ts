@@ -294,7 +294,8 @@ export async function computeCardioScheduleStability(
         });
         const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
         recoveryFollowAvgDeviation = avgDev;
-        recoveryRaw = clamp(100 - avgDev * 100, 0, 100);
+        const avgDevMin = avgDev * plannedDurationMin;
+        recoveryRaw = clamp(100 - (avgDevMin / 60) * 100, 0, 100);
         recoverySuppressed = recoveryRaw * mods.suppressionFactor;
         recoveryFinal = applyRecoveryModifiers(recoveryRaw, mods);
         recoveryScore = recoveryFinal;
@@ -310,6 +311,15 @@ export async function computeCardioScheduleStability(
         recoveryConfidence = "low";
       }
     }
+  }
+
+  if (scheduledToday && recoveryScore == null) {
+    recoveryScore = 100;
+    recoveryRaw = recoveryRaw ?? 100;
+    recoverySuppressed = recoverySuppressed ?? 100;
+    recoveryFinal = recoveryFinal ?? 100;
+    recoveryReason = recoveryReason === "no_event" ? "no_event" : recoveryReason;
+    recoveryConfidence = recoveryConfidence === "low" && recoveryReason === "no_event" ? "high" : recoveryConfidence;
   }
 
   return {

@@ -125,16 +125,45 @@ export async function computeScheduleStability(
 
   const scheduledToday = true;
   const todayData = allDays.find(d => d.date === date);
-  const hasActualDataToday = todayData != null;
+
+  const sleepDataRow = await pool.query(
+    `SELECT
+       dl.actual_bed_time, dl.actual_wake_time,
+       COALESCE(
+         dl.sleep_minutes,
+         (SELECT ssd.total_sleep_minutes FROM sleep_summary_daily ssd WHERE ssd.user_id = dl.user_id AND ssd.date = dl.day::date)
+       ) AS resolved_tst,
+       COALESCE(
+         (SELECT ssd.time_in_bed_minutes FROM sleep_summary_daily ssd WHERE ssd.user_id = dl.user_id AND ssd.date = dl.day::date),
+         CASE WHEN dl.sleep_rem_min IS NOT NULL OR dl.sleep_core_min IS NOT NULL OR dl.sleep_deep_min IS NOT NULL OR dl.sleep_awake_min IS NOT NULL
+           THEN COALESCE(dl.sleep_rem_min, 0) + COALESCE(dl.sleep_core_min, 0) + COALESCE(dl.sleep_deep_min, 0) + COALESCE(dl.sleep_awake_min, 0)
+           ELSE NULL END
+       ) AS resolved_tib
+     FROM daily_log dl
+     WHERE dl.user_id = $1 AND dl.day = $2
+     LIMIT 1`,
+    [userId, date],
+  );
+  const sdRow = sleepDataRow.rows[0];
+  const resolvedTst = sdRow?.resolved_tst != null ? Number(sdRow.resolved_tst) : null;
+  const resolvedTib = sdRow?.resolved_tib != null ? Number(sdRow.resolved_tib) : null;
+  const hasActualDataToday =
+    (resolvedTst != null && resolvedTst > 0) ||
+    (resolvedTib != null && resolvedTib > 0) ||
+    todayData != null;
 
   let missStreak = 0;
   {
     const allPriorRows = await pool.query(
-      `SELECT day,
-              CASE WHEN actual_bed_time IS NOT NULL AND actual_wake_time IS NOT NULL THEN true ELSE false END AS has_sleep
-       FROM daily_log
-       WHERE user_id = $1 AND day < $2 AND day >= ($2::date - 14)::text
-       ORDER BY day DESC`,
+      `SELECT dl.day,
+              CASE WHEN dl.actual_bed_time IS NOT NULL AND dl.actual_wake_time IS NOT NULL THEN true
+                   WHEN dl.sleep_minutes IS NOT NULL AND dl.sleep_minutes > 0 THEN true
+                   WHEN dl.sleep_rem_min IS NOT NULL OR dl.sleep_core_min IS NOT NULL OR dl.sleep_deep_min IS NOT NULL THEN true
+                   WHEN EXISTS (SELECT 1 FROM sleep_summary_daily ssd WHERE ssd.user_id = dl.user_id AND ssd.date = dl.day::date AND ssd.total_sleep_minutes > 0) THEN true
+                   ELSE false END AS has_sleep
+       FROM daily_log dl
+       WHERE dl.user_id = $1 AND dl.day < $2 AND dl.day >= ($2::date - 14)::text
+       ORDER BY dl.day DESC`,
       [userId, date],
     );
     for (const r of allPriorRows.rows) {
@@ -204,9 +233,18 @@ export async function computeScheduleStability(
     }
   }
 
+  if (scheduledToday && scheduleRecoveryScore == null) {
+    scheduleRecoveryScore = 100;
+    recoveryRaw = recoveryRaw ?? 100;
+    recoverySuppressed = recoverySuppressed ?? 100;
+    recoveryFinal = recoveryFinal ?? 100;
+    recoveryReason = recoveryReason === "no_event" ? "no_event" : recoveryReason;
+  }
+
   const recoveryConfidence: "high" | "low" =
     recoveryReason === "missing_scheduled_data" ? "high" :
-    recoveryReason === "computed" ? "high" : "low";
+    recoveryReason === "computed" ? "high" :
+    recoveryReason === "no_event" && scheduledToday ? "high" : "low";
 
   return {
     scheduleConsistencyScore,
