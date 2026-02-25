@@ -1416,7 +1416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const BASELINE_KCAL = 2696;
 
       const mealLogRow = await pool.query(
-        `SELECT meal_checklist FROM daily_log WHERE date = $1::date AND user_id = $2`,
+        `SELECT meal_checklist FROM daily_log WHERE day = $1 AND user_id = $2`,
         [date, userId],
       );
       const mealChecklist: Record<string, boolean> = mealLogRow.rows[0]?.meal_checklist ?? {};
