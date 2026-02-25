@@ -252,32 +252,42 @@ export async function computeCardioScheduleStability(
     recoveryScore = 0;
   } else {
     let eventIdx = -1;
+    let fallbackEventIdx = -1;
+    let fallbackMetric: string | null = null;
+    let fallbackThreshold: string | null = null;
+
+    function isCardioEvent(s: CardioSessionDay): { metric: string; threshold: string } | null {
+      if (s.missed) return { metric: "session_missed", threshold: "no session data" };
+      if (s.productiveMin != null && plannedDurationMin > 0 && s.productiveMin / plannedDurationMin < 0.75)
+        return { metric: `productiveMin/plannedMin = ${(s.productiveMin / plannedDurationMin).toFixed(4)}`, threshold: "< 0.75" };
+      if (s.totalMin != null && plannedDurationMin > 0 && s.totalMin / plannedDurationMin < 0.75)
+        return { metric: `totalMin/plannedMin = ${(s.totalMin / plannedDurationMin).toFixed(4)}`, threshold: "< 0.75" };
+      if (s.z1Ratio != null && s.z1Ratio > 0.30)
+        return { metric: `z1/totalMin = ${s.z1Ratio.toFixed(4)}`, threshold: "> 0.30" };
+      return null;
+    }
+
     for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
-      const s = sessionDaysSorted[i];
-      if (s.missed) {
+      const ev = isCardioEvent(sessionDaysSorted[i]);
+      if (!ev) continue;
+      if (fallbackEventIdx === -1) {
+        fallbackEventIdx = i;
+        fallbackMetric = ev.metric;
+        fallbackThreshold = ev.threshold;
+      }
+      const hasFollowUp = sessionDaysSorted.slice(i + 1).some(s => !s.missed);
+      if (hasFollowUp) {
         eventIdx = i;
-        recoveryEventMetric = "session_missed";
-        recoveryThresholdUsed = "no session data";
+        recoveryEventMetric = ev.metric;
+        recoveryThresholdUsed = ev.threshold;
         break;
       }
-      if (s.productiveMin != null && plannedDurationMin > 0 && s.productiveMin / plannedDurationMin < 0.75) {
-        eventIdx = i;
-        recoveryEventMetric = `productiveMin/plannedMin = ${(s.productiveMin / plannedDurationMin).toFixed(4)}`;
-        recoveryThresholdUsed = "< 0.75";
-        break;
-      }
-      if (s.totalMin != null && plannedDurationMin > 0 && s.totalMin / plannedDurationMin < 0.75) {
-        eventIdx = i;
-        recoveryEventMetric = `totalMin/plannedMin = ${(s.totalMin / plannedDurationMin).toFixed(4)}`;
-        recoveryThresholdUsed = "< 0.75";
-        break;
-      }
-      if (s.z1Ratio != null && s.z1Ratio > 0.30) {
-        eventIdx = i;
-        recoveryEventMetric = `z1/totalMin = ${s.z1Ratio.toFixed(4)}`;
-        recoveryThresholdUsed = "> 0.30";
-        break;
-      }
+    }
+
+    if (eventIdx === -1 && fallbackEventIdx !== -1) {
+      eventIdx = fallbackEventIdx;
+      recoveryEventMetric = fallbackMetric;
+      recoveryThresholdUsed = fallbackThreshold;
     }
 
     if (eventIdx === -1) {

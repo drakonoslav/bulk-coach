@@ -248,32 +248,42 @@ export async function computeLiftScheduleStability(
     recoveryScore = 0;
   } else {
     let eventIdx = -1;
+    let fallbackEventIdx = -1;
+    let fallbackMetric: string | null = null;
+    let fallbackThreshold: string | null = null;
+
+    function isLiftEvent(s: LiftSessionDay): { metric: string; threshold: string } | null {
+      if (s.missed) return { metric: "session_missed", threshold: "no session data" };
+      if (s.workingMin != null && liftPlannedMin > 0 && s.workingMin / liftPlannedMin < 0.80)
+        return { metric: `workingMin/plannedMin = ${(s.workingMin / liftPlannedMin).toFixed(4)}`, threshold: "< 0.80" };
+      if (s.actualMin != null && liftPlannedMin > 0 && s.actualMin < liftPlannedMin)
+        return { metric: `actualMin < plannedMin (${s.actualMin} < ${liftPlannedMin})`, threshold: "actualMin < plannedMin" };
+      if (s.idleRatio != null && s.idleRatio > 0.25)
+        return { metric: `idleMin/actualMin = ${s.idleRatio.toFixed(4)}`, threshold: "> 0.25" };
+      return null;
+    }
+
     for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
-      const s = sessionDaysSorted[i];
-      if (s.missed) {
+      const ev = isLiftEvent(sessionDaysSorted[i]);
+      if (!ev) continue;
+      if (fallbackEventIdx === -1) {
+        fallbackEventIdx = i;
+        fallbackMetric = ev.metric;
+        fallbackThreshold = ev.threshold;
+      }
+      const hasFollowUp = sessionDaysSorted.slice(i + 1).some(s => !s.missed);
+      if (hasFollowUp) {
         eventIdx = i;
-        recoveryEventMetric = "session_missed";
-        recoveryThresholdUsed = "no session data";
+        recoveryEventMetric = ev.metric;
+        recoveryThresholdUsed = ev.threshold;
         break;
       }
-      if (s.workingMin != null && liftPlannedMin > 0 && s.workingMin / liftPlannedMin < 0.80) {
-        eventIdx = i;
-        recoveryEventMetric = `workingMin/plannedMin = ${(s.workingMin / liftPlannedMin).toFixed(4)}`;
-        recoveryThresholdUsed = "< 0.80";
-        break;
-      }
-      if (s.actualMin != null && liftPlannedMin > 0 && s.actualMin < liftPlannedMin) {
-        eventIdx = i;
-        recoveryEventMetric = `actualMin < plannedMin (${s.actualMin} < ${liftPlannedMin})`;
-        recoveryThresholdUsed = "actualMin < plannedMin";
-        break;
-      }
-      if (s.idleRatio != null && s.idleRatio > 0.25) {
-        eventIdx = i;
-        recoveryEventMetric = `idleMin/actualMin = ${s.idleRatio.toFixed(4)}`;
-        recoveryThresholdUsed = "> 0.25";
-        break;
-      }
+    }
+
+    if (eventIdx === -1 && fallbackEventIdx !== -1) {
+      eventIdx = fallbackEventIdx;
+      recoveryEventMetric = fallbackMetric;
+      recoveryThresholdUsed = fallbackThreshold;
     }
 
     if (eventIdx === -1) {
