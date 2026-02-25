@@ -19,10 +19,9 @@ function gaugeColor(v: number | null | undefined, max: number, thresholds?: { go
   return pct >= good ? "#34D399" : pct >= warn ? "#FBBF24" : "#EF4444";
 }
 
-function formatValue(v: number | null | undefined, max: number, suffix?: string): string {
+function formatValue(v: number | null | undefined): string {
   if (v == null) return "";
-  if (suffix === "%") return `${v.toFixed(1)}%`;
-  return `${v.toFixed(1)}`;
+  return `${v.toFixed(2)}%`;
 }
 
 export default function FuelGauge({
@@ -54,7 +53,7 @@ export default function FuelGauge({
           <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#6B7280" }}>{nullLabel || "\u2014"}</Text>
         ) : (
           <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color }}>
-            {formatValue(value, max, suffix)}
+            {formatValue(value)}
           </Text>
         )}
       </View>
