@@ -11,7 +11,7 @@ import {
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
-import { fmtInt, fmtVal, fmtFracToPctInt } from "@/lib/format";
+import { fmtInt, fmtVal, fmtFracToPctInt, scoreColor } from "@/lib/format";
 
 type ContextPhase =
   | "NOVELTY_DISTURBANCE"

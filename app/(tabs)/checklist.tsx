@@ -18,7 +18,7 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { DAILY_CHECKLIST, BASELINE } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
-import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtInt, scoreColor } from "@/lib/format";
+import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtInt, fmtDelta, scoreColor } from "@/lib/format";
 import { FuelGaugeGroup } from "@/components/FuelGauge";
 
 function getTimeCategory(time: string): { icon: string; color: string } {

@@ -21,7 +21,7 @@ import * as LegacyFS from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
-import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt } from "@/lib/format";
+import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt, scoreColor } from "@/lib/format";
 
 interface SessionRow {
   date: string;
