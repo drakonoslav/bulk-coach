@@ -984,36 +984,52 @@ export default function ChecklistScreen() {
               {(() => {
                 const ma14 = adh?.mealAdherence14d as any;
                 if (!ma14) return sigRow("14-day trend", <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary }}>No meal logs in last 14 days</Text>);
-                const hitColor = (ma14.avgBaselineHitPct ?? 0) >= 90 ? "#34D399" : (ma14.avgBaselineHitPct ?? 0) >= 70 ? "#FBBF24" : "#EF4444";
+                const hitColor = (ma14.kcal?.avgBaselineHitPct ?? ma14.avgBaselineHitPct ?? 0) >= 90 ? "#34D399" : (ma14.kcal?.avgBaselineHitPct ?? ma14.avgBaselineHitPct ?? 0) >= 70 ? "#FBBF24" : "#EF4444";
+                const confColor = ma14.confidence === "high" ? "#34D399" : ma14.confidence === "medium" ? "#FBBF24" : "#EF4444";
                 return (
                   <>
-                    {sigRow("14d avg kcal",
+                    {sigRow("Confidence",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: confColor }}>
+                        {ma14.confidence} ({ma14.daysWithLogs}/{ma14.daysTotal}d)
+                      </Text>
+                    )}
+                    {sigRow("P7 avg kcal",
                       <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hitColor }}>
-                        {fmtInt(ma14.avgEarnedKcal)}
+                        {fmtInt(ma14.kcal?.p7AvgEarnedKcal)}
+                      </Text>
+                    )}
+                    {sigRow("P14 avg kcal",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hitColor }}>
+                        {fmtInt(ma14.kcal?.p14AvgEarnedKcal)}
+                      </Text>
+                    )}
+                    {sigRow("Trend",
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
+                        {ma14.kcal?.trendKcalPerDay != null ? fmtDelta(ma14.kcal.trendKcalPerDay, 0, " kcal/day") : "—"}
                       </Text>
                     )}
                     {sigRow("14d baseline hit",
                       <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: hitColor }}>
-                        {fmtRaw(ma14.avgBaselineHitPct)}%
-                      </Text>
-                    )}
-                    {sigRow("14d avg missed",
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
-                        {fmtRaw(ma14.avgMealsMissed)} meals/day
+                        {fmtRaw(ma14.kcal?.avgBaselineHitPct ?? ma14.avgBaselineHitPct)}%
                       </Text>
                     )}
                     {(ma14.perMeal ?? []).map((pm: any) => {
                       const pmColor = (pm.hitPct ?? 0) >= 90 ? "#34D399" : (pm.hitPct ?? 0) >= 70 ? "#FBBF24" : "#EF4444";
                       return sigRow(pm.label,
                         <Text key={pm.key} style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: pmColor }}>
-                          {pm.hitDays}/{ma14.daysWithLogs} ({fmtRaw(pm.hitPct)}%)
+                          {pm.hitDays}/{ma14.daysWithLogs} ({fmtRaw(pm.hitPct)}%) 🔥{pm.currentStreak} ⭐{pm.longestStreak}
                         </Text>
                       );
                     })}
-                    {ma14.biggestMiss && sigRow("Most missed",
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#EF4444" }}>
-                        {ma14.biggestMiss}
-                      </Text>
+                    {ma14.nextBestMeal?.label && sigRow("Next best meal",
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#F59E0B" }}>
+                          {ma14.nextBestMeal.label}
+                        </Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          ({(ma14.nextBestMeal.reason ?? "").replace(/_/g, " ")})
+                        </Text>
+                      </View>
                     )}
                   </>
                 );
