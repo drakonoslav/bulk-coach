@@ -77,6 +77,7 @@ import { computeRangeAdherence } from "./adherence-metrics-range";
 import { computeSleepBlock, computeSleepTrending, getSleepPlanSettings, setSleepPlanSettings } from "./sleep-alignment";
 import { computeCardioBlock } from "./cardio-regulation";
 import { computeLiftBlock } from "./lift-regulation";
+import { buildReadinessResponse } from "./readiness/buildReadinessResponse";
 import { toDomainOutcomeSleep } from "./sleep/toDomainOutcomeSleep";
 import {
   upsertCalorieDecision,
@@ -1482,10 +1483,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleepBlock,
       });
 
-      res.json({
-        ...result,
-        sleepBlock: { ...sleepBlock, domainOutcome: sleepDomainOutcome_ },
+      const readinessPayload = buildReadinessResponse({
+        result,
+        sleepBlock,
+        sleepDomainOutcome: sleepDomainOutcome_,
         sleepTrending,
+        schedStab: {
+          scheduledToday: schedStab.scheduledToday,
+          scheduledTodayReason: schedStab.scheduledTodayReason,
+          scheduledTodayConfidence: schedStab.scheduledTodayConfidence,
+        },
         adherence: {
           alignmentScore: sa?.alignmentScore ?? null,
           bedDevMin: sa?.bedDeviationMin ?? null,
@@ -1512,12 +1519,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } : null,
         },
         primaryDriver,
-        cardioBlock: { domainOutcome: cardioBlock.domainOutcome },
-        liftBlock: { domainOutcome: liftBlock.domainOutcome },
-        placeholders: {
-          mealTimingTracked: false,
-        },
+        cardioDomainOutcome: cardioBlock.domainOutcome,
+        liftDomainOutcome: liftBlock.domainOutcome,
       });
+      res.json(readinessPayload);
     } catch (err: unknown) {
       console.error("readiness error:", err);
       res.status(500).json({ error: "Internal server error" });
