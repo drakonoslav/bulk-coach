@@ -30,6 +30,7 @@ export function toDomainOutcomeCardio(args: {
       recoveryApplicable,
       confidence,
       reason: recoveryReason,
+      consistencySamples: ss?.consistencyNSessions ?? null,
     },
 
     outcome: {
@@ -43,24 +44,8 @@ export function toDomainOutcomeCardio(args: {
     },
 
     debug: {
-      productiveMin: co?.productiveMin ?? null,
-      cardioTotalMin: co?.cardioTotalMin ?? null,
-      cardioTotalSource: co?.cardioTotalSource ?? null,
-      plannedDurationMin: co?.plannedDurationMin ?? null,
-      offBandMin: co?.offBandMin ?? null,
-      offBandWeighted: co?.offBandWeighted ?? null,
-      z1Min: co?.z1Min ?? null,
-      z2Min: co?.z2Min ?? null,
-      z3Min: co?.z3Min ?? null,
-      z4Min: co?.z4Min ?? null,
-      z5Min: co?.z5Min ?? null,
-      recoveryRaw: ss?.recoveryRaw ?? null,
-      recoverySuppressed: ss?.recoverySuppressed ?? null,
-      recoveryFinal: ss?.recoveryFinal ?? null,
-      missStreak: ss?.missStreak ?? 0,
-      suppressionFactor: ss?.suppressionFactor ?? null,
-      driftPenalty: ss?.driftPenalty ?? null,
-      driftFactor: ss?.driftFactor ?? null,
+      scheduleDetail: ss,
+      outcomeDetail: co,
     },
   };
 }

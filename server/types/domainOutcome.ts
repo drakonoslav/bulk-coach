@@ -8,6 +8,7 @@ export type ScheduleBlock = {
   recoveryApplicable: boolean;
   confidence: Confidence;
   reason?: string | null;
+  consistencySamples?: number | null;
 };
 
 export type OutcomeBlock = {

@@ -984,16 +984,16 @@ export default function ChecklistScreen() {
               {sectionHeader("Sleep Schedule Stability", "calendar-outline", "#60A5FA")}
 
               {(() => {
-                const ss = readiness.scheduleStability;
+                const sdo = readiness.sleepBlock?.domainOutcome;
                 return <FuelGaugeGroup items={[
-                  { label: "Alignment", value: hasAlignment ? sa!.alignmentScore! : null, nullLabel: "no observed times", thresholds: { good: 80, warn: 50 } },
-                  { label: "Consistency", value: ss?.scheduleConsistencyScore ?? null, nullLabel: ss?.scheduleConsistencyNSamples != null && (ss.scheduleConsistencyNSamples ?? 0) < 4 ? `${ss.scheduleConsistencyNSamples}/4 days` : undefined, thresholds: { good: 70, warn: 40 } },
-                  { label: "Recovery", value: ss?.scheduleRecoveryScore ?? null, confidence: ss?.recoveryConfidence === "low" ? "low" : ss?.scheduleRecoveryScore != null ? "high" : "low", nullLabel: "—", thresholds: { good: 70, warn: 40 } },
+                  { label: "Alignment", value: sdo?.schedule?.alignment ?? null, nullLabel: "no observed times", thresholds: { good: 80, warn: 50 } },
+                  { label: "Consistency", value: sdo?.schedule?.consistency ?? null, nullLabel: sdo?.schedule?.consistencySamples != null && (sdo.schedule.consistencySamples ?? 0) < 4 ? `${sdo.schedule.consistencySamples}/4 days` : undefined, thresholds: { good: 70, warn: 40 } },
+                  { label: "Recovery", value: sdo?.schedule?.recovery ?? null, confidence: sdo?.schedule?.confidence === "low" ? "low" : sdo?.schedule?.recovery != null ? "high" : "low", nullLabel: "—", thresholds: { good: 70, warn: 40 } },
                 ]} />;
               })()}
 
               {(() => {
-                const ss = readiness.scheduleStability;
+                const ss = (readiness.sleepBlock?.domainOutcome?.debug as any)?.scheduleDetail;
                 const saD = sb?.sleepAlignment;
                 return (
                   <View>
@@ -1031,13 +1031,14 @@ export default function ChecklistScreen() {
               {sectionHeader("Cardio Schedule", "heart-outline", "#F87171")}
 
               {(() => {
-                const cs = readiness.cardioBlock?.scheduleStability;
+                const cdo = readiness.cardioBlock?.domainOutcome;
+                const cs = (cdo?.debug as any)?.scheduleDetail;
                 return (
                   <View>
                     <FuelGaugeGroup items={[
-                      { label: "Alignment", value: cs?.alignmentScore ?? null },
-                      { label: "Consistency", value: cs?.consistencyScore ?? null, nullLabel: cs?.consistencyNSessions != null && cs.consistencyNSessions < 4 ? `${cs.consistencyNSessions}/4 sessions` : undefined },
-                      { label: "Recovery", value: cs?.recoveryScore ?? null, confidence: cs?.recoveryConfidence ?? "low", nullLabel: "—" },
+                      { label: "Alignment", value: cdo?.schedule?.alignment ?? null },
+                      { label: "Consistency", value: cdo?.schedule?.consistency ?? null, nullLabel: cdo?.schedule?.consistencySamples != null && (cdo.schedule.consistencySamples ?? 0) < 4 ? `${cdo.schedule.consistencySamples}/4 sessions` : undefined },
+                      { label: "Recovery", value: cdo?.schedule?.recovery ?? null, confidence: cdo?.schedule?.confidence ?? "low", nullLabel: "—" },
                     ]} />
                     <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
@@ -1068,13 +1069,14 @@ export default function ChecklistScreen() {
               {sectionHeader("Cardio Outcome", "heart-outline", "#F87171")}
 
               {(() => {
-                const co = readiness.cardioBlock?.outcome;
+                const cdo = readiness.cardioBlock?.domainOutcome;
+                const co = (cdo?.debug as any)?.outcomeDetail;
                 return (
                   <View>
                     <FuelGaugeGroup items={[
-                      { label: "Adequacy", value: co?.adequacyScore ?? null, max: 110, nullLabel: "not logged" },
-                      { label: "Efficiency", value: co?.efficiencyScore ?? null, suffix: "%", nullLabel: "no zone data" },
-                      { label: "Continuity", value: co?.continuityScore ?? null, suffix: "%", nullLabel: "no zone data" },
+                      { label: "Adequacy", value: cdo?.outcome?.adequacy ?? null, max: 110, nullLabel: "not logged" },
+                      { label: "Efficiency", value: cdo?.outcome?.efficiency ?? null, suffix: "%", nullLabel: "no zone data" },
+                      { label: "Continuity", value: cdo?.outcome?.continuity ?? null, suffix: "%", nullLabel: "no zone data" },
                     ]} />
                     <Pressable onPress={() => setDebugCardioOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Outcome</Text>
@@ -1087,7 +1089,7 @@ export default function ChecklistScreen() {
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`adequacyRaw = 100×productive/planned = ${fmtRaw(co?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${fmtRaw(co?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1Penalty+1.25×(z4+z5) = ${co?.offBandWeighted ?? "—"}\nz1Grace = ${co?.z1Grace ?? "—"}\nz1Penalty = ${co?.z1Penalty ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${fmtRaw(co?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
+                          {`adequacyRaw = 100×productive/planned = ${fmtRaw(co?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(cdo?.outcome?.adequacy)}\n\nefficiencyRaw = 100×productive/total = ${fmtRaw(co?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(cdo?.outcome?.efficiency)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1Penalty+1.25×(z4+z5) = ${co?.offBandWeighted ?? "—"}\nz1Grace = ${co?.z1Grace ?? "—"}\nz1Penalty = ${co?.z1Penalty ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${fmtRaw(co?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(cdo?.outcome?.continuity)}\ncontinuityDenominator = ${cdo?.outcome?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}
@@ -1098,13 +1100,14 @@ export default function ChecklistScreen() {
               {sectionHeader("Lift Schedule", "barbell-outline", "#F59E0B")}
 
               {(() => {
-                const ls = readiness.liftBlock?.scheduleStability;
+                const ldo = readiness.liftBlock?.domainOutcome;
+                const ls = (ldo?.debug as any)?.scheduleDetail;
                 return (
                   <View>
                     <FuelGaugeGroup items={[
-                      { label: "Alignment", value: ls?.alignmentScore ?? null },
-                      { label: "Consistency", value: ls?.consistencyScore ?? null, nullLabel: ls?.consistencyNSamples != null && ls.consistencyNSamples < 4 ? `${ls.consistencyNSamples}/4 sessions` : undefined },
-                      { label: "Recovery", value: ls?.recoveryScore ?? null, confidence: ls?.recoveryConfidence ?? "low", nullLabel: "—" },
+                      { label: "Alignment", value: ldo?.schedule?.alignment ?? null },
+                      { label: "Consistency", value: ldo?.schedule?.consistency ?? null, nullLabel: ldo?.schedule?.consistencySamples != null && (ldo.schedule.consistencySamples ?? 0) < 4 ? `${ldo.schedule.consistencySamples}/4 sessions` : undefined },
+                      { label: "Recovery", value: ldo?.schedule?.recovery ?? null, confidence: ldo?.schedule?.confidence ?? "low", nullLabel: "—" },
                     ]} />
                     <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>
@@ -1135,13 +1138,14 @@ export default function ChecklistScreen() {
               {sectionHeader("Lift Outcome", "barbell-outline", "#F59E0B")}
 
               {(() => {
-                const lo = readiness.liftBlock?.outcome;
+                const ldo = readiness.liftBlock?.domainOutcome;
+                const lo = (ldo?.debug as any)?.outcomeDetail;
                 return (
                   <View>
                     <FuelGaugeGroup items={[
-                      { label: "Adequacy", value: lo?.adequacyScore ?? null, max: 110, nullLabel: "not logged" },
-                      { label: "Efficiency", value: lo?.efficiencyScore ?? null, suffix: "%", nullLabel: "not available" },
-                      { label: "Continuity", value: lo?.continuityScore ?? null, suffix: "%", nullLabel: "not available" },
+                      { label: "Adequacy", value: ldo?.outcome?.adequacy ?? null, max: 110, nullLabel: "not logged" },
+                      { label: "Efficiency", value: ldo?.outcome?.efficiency ?? null, suffix: "%", nullLabel: "not available" },
+                      { label: "Continuity", value: ldo?.outcome?.continuity ?? null, suffix: "%", nullLabel: "not available" },
                     ]} />
                     <Pressable onPress={() => setDebugLiftOutcomeExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Outcome</Text>
@@ -1154,7 +1158,7 @@ export default function ChecklistScreen() {
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`workFrac = ${fmtRaw(lo?.workFrac, 6)}\nhrEngageFrac = (lz2+lz3)/hrTotal = ${fmtRaw(lo?.hrEngageFrac, 6)}\n\nadequacyRaw = 100×actual/planned = ${fmtRaw(lo?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = ${lo?.hrTotalMin != null ? "100×(0.6×workFrac+0.4×hrEngageFrac)" : "100×working/actual"} = ${fmtRaw(lo?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = ${lo?.hrTotalMin != null ? "100×(1−0.5×idle/actual−0.5×lz1/hrTotal)" : "100×(1−idle/actual)"} = ${fmtRaw(lo?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
+                          {`workFrac = ${fmtRaw(lo?.workFrac, 6)}\nhrEngageFrac = (lz2+lz3)/hrTotal = ${fmtRaw(lo?.hrEngageFrac, 6)}\n\nadequacyRaw = 100×actual/planned = ${fmtRaw(lo?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(ldo?.outcome?.adequacy)}\n\nefficiencyRaw = ${lo?.hrTotalMin != null ? "100×(0.6×workFrac+0.4×hrEngageFrac)" : "100×working/actual"} = ${fmtRaw(lo?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(ldo?.outcome?.efficiency)}\n\ncontinuityRaw = ${lo?.hrTotalMin != null ? "100×(1−0.5×idle/actual−0.5×lz1/hrTotal)" : "100×(1−idle/actual)"} = ${fmtRaw(lo?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(ldo?.outcome?.continuity)}\ncontinuityDenominator = ${ldo?.outcome?.continuityDenominator ?? "—"}`}
                         </Text>
                       </View>
                     )}

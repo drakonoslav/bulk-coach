@@ -30,6 +30,7 @@ export function toDomainOutcomeLift(args: {
       recoveryApplicable,
       confidence,
       reason: recoveryReason,
+      consistencySamples: ss?.consistencyNSamples ?? null,
     },
 
     outcome: {
@@ -43,25 +44,8 @@ export function toDomainOutcomeLift(args: {
     },
 
     debug: {
-      actualMin: lo?.actualMin ?? null,
-      plannedMin: lo?.plannedMin ?? null,
-      workingMin: lo?.workingMin ?? null,
-      idleMin: lo?.idleMin ?? null,
-      hrTotalMin: lo?.hrTotalMin ?? null,
-      workFrac: lo?.workFrac ?? null,
-      hrEngageFrac: lo?.hrEngageFrac ?? null,
-      liftZ1Min: lo?.liftZ1Min ?? null,
-      liftZ2Min: lo?.liftZ2Min ?? null,
-      liftZ3Min: lo?.liftZ3Min ?? null,
-      liftZ4Min: lo?.liftZ4Min ?? null,
-      liftZ5Min: lo?.liftZ5Min ?? null,
-      recoveryRaw: ss?.recoveryRaw ?? null,
-      recoverySuppressed: ss?.recoverySuppressed ?? null,
-      recoveryFinal: ss?.recoveryFinal ?? null,
-      missStreak: ss?.missStreak ?? 0,
-      suppressionFactor: ss?.suppressionFactor ?? null,
-      driftPenalty: ss?.driftPenalty ?? null,
-      driftFactor: ss?.driftFactor ?? null,
+      scheduleDetail: ss,
+      outcomeDetail: lo,
     },
   };
 }

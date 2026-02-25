@@ -34,6 +34,7 @@ export function toDomainOutcomeSleep(args: {
       recoveryApplicable,
       confidence,
       reason: recoveryReason,
+      consistencySamples: ss?.scheduleConsistencyNSamples ?? null,
     },
 
     outcome: {
@@ -47,21 +48,8 @@ export function toDomainOutcomeSleep(args: {
     },
 
     debug: {
-      sleepEfficiencyFrac: sb?.sleepEfficiencyFrac ?? null,
-      sleepContinuityFrac: sb?.sleepContinuityFrac ?? null,
-      plannedSleepMin: sb?.plannedSleepMin ?? null,
-      timeInBedMin: sb?.timeInBedMin ?? null,
-      estimatedSleepMin: sb?.estimatedSleepMin ?? null,
-      latencyMin: sb?.latencyMin ?? null,
-      wasoMin: sb?.wasoMin ?? null,
-      awakeInBedMin: sb?.awakeInBedMin ?? null,
-      recoveryRaw: ss?.recoveryRaw ?? null,
-      recoverySuppressed: ss?.recoverySuppressed ?? null,
-      recoveryFinal: ss?.recoveryFinal ?? null,
-      missStreak: ss?.missStreak ?? 0,
-      suppressionFactor: ss?.suppressionFactor ?? null,
-      driftPenalty: ss?.driftPenalty ?? null,
-      driftFactor: ss?.driftFactor ?? null,
+      scheduleDetail: ss,
+      outcomeDetail: sb,
     },
   };
 }
