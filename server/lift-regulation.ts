@@ -45,7 +45,7 @@ export interface LiftScheduleStability {
   consistencyScore: number | null;
   consistencySdMin: number | null;
   consistencyNSamples: number;
-  recoveryScore: number;
+  recoveryScore: number | null;
   recoveryEventFound: boolean;
   recoveryEventDay: string | null;
   recoveryEventMetric: string | null;
@@ -179,7 +179,7 @@ export async function computeLiftScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-  let recoveryScore: number = 100;
+  let recoveryScore: number | null = null;
   let recoveryEventFound = false;
   let recoveryEventDay: string | null = null;
   let recoveryEventMetric: string | null = null;
@@ -219,7 +219,6 @@ export async function computeLiftScheduleStability(
   }
 
   if (eventIdx === -1) {
-    recoveryScore = 100;
     recoveryEventFound = false;
     recoveryReason = "no_event";
     recoveryConfidence = "low";
@@ -232,7 +231,6 @@ export async function computeLiftScheduleStability(
     recoveryFollowDaysK = followDays.length;
 
     if (followDays.length === 0) {
-      recoveryScore = 100;
       recoveryReason = "insufficient_post_event_days";
       recoveryConfidence = "low";
     } else if (liftPlannedMin > 0) {
@@ -251,7 +249,6 @@ export async function computeLiftScheduleStability(
         recoveryConfidence = "high";
       }
     } else {
-      recoveryScore = 100;
       recoveryReason = "insufficient_post_event_days";
       recoveryConfidence = "low";
     }

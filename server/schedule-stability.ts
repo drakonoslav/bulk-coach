@@ -45,7 +45,7 @@ export interface ScheduleStability {
   recoveryEventDriftMag0: number | null;
   recoveryFollowDaysK: number | null;
   recoveryFollowAvgDriftMag: number | null;
-  recoveryConfidence: "full" | "low" | null;
+  recoveryConfidence: "high" | "low";
   debugDriftMags7d: number[];
   debugRecoveryDays: { date: string; driftMag: number }[];
 }
@@ -120,7 +120,7 @@ export async function computeScheduleStability(
   }
 
   if (eventIdx === -1) {
-    scheduleRecoveryScore = 100;
+    scheduleRecoveryScore = null;
     recoveryEventFound = false;
   } else {
     recoveryEventFound = true;
@@ -143,9 +143,8 @@ export async function computeScheduleStability(
     }
   }
 
-  const recoveryConfidence: "full" | "low" | null =
-    !recoveryEventFound ? null :
-    recoveryFollowDaysK != null && recoveryFollowDaysK >= 4 ? "full" : "low";
+  const recoveryConfidence: "high" | "low" =
+    recoveryEventFound && recoveryFollowDaysK != null && recoveryFollowDaysK >= 4 ? "high" : "low";
 
   return {
     scheduleConsistencyScore,

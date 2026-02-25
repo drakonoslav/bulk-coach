@@ -1532,7 +1532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eventDetection: { threshold: 45, scannedDays: allSorted.length, found: false },
           eventIdx: null, eventDate: null, eventSizeMin: null,
           postEventDays: [], kDaysUsed: null, postEventAvgDevMin: null,
-          recoveryScore: 100, confidence: null,
+          recoveryScore: null, confidence: null,
         };
       } else {
         const ev = allSorted[eventIdx];

@@ -45,7 +45,7 @@ export interface CardioScheduleStability {
   consistencyScore: number | null;
   consistencySdMin: number | null;
   consistencyNSessions: number;
-  recoveryScore: number;
+  recoveryScore: number | null;
   recoveryEventFound: boolean;
   recoveryEventDay: string | null;
   recoveryEventMetric: string | null;
@@ -68,6 +68,7 @@ export interface CardioOutcome {
   continuityScore: number | null;
   continuityDenominator: "total" | null;
   offBandMin: number | null;
+  offBandWeighted: number | null;
   productiveMinSource: "zones_sum" | "none";
   outcomeDay: string | null;
   z1Min: number | null;
@@ -181,7 +182,7 @@ export async function computeCardioScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-  let recoveryScore: number = 100;
+  let recoveryScore: number | null = null;
   let recoveryEventFound = false;
   let recoveryEventDay: string | null = null;
   let recoveryEventMetric: string | null = null;
@@ -221,7 +222,6 @@ export async function computeCardioScheduleStability(
   }
 
   if (eventIdx === -1) {
-    recoveryScore = 100;
     recoveryEventFound = false;
     recoveryReason = "no_event";
     recoveryConfidence = "low";
@@ -234,7 +234,6 @@ export async function computeCardioScheduleStability(
     recoveryFollowDaysK = followDays.length;
 
     if (followDays.length === 0) {
-      recoveryScore = 100;
       recoveryReason = "insufficient_post_event_days";
       recoveryConfidence = "low";
     } else if (plannedDurationMin > 0) {
@@ -253,7 +252,6 @@ export async function computeCardioScheduleStability(
         recoveryConfidence = "high";
       }
     } else {
-      recoveryScore = 100;
       recoveryReason = "insufficient_post_event_days";
       recoveryConfidence = "low";
     }
@@ -348,9 +346,11 @@ export async function computeCardioOutcome(
 
   let continuityScore: number | null = null;
   let offBandMin: number | null = null;
+  let offBandWeighted: number | null = null;
   if (hasZones && cardioTotalMin != null && cardioTotalMin > 0) {
     offBandMin = z1! + (z4 ?? 0) + (z5 ?? 0);
-    continuityScore = clamp(100 * (1 - offBandMin / cardioTotalMin), 0, 100);
+    offBandWeighted = 0.5 * z1! + 1.5 * ((z4 ?? 0) + (z5 ?? 0));
+    continuityScore = clamp(100 * (1 - offBandWeighted / cardioTotalMin), 0, 100);
   }
 
   const adequacySource: "productive" | "total" | "none" =
@@ -367,6 +367,7 @@ export async function computeCardioOutcome(
     continuityScore,
     continuityDenominator: continuityScore != null ? "total" as const : null,
     offBandMin,
+    offBandWeighted,
     productiveMinSource: hasZones ? "zones_sum" as const : "none" as const,
     outcomeDay: r?.day ?? null,
     z1Min: z1,

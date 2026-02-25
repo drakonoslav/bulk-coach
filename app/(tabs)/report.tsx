@@ -1753,7 +1753,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\ncontinuityRaw = 100×(1−offBand/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
+                                {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1+1.5×(z4+z5) = ${co?.offBandWeighted ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
                               </Text>
                             </View>
                           )}
