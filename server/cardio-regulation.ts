@@ -79,7 +79,7 @@ export interface CardioOutcome {
   plannedDurationMin: number | null;
   efficiencyScore: number | null;
   continuityScore: number | null;
-  continuityDenominator: "total" | null;
+  continuityDenominator: "total_weighted_offband" | null;
   offBandMin: number | null;
   offBandWeighted: number | null;
   productiveMinSource: "zones_sum" | "none";
@@ -450,7 +450,7 @@ export async function computeCardioOutcome(
     plannedDurationMin,
     efficiencyScore,
     continuityScore,
-    continuityDenominator: continuityScore != null ? "total" as const : null,
+    continuityDenominator: continuityScore != null ? "total_weighted_offband" as const : null,
     offBandMin,
     offBandWeighted,
     productiveMinSource: hasZones ? "zones_sum" as const : "none" as const,
