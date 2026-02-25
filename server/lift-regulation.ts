@@ -222,9 +222,8 @@ export async function computeLiftScheduleStability(
       if (priorSessionDates.has(d)) break;
       missStreak++;
     }
-    if (skippedDays.includes(date)) {
-      missStreak++;
-    }
+    const skippedInWindow = skippedDays.filter(d => d <= date).length;
+    missStreak = Math.max(missStreak, skippedInWindow);
   }
 
   const avgDeviationMin = allDays.length > 0
