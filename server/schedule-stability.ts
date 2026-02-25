@@ -122,6 +122,7 @@ export async function computeScheduleStability(
   let recoveryRaw: number | null = null;
   let recoverySuppressed: number | null = null;
   let recoveryFinal: number | null = null;
+  let recoveryConfidence_override: "high" | "low" | null = null;
 
   const scheduledToday = true;
   const todayData = allDays.find(d => d.date === date);
@@ -233,18 +234,16 @@ export async function computeScheduleStability(
     }
   }
 
-  if (scheduledToday && scheduleRecoveryScore == null) {
+  if (scheduledToday && hasActualDataToday && scheduleRecoveryScore == null && recoveryReason === "no_event") {
     scheduleRecoveryScore = 100;
-    recoveryRaw = recoveryRaw ?? 100;
-    recoverySuppressed = recoverySuppressed ?? 100;
-    recoveryFinal = recoveryFinal ?? 100;
-    recoveryReason = recoveryReason === "no_event" ? "no_event" : recoveryReason;
+    recoveryConfidence_override = "high";
   }
 
   const recoveryConfidence: "high" | "low" =
-    recoveryReason === "missing_scheduled_data" ? "high" :
-    recoveryReason === "computed" ? "high" :
-    recoveryReason === "no_event" && scheduledToday ? "high" : "low";
+    recoveryConfidence_override ?? (
+      recoveryReason === "missing_scheduled_data" ? "high" :
+      recoveryReason === "computed" ? "high" : "low"
+    );
 
   return {
     scheduleConsistencyScore,

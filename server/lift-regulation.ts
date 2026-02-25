@@ -291,8 +291,7 @@ export async function computeLiftScheduleStability(
         });
         const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
         recoveryFollowAvgDeviation = avgDev;
-        const avgDevMin = avgDev * liftPlannedMin;
-        recoveryRaw = clamp(100 - (avgDevMin / 60) * 100, 0, 100);
+        recoveryRaw = clamp(100 - avgDev * 100, 0, 100);
         recoverySuppressed = recoveryRaw * mods.suppressionFactor;
         recoveryFinal = applyRecoveryModifiers(recoveryRaw, mods);
         recoveryScore = recoveryFinal;
@@ -310,13 +309,9 @@ export async function computeLiftScheduleStability(
     }
   }
 
-  if (scheduledToday && recoveryScore == null) {
+  if (scheduledToday && hasActualDataToday && recoveryScore == null && recoveryReason === "no_event") {
     recoveryScore = 100;
-    recoveryRaw = recoveryRaw ?? 100;
-    recoverySuppressed = recoverySuppressed ?? 100;
-    recoveryFinal = recoveryFinal ?? 100;
-    recoveryReason = recoveryReason === "no_event" ? "no_event" : recoveryReason;
-    recoveryConfidence = recoveryConfidence === "low" && recoveryReason === "no_event" ? "high" : recoveryConfidence;
+    recoveryConfidence = "high";
   }
 
   return {

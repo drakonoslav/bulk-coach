@@ -313,13 +313,9 @@ export async function computeCardioScheduleStability(
     }
   }
 
-  if (scheduledToday && recoveryScore == null) {
+  if (scheduledToday && hasActualDataToday && recoveryScore == null && recoveryReason === "no_event") {
     recoveryScore = 100;
-    recoveryRaw = recoveryRaw ?? 100;
-    recoverySuppressed = recoverySuppressed ?? 100;
-    recoveryFinal = recoveryFinal ?? 100;
-    recoveryReason = recoveryReason === "no_event" ? "no_event" : recoveryReason;
-    recoveryConfidence = recoveryConfidence === "low" && recoveryReason === "no_event" ? "high" : recoveryConfidence;
+    recoveryConfidence = "high";
   }
 
   return {
