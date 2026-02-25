@@ -1405,6 +1405,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sleepBlock?.awakeInBedDeltaMin ?? null,
       );
 
+      const MEAL_CALORIES: Record<string, { kcal: number; label: string }> = {
+        preCardio: { kcal: 104, label: "Pre-cardio" },
+        postCardio: { kcal: 644, label: "Post-cardio" },
+        midday: { kcal: 303, label: "Midday" },
+        preLift: { kcal: 385, label: "Pre-lift" },
+        postLift: { kcal: 268, label: "Post-lift" },
+        evening: { kcal: 992, label: "Evening" },
+      };
+      const BASELINE_KCAL = 2696;
+
+      const mealLogRow = await pool.query(
+        `SELECT meal_checklist FROM daily_log WHERE date = $1::date AND user_id = $2`,
+        [date, userId],
+      );
+      const mealChecklist: Record<string, boolean> = mealLogRow.rows[0]?.meal_checklist ?? {};
+      const mealKeys = Object.keys(MEAL_CALORIES);
+      const mealsChecked = mealKeys.filter(k => mealChecklist[k]);
+      const mealsTotal = mealKeys.length;
+      const earnedKcal = mealsChecked.reduce((s, k) => s + MEAL_CALORIES[k].kcal, 0);
+      const missedKcal = Math.max(0, BASELINE_KCAL - earnedKcal);
+      const baselineHitPct = Math.round((earnedKcal / BASELINE_KCAL) * 100);
+      const missedMeals = mealKeys
+        .filter(k => !mealChecklist[k])
+        .sort((a, b) => MEAL_CALORIES[b].kcal - MEAL_CALORIES[a].kcal);
+      const biggestMiss = missedMeals.length > 0 ? MEAL_CALORIES[missedMeals[0]].label : null;
+
       res.json({
         ...result,
         sleepBlock,
@@ -1424,6 +1450,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plannedCardioMin: dayAdh?.plannedCardioMin ?? 40,
           actualLiftMin: dayAdh?.actualLiftMin ?? null,
           plannedLiftMin: dayAdh?.plannedLiftMin ?? 75,
+          mealAdherence: {
+            mealsChecked: mealsChecked.length,
+            mealsTotal,
+            earnedKcal,
+            missedKcal,
+            baselineHitPct,
+            biggestMiss,
+          },
         },
         primaryDriver,
         scheduleStability: schedStab,

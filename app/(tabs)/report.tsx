@@ -1618,6 +1618,40 @@ export default function ReportScreen() {
                       </View>
                     )}
 
+                    {sectionHeader("Meal Adherence", "restaurant-outline", "#F59E0B")}
+
+                    {(() => {
+                      const ma = adh?.mealAdherence;
+                      if (!ma) return sigRow("Meal data", <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary }}>No meals logged</Text>);
+                      const mealColor = ma.mealsChecked >= 6 ? "#34D399" : ma.mealsChecked >= 4 ? "#FBBF24" : "#EF4444";
+                      return (
+                        <>
+                          {sigRow("Execution",
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: mealColor }}>
+                              {ma.mealsChecked} / {ma.mealsTotal}
+                            </Text>
+                          )}
+                          {sigRow("Baseline hit",
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: mealColor }}>
+                              {ma.baselineHitPct}%
+                            </Text>
+                          )}
+                          {sigRow("Missed kcal",
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: mealColor }}>
+                                {ma.missedKcal > 0 ? `−${ma.missedKcal}` : "0"}
+                              </Text>
+                              {ma.biggestMiss && ma.missedKcal > 0 && (
+                                <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                                  (mostly: {ma.biggestMiss})
+                                </Text>
+                              )}
+                            </View>
+                          )}
+                        </>
+                      );
+                    })()}
+
                     {sectionHeader("Sleep Schedule Stability", "calendar-outline", "#60A5FA")}
 
                     {(() => {
