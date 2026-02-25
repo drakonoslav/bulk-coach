@@ -3,7 +3,7 @@ import { toDomainOutcomeCardio } from "../../server/cardio/toDomainOutcomeCardio
 import { toDomainOutcomeLift } from "../../server/lift/toDomainOutcomeLift";
 import { DomainOutcome } from "../../server/types/domainOutcome";
 
-const SCHEDULE_KEYS = ["alignment", "consistency", "recovery", "recoveryApplicable", "confidence"] as const;
+const SCHEDULE_KEYS = ["alignment", "consistency", "recovery", "recoveryApplicable", "recoveryStatus", "confidence"] as const;
 const OUTCOME_KEYS = ["adequacy", "efficiency", "continuity", "adequacyDenominator", "efficiencyDenominator", "continuityDenominator"] as const;
 const TOP_KEYS = ["domain", "dateISO", "scheduledToday", "scheduledTodayReason", "scheduledTodayConfidence", "schedule", "outcome"] as const;
 
@@ -22,6 +22,21 @@ function assertDomainOutcomeShape(result: DomainOutcome, expectedDomain: string)
     expect(result.schedule).toHaveProperty(key);
   }
   expect(typeof result.schedule.recoveryApplicable).toBe("boolean");
+  expect(["not_applicable", "insufficient_data", "computed"]).toContain(result.schedule.recoveryStatus);
+
+  if (result.schedule.recoveryStatus === "not_applicable") {
+    expect(result.schedule.recoveryApplicable).toBe(false);
+    expect(result.schedule.recovery).toBeNull();
+  } else if (result.schedule.recoveryStatus === "insufficient_data") {
+    expect(result.schedule.recoveryApplicable).toBe(true);
+    expect(result.schedule.recovery).toBeNull();
+  } else if (result.schedule.recoveryStatus === "computed") {
+    expect(result.schedule.recoveryApplicable).toBe(true);
+    expect(typeof result.schedule.recovery).toBe("number");
+    expect(result.schedule.recovery).toBeGreaterThanOrEqual(0);
+    expect(result.schedule.recovery).toBeLessThanOrEqual(100);
+  }
+
   expect(["high", "medium", "low"]).toContain(result.schedule.confidence);
   for (const key of ["alignment", "consistency", "recovery"] as const) {
     const v = result.schedule[key];

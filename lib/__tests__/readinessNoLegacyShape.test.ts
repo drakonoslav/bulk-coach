@@ -13,6 +13,7 @@ function makeDomainOutcome(domain: "sleep" | "cardio" | "lift"): DomainOutcome {
       consistency: 90,
       recovery: 75,
       recoveryApplicable: true,
+      recoveryStatus: "computed",
       confidence: "high",
     },
     outcome: {

@@ -1674,7 +1674,7 @@ export default function ReportScreen() {
                       return <FuelGaugeGroup items={[
                         { label: "Alignment", value: sdo?.schedule?.alignment ?? null, nullLabel: "no observed times", thresholds: { good: 80, warn: 50 } },
                         { label: "Consistency", value: sdo?.schedule?.consistency ?? null, nullLabel: sdo?.schedule?.consistencySamples != null && (sdo.schedule.consistencySamples ?? 0) < 4 ? `${sdo.schedule.consistencySamples}/4 days` : undefined, thresholds: { good: 70, warn: 40 } },
-                        { label: "Recovery", value: sdo?.schedule?.recovery ?? null, confidence: sdo?.schedule?.confidence === "low" ? "low" : sdo?.schedule?.recovery != null ? "high" : "low", nullLabel: "—", thresholds: { good: 70, warn: 40 } },
+                        { label: "Recovery", value: sdo?.schedule?.recovery ?? null, confidence: sdo?.schedule?.recoveryStatus === "computed" ? sdo?.schedule?.confidence ?? "low" : "low", nullLabel: sdo?.schedule?.recoveryStatus === "not_applicable" ? "no event" : "—", thresholds: { good: 70, warn: 40 } },
                       ]} />;
                     })()}
 
@@ -1724,7 +1724,7 @@ export default function ReportScreen() {
                           <FuelGaugeGroup items={[
                             { label: "Alignment", value: cdo?.schedule?.alignment ?? null },
                             { label: "Consistency", value: cdo?.schedule?.consistency ?? null, nullLabel: cdo?.schedule?.consistencySamples != null && (cdo.schedule.consistencySamples ?? 0) < 4 ? `${cdo.schedule.consistencySamples}/4 sessions` : undefined },
-                            { label: "Recovery", value: cdo?.schedule?.recovery ?? null, confidence: cdo?.schedule?.confidence ?? "low", nullLabel: "—" },
+                            { label: "Recovery", value: cdo?.schedule?.recovery ?? null, confidence: cdo?.schedule?.recoveryStatus === "computed" ? cdo?.schedule?.confidence ?? "low" : "low", nullLabel: cdo?.schedule?.recoveryStatus === "not_applicable" ? "no event" : "—" },
                           ]} />
                           <Pressable onPress={() => setDebugCardioSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F87171" }}>Debug: Cardio Schedule</Text>
@@ -1793,7 +1793,7 @@ export default function ReportScreen() {
                           <FuelGaugeGroup items={[
                             { label: "Alignment", value: ldo?.schedule?.alignment ?? null },
                             { label: "Consistency", value: ldo?.schedule?.consistency ?? null, nullLabel: ldo?.schedule?.consistencySamples != null && (ldo.schedule.consistencySamples ?? 0) < 4 ? `${ldo.schedule.consistencySamples}/4 sessions` : undefined },
-                            { label: "Recovery", value: ldo?.schedule?.recovery ?? null, confidence: ldo?.schedule?.confidence ?? "low", nullLabel: "—" },
+                            { label: "Recovery", value: ldo?.schedule?.recovery ?? null, confidence: ldo?.schedule?.recoveryStatus === "computed" ? ldo?.schedule?.confidence ?? "low" : "low", nullLabel: ldo?.schedule?.recoveryStatus === "not_applicable" ? "no event" : "—" },
                           ]} />
                           <Pressable onPress={() => setDebugLiftSchedExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
                             <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>Debug: Lift Schedule</Text>

@@ -1,4 +1,4 @@
-import { DomainOutcome, Confidence } from "../types/domainOutcome";
+import { DomainOutcome, Confidence, RecoveryStatus } from "../types/domainOutcome";
 
 export function toDomainOutcomeCardio(args: {
   dateISO: string;
@@ -9,7 +9,13 @@ export function toDomainOutcomeCardio(args: {
   const co = args.outcome;
 
   const recoveryReason = ss?.recoveryReason ?? "no_event";
+  const recoveryScore = ss?.recoveryScore ?? null;
   const recoveryApplicable = ss?.recoveryApplicable ?? (recoveryReason !== "no_event");
+
+  const recoveryStatus: RecoveryStatus =
+    recoveryReason === "no_event" ? "not_applicable" :
+    recoveryScore == null ? "insufficient_data" :
+    "computed";
 
   const confidence: Confidence =
     ss?.recoveryConfidence === "high" ? "high" :
@@ -26,8 +32,9 @@ export function toDomainOutcomeCardio(args: {
     schedule: {
       alignment: ss?.alignmentScore ?? null,
       consistency: ss?.consistencyScore ?? null,
-      recovery: ss?.recoveryScore ?? null,
+      recovery: recoveryScore,
       recoveryApplicable,
+      recoveryStatus,
       confidence,
       reason: recoveryReason,
       consistencySamples: ss?.consistencyNSessions ?? null,

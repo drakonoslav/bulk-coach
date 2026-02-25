@@ -1,4 +1,4 @@
-import { DomainOutcome, Confidence } from "../types/domainOutcome";
+import { DomainOutcome, Confidence, RecoveryStatus } from "../types/domainOutcome";
 
 export function toDomainOutcomeSleep(args: {
   dateISO: string;
@@ -13,7 +13,13 @@ export function toDomainOutcomeSleep(args: {
   const sa = sb?.sleepAlignment;
 
   const recoveryReason = ss?.recoveryReason ?? "no_event";
+  const recoveryScore = ss?.scheduleRecoveryScore ?? null;
   const recoveryApplicable = ss?.recoveryApplicable ?? (recoveryReason !== "no_event");
+
+  const recoveryStatus: RecoveryStatus =
+    recoveryReason === "no_event" ? "not_applicable" :
+    recoveryScore == null ? "insufficient_data" :
+    "computed";
 
   const confidence: Confidence =
     ss?.recoveryConfidence === "high" ? "high" :
@@ -30,8 +36,9 @@ export function toDomainOutcomeSleep(args: {
     schedule: {
       alignment: sa?.alignmentScore ?? null,
       consistency: ss?.scheduleConsistencyScore ?? null,
-      recovery: ss?.scheduleRecoveryScore ?? null,
+      recovery: recoveryScore,
       recoveryApplicable,
+      recoveryStatus,
       confidence,
       reason: recoveryReason,
       consistencySamples: ss?.scheduleConsistencyNSamples ?? null,

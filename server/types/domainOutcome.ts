@@ -1,11 +1,13 @@
 export type Domain = "sleep" | "cardio" | "lift";
 export type Confidence = "high" | "medium" | "low";
+export type RecoveryStatus = "not_applicable" | "insufficient_data" | "computed";
 
 export type ScheduleBlock = {
   alignment: number | null;
   consistency: number | null;
   recovery: number | null;
   recoveryApplicable: boolean;
+  recoveryStatus: RecoveryStatus;
   confidence: Confidence;
   reason?: string | null;
   consistencySamples?: number | null;

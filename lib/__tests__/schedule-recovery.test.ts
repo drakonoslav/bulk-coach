@@ -26,31 +26,35 @@ describe("Cardio Schedule Recovery (canonical)", () => {
     detail = getScheduleDetail(data.cardioBlock);
   });
 
-  test("schedule block is defined with recoveryApplicable boolean", () => {
+  test("schedule block has recoveryApplicable and recoveryStatus", () => {
     expect(sched).toBeDefined();
     expect(typeof sched.recoveryApplicable).toBe("boolean");
+    expect(["not_applicable", "insufficient_data", "computed"]).toContain(sched.recoveryStatus);
   });
 
-  test("if recoveryApplicable=false → recovery=null, reason=no_event", () => {
-    if (!sched.recoveryApplicable) {
+  test("recoveryStatus=not_applicable → recoveryApplicable=false, recovery=null", () => {
+    if (sched.recoveryStatus === "not_applicable") {
+      expect(sched.recoveryApplicable).toBe(false);
       expect(sched.recovery).toBeNull();
       expect(sched.reason).toBe("no_event");
     }
   });
 
-  test("if recoveryApplicable=true and reason=computed → recovery is finite number 0..100", () => {
-    if (sched.recoveryApplicable && sched.reason === "computed") {
+  test("recoveryStatus=insufficient_data → recoveryApplicable=true, recovery=null", () => {
+    if (sched.recoveryStatus === "insufficient_data") {
+      expect(sched.recoveryApplicable).toBe(true);
+      expect(sched.recovery).toBeNull();
+    }
+  });
+
+  test("recoveryStatus=computed → recoveryApplicable=true, recovery is number 0..100", () => {
+    if (sched.recoveryStatus === "computed") {
+      expect(sched.recoveryApplicable).toBe(true);
       expect(sched.recovery).not.toBeNull();
       expect(typeof sched.recovery).toBe("number");
       expect(sched.recovery).toBeGreaterThanOrEqual(0);
       expect(sched.recovery).toBeLessThanOrEqual(100);
       expect(sched.confidence).toBeDefined();
-    }
-  });
-
-  test("if recoveryApplicable=true and reason=insufficient_post_event_days → recovery=null (no fake 100)", () => {
-    if (sched.recoveryApplicable && sched.reason === "insufficient_post_event_days") {
-      expect(sched.recovery).toBeNull();
     }
   });
 
@@ -81,31 +85,35 @@ describe("Lift Schedule Recovery (canonical)", () => {
     detail = getScheduleDetail(data.liftBlock);
   });
 
-  test("schedule block is defined with recoveryApplicable boolean", () => {
+  test("schedule block has recoveryApplicable and recoveryStatus", () => {
     expect(sched).toBeDefined();
     expect(typeof sched.recoveryApplicable).toBe("boolean");
+    expect(["not_applicable", "insufficient_data", "computed"]).toContain(sched.recoveryStatus);
   });
 
-  test("if recoveryApplicable=false → recovery=null, reason=no_event", () => {
-    if (!sched.recoveryApplicable) {
+  test("recoveryStatus=not_applicable → recoveryApplicable=false, recovery=null", () => {
+    if (sched.recoveryStatus === "not_applicable") {
+      expect(sched.recoveryApplicable).toBe(false);
       expect(sched.recovery).toBeNull();
       expect(sched.reason).toBe("no_event");
     }
   });
 
-  test("if recoveryApplicable=true and reason=computed → recovery is finite number 0..100", () => {
-    if (sched.recoveryApplicable && sched.reason === "computed") {
+  test("recoveryStatus=insufficient_data → recoveryApplicable=true, recovery=null", () => {
+    if (sched.recoveryStatus === "insufficient_data") {
+      expect(sched.recoveryApplicable).toBe(true);
+      expect(sched.recovery).toBeNull();
+    }
+  });
+
+  test("recoveryStatus=computed → recoveryApplicable=true, recovery is number 0..100", () => {
+    if (sched.recoveryStatus === "computed") {
+      expect(sched.recoveryApplicable).toBe(true);
       expect(sched.recovery).not.toBeNull();
       expect(typeof sched.recovery).toBe("number");
       expect(sched.recovery).toBeGreaterThanOrEqual(0);
       expect(sched.recovery).toBeLessThanOrEqual(100);
       expect(sched.confidence).toBeDefined();
-    }
-  });
-
-  test("if recoveryApplicable=true and reason=insufficient_post_event_days → recovery=null (no fake 100)", () => {
-    if (sched.recoveryApplicable && sched.reason === "insufficient_post_event_days") {
-      expect(sched.recovery).toBeNull();
     }
   });
 
@@ -123,18 +131,20 @@ describe("Lift Schedule Recovery (canonical)", () => {
 });
 
 describe("No event found scenario (canonical)", () => {
-  test("far-past date: recoveryApplicable=false, recovery=null, reason=no_event", async () => {
+  test("far-past date: recoveryStatus=not_applicable, recovery=null", async () => {
     const data = await getReadiness("2020-01-01");
     const cardio = getCanonicalSchedule(data.cardioBlock);
     const lift = getCanonicalSchedule(data.liftBlock);
 
     if (cardio) {
+      expect(cardio.recoveryStatus).toBe("not_applicable");
       expect(cardio.recoveryApplicable).toBe(false);
       expect(cardio.recovery).toBeNull();
       expect(cardio.reason).toBe("no_event");
     }
 
     if (lift) {
+      expect(lift.recoveryStatus).toBe("not_applicable");
       expect(lift.recoveryApplicable).toBe(false);
       expect(lift.recovery).toBeNull();
       expect(lift.reason).toBe("no_event");
