@@ -60,6 +60,7 @@ export interface CardioScheduleStability {
   recoveryConfidence: "high" | "low";
   recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data";
   debugDriftMags: number[];
+  skippedDays: string[];
   scheduledToday: boolean;
   hasActualDataToday: boolean;
   missStreak: number;
@@ -200,6 +201,8 @@ export async function computeCardioScheduleStability(
 
     return { date: r.day as string, productiveMin, totalMin, z1Ratio, missed };
   });
+
+  const skippedDays = outcomeRows.rows.filter((r: any) => r.cardio_skipped === true).map((r: any) => r.day as string).sort();
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
@@ -356,6 +359,7 @@ export async function computeCardioScheduleStability(
     recoveryConfidence,
     recoveryReason,
     debugDriftMags: allDays.slice(0, 7).map((d) => d.driftMag),
+    skippedDays,
     scheduledToday,
     scheduledTodayReason,
     scheduledTodayConfidence,

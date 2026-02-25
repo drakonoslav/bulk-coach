@@ -59,6 +59,7 @@ export interface LiftScheduleStability {
   recoveryConfidence: "high" | "low";
   recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" | "missing_scheduled_data";
   debugStartMins7d: number[];
+  skippedDays: string[];
   scheduledToday: boolean;
   hasActualDataToday: boolean;
   missStreak: number;
@@ -196,6 +197,8 @@ export async function computeLiftScheduleStability(
 
     return { date: r.day as string, actualMin, workingMin, idleRatio, missed };
   });
+
+  const skippedDays = outcomeRows.rows.filter((r: any) => r.lift_skipped === true).map((r: any) => r.day as string).sort();
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
@@ -351,6 +354,7 @@ export async function computeLiftScheduleStability(
     recoveryConfidence,
     recoveryReason,
     debugStartMins7d: last7.map((d) => d.startMin),
+    skippedDays,
     scheduledToday,
     scheduledTodayReason,
     scheduledTodayConfidence,
