@@ -70,14 +70,24 @@ export async function computeScheduleStability(
   userId: string = DEFAULT_USER_ID,
 ): Promise<ScheduleStability> {
   const { rows } = await pool.query(
-    `SELECT day, actual_bed_time, actual_wake_time
-     FROM daily_log
-     WHERE user_id = $1
-       AND day <= $2
-       AND day >= ($2::date - 21)::text
-       AND actual_bed_time IS NOT NULL
-       AND actual_wake_time IS NOT NULL
-     ORDER BY day DESC
+    `SELECT
+       COALESCE(dl.day, ssd.date::text) AS day,
+       COALESCE(dl.actual_bed_time, ssd.sleep_start) AS actual_bed_time,
+       COALESCE(dl.actual_wake_time, ssd.sleep_end) AS actual_wake_time
+     FROM (
+       SELECT day, actual_bed_time, actual_wake_time
+       FROM daily_log
+       WHERE user_id = $1 AND day <= $2 AND day >= ($2::date - 21)::text
+     ) dl
+     FULL OUTER JOIN (
+       SELECT date::text AS date, sleep_start, sleep_end
+       FROM sleep_summary_daily
+       WHERE user_id = $1 AND date <= $2::date AND date >= ($2::date - 21)
+         AND sleep_start IS NOT NULL AND sleep_end IS NOT NULL
+     ) ssd ON dl.day = ssd.date
+     WHERE COALESCE(dl.actual_bed_time, ssd.sleep_start) IS NOT NULL
+       AND COALESCE(dl.actual_wake_time, ssd.sleep_end) IS NOT NULL
+     ORDER BY COALESCE(dl.day, ssd.date) DESC
      LIMIT 14`,
     [userId, date],
   );
