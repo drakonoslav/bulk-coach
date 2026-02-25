@@ -1,6 +1,7 @@
 import { pool } from "./db";
 import { getLiftScheduleSettings } from "./adherence-metrics-range";
 import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
+import { deriveScheduledToday } from "./schedule/deriveScheduledToday";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -190,7 +191,10 @@ export async function computeLiftScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-  const scheduledToday = true;
+  const schedResult = deriveScheduledToday("lift", date, null);
+  const scheduledToday = schedResult.scheduledToday;
+  const scheduledTodayReason = schedResult.reason;
+  const scheduledTodayConfidence = schedResult.confidence;
   const todaySession = sessionDaysSorted.find(s => s.date === date);
   const hasActualDataToday = todaySession != null && !todaySession.missed;
 
@@ -309,10 +313,7 @@ export async function computeLiftScheduleStability(
     }
   }
 
-  if (scheduledToday && hasActualDataToday && recoveryScore == null && recoveryReason === "no_event") {
-    recoveryScore = 100;
-    recoveryConfidence = "high";
-  }
+  const recoveryApplicable = recoveryReason !== "no_event";
 
   return {
     alignmentScore,
@@ -333,6 +334,8 @@ export async function computeLiftScheduleStability(
     recoveryReason,
     debugStartMins7d: last7.map((d) => d.startMin),
     scheduledToday,
+    scheduledTodayReason,
+    scheduledTodayConfidence,
     hasActualDataToday,
     missStreak: mods.missStreak,
     suppressionFactor: mods.suppressionFactor,
@@ -342,6 +345,7 @@ export async function computeLiftScheduleStability(
     recoveryRaw,
     recoverySuppressed,
     recoveryFinal,
+    recoveryApplicable,
   };
 }
 

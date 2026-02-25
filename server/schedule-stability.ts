@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
+import { deriveScheduledToday } from "./schedule/deriveScheduledToday";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -124,7 +125,10 @@ export async function computeScheduleStability(
   let recoveryFinal: number | null = null;
   let recoveryConfidence_override: "high" | "low" | null = null;
 
-  const scheduledToday = true;
+  const schedResult = deriveScheduledToday("sleep", date, null);
+  const scheduledToday = schedResult.scheduledToday;
+  const scheduledTodayReason = schedResult.reason;
+  const scheduledTodayConfidence = schedResult.confidence;
   const todayData = allDays.find(d => d.date === date);
 
   const sleepDataRow = await pool.query(
@@ -234,10 +238,7 @@ export async function computeScheduleStability(
     }
   }
 
-  if (scheduledToday && hasActualDataToday && scheduleRecoveryScore == null && recoveryReason === "no_event") {
-    scheduleRecoveryScore = 100;
-    recoveryConfidence_override = "high";
-  }
+  const recoveryApplicable = recoveryReason !== "no_event";
 
   const recoveryConfidence: "high" | "low" =
     recoveryConfidence_override ?? (
@@ -259,6 +260,8 @@ export async function computeScheduleStability(
     debugDriftMags7d: last7.map((d) => Math.round(d.driftMag * 100) / 100),
     debugRecoveryDays,
     scheduledToday,
+    scheduledTodayReason,
+    scheduledTodayConfidence,
     hasActualDataToday,
     missStreak: mods.missStreak,
     suppressionFactor: mods.suppressionFactor,
@@ -268,5 +271,6 @@ export async function computeScheduleStability(
     recoveryRaw,
     recoverySuppressed,
     recoveryFinal,
+    recoveryApplicable,
   };
 }

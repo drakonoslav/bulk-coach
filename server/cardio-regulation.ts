@@ -1,6 +1,8 @@
 import { pool } from "./db";
 import { getCardioScheduleSettings } from "./adherence-metrics-range";
 import { computeRecoveryModifiers, applyRecoveryModifiers } from "./recovery-helpers";
+import { deriveScheduledToday } from "./schedule/deriveScheduledToday";
+import { computeCardioContinuity } from "./cardio/computeCardioContinuity";
 
 const DEFAULT_USER_ID = "local_default";
 
@@ -193,7 +195,10 @@ export async function computeCardioScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-  const scheduledToday = true;
+  const schedResult = deriveScheduledToday("cardio", date, null);
+  const scheduledToday = schedResult.scheduledToday;
+  const scheduledTodayReason = schedResult.reason;
+  const scheduledTodayConfidence = schedResult.confidence;
   const todaySession = sessionDaysSorted.find(s => s.date === date);
   const hasActualDataToday = todaySession != null && !todaySession.missed;
 
@@ -313,10 +318,7 @@ export async function computeCardioScheduleStability(
     }
   }
 
-  if (scheduledToday && hasActualDataToday && recoveryScore == null && recoveryReason === "no_event") {
-    recoveryScore = 100;
-    recoveryConfidence = "high";
-  }
+  const recoveryApplicable = recoveryReason !== "no_event";
 
   return {
     alignmentScore,
@@ -337,6 +339,8 @@ export async function computeCardioScheduleStability(
     recoveryReason,
     debugDriftMags: allDays.slice(0, 7).map((d) => d.driftMag),
     scheduledToday,
+    scheduledTodayReason,
+    scheduledTodayConfidence,
     hasActualDataToday,
     missStreak: mods.missStreak,
     suppressionFactor: mods.suppressionFactor,
@@ -346,6 +350,7 @@ export async function computeCardioScheduleStability(
     recoveryRaw,
     recoverySuppressed,
     recoveryFinal,
+    recoveryApplicable,
   };
 }
 
@@ -418,10 +423,19 @@ export async function computeCardioOutcome(
   let continuityScore: number | null = null;
   let offBandMin: number | null = null;
   let offBandWeighted: number | null = null;
+  let z1Grace: number | null = null;
+  let z1Penalty: number | null = null;
   if (hasZones && cardioTotalMin != null && cardioTotalMin > 0) {
+    const contResult = computeCardioContinuity({
+      z1: z1!, z2: z2!, z3: z3!, z4: z4 ?? 0, z5: z5 ?? 0,
+    });
+    if ("continuity" in contResult && contResult.continuity != null) {
+      continuityScore = contResult.continuity;
+      offBandWeighted = contResult.offBandWeighted;
+      z1Grace = contResult.z1Grace;
+      z1Penalty = contResult.z1Penalty;
+    }
     offBandMin = z1! + (z4 ?? 0) + (z5 ?? 0);
-    offBandWeighted = 0.5 * z1! + 1.5 * ((z4 ?? 0) + (z5 ?? 0));
-    continuityScore = clamp(100 * (1 - offBandWeighted / cardioTotalMin), 0, 100);
   }
 
   const adequacySource: "productive" | "total" | "none" =
