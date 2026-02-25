@@ -230,19 +230,62 @@ export function weeklyDelta(entries: DailyEntry[]): number | null {
 
 export function waistDelta(entries: DailyEntry[], days: number = 14): number | null {
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
-  const recent = [...sorted].reverse().find((e) => e.waistIn != null);
-  if (!recent || recent.waistIn == null) return null;
+  const withWaist = sorted.filter((e) => e.waistIn != null);
+  if (withWaist.length < 2) return null;
 
-  const recentDate = parseDate(recent.day);
-  const targetDate = new Date(recentDate);
-  targetDate.setDate(targetDate.getDate() - days);
+  const rolling = computeWaistRolling(withWaist, 7);
+  if (rolling.length < 2) return null;
 
-  const older = sorted
-    .filter((e) => e.waistIn != null && parseDate(e.day) <= targetDate)
-    .pop();
+  const today = rolling[rolling.length - 1];
+  const todayDate = parseDate(today.day);
 
-  if (!older || older.waistIn == null) return null;
-  return Math.round((recent.waistIn - older.waistIn) * 100) / 100;
+  let best: { day: string; avg: number } | null = null;
+  for (let i = rolling.length - 2; i >= 0; i--) {
+    const span = daysBetween(parseDate(rolling[i].day), todayDate);
+    if (span >= Math.max(days - 4, 7) && span <= days + 4) {
+      best = rolling[i];
+      break;
+    }
+  }
+  if (!best) {
+    for (let i = rolling.length - 2; i >= 0; i--) {
+      const span = daysBetween(parseDate(rolling[i].day), todayDate);
+      if (span >= 7) {
+        best = rolling[i];
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+
+  const spanDays = daysBetween(parseDate(best.day), todayDate);
+  if (spanDays < 7) return null;
+
+  const totalChange = ((today.avg - best.avg) / spanDays) * days;
+  return Math.round(totalChange * 100) / 100;
+}
+
+function computeWaistRolling(
+  entries: DailyEntry[],
+  windowDays: number,
+): Array<{ day: string; avg: number }> {
+  const items = entries
+    .filter((e) => e.waistIn != null)
+    .map((e) => ({ date: parseDate(e.day), waist: e.waistIn!, day: e.day }));
+
+  const out: Array<{ day: string; avg: number }> = [];
+  for (let i = 0; i < items.length; i++) {
+    const di = items[i].date;
+    const window = items.filter((w) => {
+      const diff = daysBetween(w.date, di);
+      return diff >= 0 && diff < windowDays;
+    });
+    if (window.length >= Math.min(windowDays, 2)) {
+      const avg = window.reduce((s, w) => s + w.waist, 0) / window.length;
+      out.push({ day: items[i].day, avg: Math.round(avg * 1000) / 1000 });
+    }
+  }
+  return out;
 }
 
 // NOTE: calorie adjustments must remain weight-only. Do not add readiness/strength inputs here.
