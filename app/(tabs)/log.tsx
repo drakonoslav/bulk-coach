@@ -893,18 +893,7 @@ export default function LogScreen() {
 
   return (
     <View style={styles.container}>
-      <KeyboardAwareScrollViewCompat
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: topInset + 16,
-            paddingBottom: Platform.OS === "web" ? 84 + 34 : insets.bottom + 120,
-          },
-        ]}
-        bottomOffset={80}
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={[styles.stickyHeader, { paddingTop: topInset + 16 }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Daily Log</Text>
           <View style={styles.dateNav}>
@@ -985,7 +974,19 @@ export default function LogScreen() {
             </Pressable>
           )}
         </View>
-
+      </View>
+      <KeyboardAwareScrollViewCompat
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: 8,
+            paddingBottom: Platform.OS === "web" ? 84 + 34 : insets.bottom + 120,
+          },
+        ]}
+        bottomOffset={80}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Weight</Text>
           <InputField
@@ -2400,6 +2401,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  stickyHeader: {
+    backgroundColor: Colors.background,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    zIndex: 10,
+  },
   scroll: {
     flex: 1,
   },
@@ -2407,7 +2416,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 8,
   },
   title: {
     fontSize: 28,

@@ -1843,8 +1843,6 @@ export default function ReportScreen() {
                       const latency = sb.latencyMin ?? 0;
                       const waso = sb.wasoMin ?? 0;
                       const adequacyRaw = planned > 0 ? (100 * tst / planned) : null;
-                      const efficiencyRaw = tib > 0 ? (100 * tst / tib) : null;
-                      const continuityRaw = tib > 0 ? (100 * (1 - awake / tib)) : null;
                       return (
                         <View>
                           <Pressable onPress={() => setDebugSleepExpanded(v => !v)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
