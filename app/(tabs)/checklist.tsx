@@ -137,6 +137,14 @@ export default function ChecklistScreen() {
       measuredNights7d: number;
       bedtimeDriftNote: string | null;
       wakeDriftNote: string | null;
+      mealAdherence?: {
+        mealsChecked: number;
+        mealsTotal: number;
+        earnedKcal: number;
+        missedKcal: number;
+        baselineHitPct: number;
+        biggestMiss: string | null;
+      };
     };
     primaryDriver?: {
       driver: string;
