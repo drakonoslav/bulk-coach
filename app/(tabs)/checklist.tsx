@@ -1007,7 +1007,6 @@ export default function ChecklistScreen() {
                       scoreColor(cs?.consistencyScore),
                     ))}
                     {sigRow("Recovery", (() => {
-                      if (!cs?.recoveryEventFound) return sigText("—", Colors.textTertiary);
                       return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         {sigText(fmtScore100(cs?.recoveryScore), scoreColor(cs?.recoveryScore))}
                         {cs?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
@@ -1091,7 +1090,6 @@ export default function ChecklistScreen() {
                       scoreColor(ls?.consistencyScore),
                     ))}
                     {sigRow("Recovery", (() => {
-                      if (!ls?.recoveryEventFound) return sigText("—", Colors.textTertiary);
                       return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         {sigText(fmtScore100(ls?.recoveryScore), scoreColor(ls?.recoveryScore))}
                         {ls?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}

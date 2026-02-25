@@ -45,15 +45,15 @@ export interface LiftScheduleStability {
   consistencyScore: number | null;
   consistencySdMin: number | null;
   consistencyNSamples: number;
-  recoveryScore: number | null;
+  recoveryScore: number;
   recoveryEventFound: boolean;
   recoveryEventDay: string | null;
   recoveryEventMetric: string | null;
   recoveryThresholdUsed: string | null;
-  recoveryFollowDaysK: number | null;
+  recoveryFollowDaysK: number;
   recoveryFollowAvgDeviation: number | null;
-  recoveryConfidence: "full" | "low" | null;
-  recoveryReason: string | null;
+  recoveryConfidence: "high" | "low";
+  recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed";
   debugStartMins7d: number[];
 }
 
@@ -171,14 +171,15 @@ export async function computeLiftScheduleStability(
 
   const sessionDaysSorted = [...sessionDays].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-  let recoveryScore: number | null = null;
+  let recoveryScore: number = 100;
   let recoveryEventFound = false;
   let recoveryEventDay: string | null = null;
   let recoveryEventMetric: string | null = null;
   let recoveryThresholdUsed: string | null = null;
-  let recoveryFollowDaysK: number | null = null;
+  let recoveryFollowDaysK: number = 0;
   let recoveryFollowAvgDeviation: number | null = null;
-  let recoveryReason: string | null = null;
+  let recoveryReason: "no_event" | "insufficient_post_event_days" | "partial_post_event_window" | "computed" = "no_event";
+  let recoveryConfidence: "high" | "low" = "low";
 
   let eventIdx = -1;
   for (let i = sessionDaysSorted.length - 1; i >= 0; i--) {
@@ -210,9 +211,10 @@ export async function computeLiftScheduleStability(
   }
 
   if (eventIdx === -1) {
-    recoveryScore = null;
+    recoveryScore = 100;
     recoveryEventFound = false;
-    recoveryReason = "no outcome event in last 21d";
+    recoveryReason = "no_event";
+    recoveryConfidence = "low";
   } else {
     recoveryEventFound = true;
     recoveryEventDay = sessionDaysSorted[eventIdx].date;
@@ -221,7 +223,11 @@ export async function computeLiftScheduleStability(
     const followDays = available.slice(0, Math.min(4, available.length));
     recoveryFollowDaysK = followDays.length;
 
-    if (followDays.length > 0 && liftPlannedMin > 0) {
+    if (followDays.length === 0) {
+      recoveryScore = 100;
+      recoveryReason = "insufficient_post_event_days";
+      recoveryConfidence = "low";
+    } else if (liftPlannedMin > 0) {
       const deviations = followDays.map(s => {
         const ratio = (s.workingMin ?? s.actualMin ?? 0) / liftPlannedMin;
         return Math.abs(1 - ratio);
@@ -229,14 +235,19 @@ export async function computeLiftScheduleStability(
       const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
       recoveryFollowAvgDeviation = avgDev;
       recoveryScore = clamp(100 - avgDev * 100, 0, 100);
+      if (followDays.length < 4) {
+        recoveryReason = "partial_post_event_window";
+        recoveryConfidence = "low";
+      } else {
+        recoveryReason = "computed";
+        recoveryConfidence = "high";
+      }
     } else {
-      recoveryScore = null;
+      recoveryScore = 100;
+      recoveryReason = "insufficient_post_event_days";
+      recoveryConfidence = "low";
     }
   }
-
-  const recoveryConfidence: "full" | "low" | null =
-    !recoveryEventFound ? null :
-    recoveryFollowDaysK != null && recoveryFollowDaysK >= 4 ? "full" : "low";
 
   return {
     alignmentScore,

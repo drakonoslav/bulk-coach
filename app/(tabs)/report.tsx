@@ -1693,7 +1693,6 @@ export default function ReportScreen() {
                             sharedScoreColor(cs?.consistencyScore ?? null),
                           ))}
                           {sigRow("Recovery", (() => {
-                            if (!cs?.recoveryEventFound) return sigText("—", Colors.textTertiary);
                             return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                               {sigText(fmtScore100(cs?.recoveryScore), sharedScoreColor(cs?.recoveryScore ?? null))}
                               {cs?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
@@ -1777,7 +1776,6 @@ export default function ReportScreen() {
                             sharedScoreColor(ls?.consistencyScore ?? null),
                           ))}
                           {sigRow("Recovery", (() => {
-                            if (!ls?.recoveryEventFound) return sigText("—", Colors.textTertiary);
                             return <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                               {sigText(fmtScore100(ls?.recoveryScore), sharedScoreColor(ls?.recoveryScore ?? null))}
                               {ls?.recoveryConfidence === "low" && <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#FBBF24" }}>low conf</Text>}
