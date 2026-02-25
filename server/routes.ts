@@ -1476,6 +1476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scheduledToday: schedStab.scheduledToday,
         scheduledTodayReason: schedStab.scheduledTodayReason,
         scheduledTodayConfidence: schedStab.scheduledTodayConfidence,
+        scheduleStability: schedStab,
         sleepBlock,
       });
 
