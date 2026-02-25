@@ -42,21 +42,21 @@ export default function FuelGauge({
   return (
     <View style={{ marginBottom: 10 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-        <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#9CA3AF" }}>{label}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          {isNull ? (
-            <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#6B7280" }}>{nullLabel || "\u2014"}</Text>
-          ) : (
-            <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color }}>
-              {formatValue(value, max, suffix)}
-            </Text>
-          )}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+          <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#9CA3AF" }}>{label}</Text>
           {isLowConf && (
             <View style={{ backgroundColor: "#FBBF2418", borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}>
               <Text style={{ fontSize: 8, fontFamily: "Rubik_600SemiBold", color: "#FBBF24" }}>LOW CONF</Text>
             </View>
           )}
         </View>
+        {isNull ? (
+          <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#6B7280" }}>{nullLabel || "\u2014"}</Text>
+        ) : (
+          <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color }}>
+            {formatValue(value, max, suffix)}
+          </Text>
+        )}
       </View>
       <View style={{ height: 6, borderRadius: 3, backgroundColor: "#1F2937", overflow: "hidden" }}>
         {isNull ? (
