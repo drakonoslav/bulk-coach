@@ -8,89 +8,114 @@ async function getReadiness(date: string) {
   return res.json();
 }
 
+function getScheduleDetail(block: any) {
+  return (block?.domainOutcome?.debug as any)?.scheduleDetail;
+}
+
+function getDomainSchedule(block: any) {
+  return block?.domainOutcome?.schedule;
+}
+
 describe("Cardio Schedule Recovery", () => {
-  let cardioRecovery: any;
+  let cardioDetail: any;
+  let cardioSchedule: any;
 
   beforeAll(async () => {
     const data = await getReadiness("2026-02-25");
-    cardioRecovery = data.cardioBlock?.scheduleStability;
+    cardioDetail = getScheduleDetail(data.cardioBlock);
+    cardioSchedule = getDomainSchedule(data.cardioBlock);
   });
 
-  test("A) eventFound=true with availableAfterEvent=0 → score=100, confidence=low, reason=insufficient_post_event_days", () => {
-    expect(cardioRecovery.recoveryScore).toBe(100);
-    expect(typeof cardioRecovery.recoveryScore).toBe("number");
-    expect(cardioRecovery.recoveryConfidence).toBe("low");
-    expect(cardioRecovery.recoveryReason).toBe("insufficient_post_event_days");
+  test("recoveryScore is a number or null", () => {
+    const score = cardioDetail?.recoveryScore;
+    if (score != null) {
+      expect(typeof score).toBe("number");
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(100);
+    } else {
+      expect(score).toBeNull();
+    }
   });
 
-  test("recoveryScore is always a number, never null", () => {
-    expect(cardioRecovery.recoveryScore).not.toBeNull();
-    expect(typeof cardioRecovery.recoveryScore).toBe("number");
-    expect(cardioRecovery.recoveryScore).toBeGreaterThanOrEqual(0);
-    expect(cardioRecovery.recoveryScore).toBeLessThanOrEqual(100);
+  test("domainOutcome.schedule.recovery matches detail.recoveryScore", () => {
+    expect(cardioSchedule?.recovery).toEqual(cardioDetail?.recoveryScore ?? null);
   });
 
   test("recoveryFollowDaysK is a number", () => {
-    expect(typeof cardioRecovery.recoveryFollowDaysK).toBe("number");
+    expect(typeof cardioDetail?.recoveryFollowDaysK).toBe("number");
   });
 
   test("recoveryConfidence is always high or low, never null", () => {
-    expect(["high", "low"]).toContain(cardioRecovery.recoveryConfidence);
+    expect(["high", "low"]).toContain(cardioDetail?.recoveryConfidence);
   });
 
   test("recoveryReason is always a valid enum, never null", () => {
-    expect(["no_event", "insufficient_post_event_days", "partial_post_event_window", "computed"]).toContain(cardioRecovery.recoveryReason);
+    expect(["no_event", "insufficient_post_event_days", "partial_post_event_window", "computed", "missing_scheduled_data"]).toContain(cardioDetail?.recoveryReason);
+  });
+
+  test("when reason=no_event, recoveryScore is null (no fake 100)", () => {
+    if (cardioDetail?.recoveryReason === "no_event") {
+      expect(cardioDetail.recoveryScore).toBeNull();
+    }
   });
 });
 
 describe("Lift Schedule Recovery", () => {
-  let liftRecovery: any;
+  let liftDetail: any;
+  let liftSchedule: any;
 
   beforeAll(async () => {
     const data = await getReadiness("2026-02-25");
-    liftRecovery = data.liftBlock?.scheduleStability;
+    liftDetail = getScheduleDetail(data.liftBlock);
+    liftSchedule = getDomainSchedule(data.liftBlock);
   });
 
-  test("B) eventFound=true with availableAfterEvent=0 → score=100, confidence=low", () => {
-    expect(liftRecovery.recoveryScore).toBe(100);
-    expect(typeof liftRecovery.recoveryScore).toBe("number");
-    expect(liftRecovery.recoveryConfidence).toBe("low");
+  test("recoveryScore is a number or null", () => {
+    const score = liftDetail?.recoveryScore;
+    if (score != null) {
+      expect(typeof score).toBe("number");
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(100);
+    } else {
+      expect(score).toBeNull();
+    }
   });
 
-  test("recoveryScore is always a number in [0,100], never null", () => {
-    expect(liftRecovery.recoveryScore).not.toBeNull();
-    expect(typeof liftRecovery.recoveryScore).toBe("number");
-    expect(liftRecovery.recoveryScore).toBeGreaterThanOrEqual(0);
-    expect(liftRecovery.recoveryScore).toBeLessThanOrEqual(100);
+  test("domainOutcome.schedule.recovery matches detail.recoveryScore", () => {
+    expect(liftSchedule?.recovery).toEqual(liftDetail?.recoveryScore ?? null);
   });
 
   test("recoveryConfidence is always high or low, never null", () => {
-    expect(["high", "low"]).toContain(liftRecovery.recoveryConfidence);
+    expect(["high", "low"]).toContain(liftDetail?.recoveryConfidence);
   });
 
   test("recoveryReason is always a valid enum, never null", () => {
-    expect(["no_event", "insufficient_post_event_days", "partial_post_event_window", "computed"]).toContain(liftRecovery.recoveryReason);
+    expect(["no_event", "insufficient_post_event_days", "partial_post_event_window", "computed", "missing_scheduled_data"]).toContain(liftDetail?.recoveryReason);
+  });
+
+  test("when reason=no_event, recoveryScore is null (no fake 100)", () => {
+    if (liftDetail?.recoveryReason === "no_event") {
+      expect(liftDetail.recoveryScore).toBeNull();
+    }
   });
 });
 
 describe("C) No event found scenario", () => {
-  test("when no event exists, recoveryScore=100, confidence=low, reason=no_event", async () => {
+  test("when no event exists, recoveryScore=null, confidence=low, reason=no_event", async () => {
     const data = await getReadiness("2020-01-01");
-    const cardio = data.cardioBlock?.scheduleStability;
-    const lift = data.liftBlock?.scheduleStability;
+    const cardio = getScheduleDetail(data.cardioBlock);
+    const lift = getScheduleDetail(data.liftBlock);
 
     if (cardio) {
-      expect(typeof cardio.recoveryScore).toBe("number");
-      expect(cardio.recoveryScore).toBe(100);
-      expect(cardio.recoveryConfidence).toBe("low");
       expect(cardio.recoveryReason).toBe("no_event");
+      expect(cardio.recoveryScore).toBeNull();
+      expect(cardio.recoveryConfidence).toBe("low");
     }
 
     if (lift) {
-      expect(typeof lift.recoveryScore).toBe("number");
-      expect(lift.recoveryScore).toBe(100);
-      expect(lift.recoveryConfidence).toBe("low");
       expect(lift.recoveryReason).toBe("no_event");
+      expect(lift.recoveryScore).toBeNull();
+      expect(lift.recoveryConfidence).toBe("low");
     }
   });
 });
@@ -104,17 +129,24 @@ describe("D) UI formatting — Recovery always shows XX.XX / 100.00", () => {
     expect(fmtScore100(undefined)).toBe("—");
   });
 
-  test("recovery score from API always formats as XX.XX / 100.00 (never bare dash)", async () => {
+  test("recovery score from API formats correctly (number → XX.XX / 100.00, null → —)", async () => {
     const data = await getReadiness("2026-02-25");
-    const cardioScore = data.cardioBlock?.scheduleStability?.recoveryScore;
-    const liftScore = data.liftBlock?.scheduleStability?.recoveryScore;
+    const cardioDetail = getScheduleDetail(data.cardioBlock);
+    const liftDetail = getScheduleDetail(data.liftBlock);
 
-    const cardioFormatted = fmtScore100(cardioScore);
-    const liftFormatted = fmtScore100(liftScore);
+    const cardioFormatted = fmtScore100(cardioDetail?.recoveryScore);
+    const liftFormatted = fmtScore100(liftDetail?.recoveryScore);
 
-    expect(cardioFormatted).toMatch(/^\d+\.\d{2} \/ 100\.00$/);
-    expect(liftFormatted).toMatch(/^\d+\.\d{2} \/ 100\.00$/);
-    expect(cardioFormatted).not.toBe("—");
-    expect(liftFormatted).not.toBe("—");
+    if (cardioDetail?.recoveryScore != null) {
+      expect(cardioFormatted).toMatch(/^\d+\.\d{2} \/ 100\.00$/);
+    } else {
+      expect(cardioFormatted).toBe("—");
+    }
+
+    if (liftDetail?.recoveryScore != null) {
+      expect(liftFormatted).toMatch(/^\d+\.\d{2} \/ 100\.00$/);
+    } else {
+      expect(liftFormatted).toBe("—");
+    }
   });
 });

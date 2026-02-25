@@ -97,6 +97,7 @@ export interface SleepBlock {
 
   latencyMin: number | null;
   wasoMin: number | null;
+  wasoEst: number | null;
   awakeInBedMin: number | null;
   tossTurnMin: number | null;
   sleepEfficiency: number | null;
