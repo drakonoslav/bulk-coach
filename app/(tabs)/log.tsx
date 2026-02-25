@@ -25,6 +25,23 @@ import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from
 import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
 import { deriveSleep } from "@/lib/sleep-derivation";
 
+const MEAL_CALORIES: Record<string, number> = {
+  preCardio: 104,
+  postCardio: 644,
+  midday: 303,
+  preLift: 385,
+  postLift: 268,
+  evening: 992,
+};
+
+function computeMealCalories(checklist: Record<string, boolean>): number {
+  let total = 0;
+  for (const [key, checked] of Object.entries(checklist)) {
+    if (checked && MEAL_CALORIES[key]) total += MEAL_CALORIES[key];
+  }
+  return total;
+}
+
 function parseMinuteInput(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -627,6 +644,13 @@ export default function LogScreen() {
     }, [selectedDate])
   );
 
+  useEffect(() => {
+    const computed = computeMealCalories(mealChecklist);
+    if (computed > 0) {
+      setCaloriesIn(String(computed));
+    }
+  }, [mealChecklist]);
+
   function formatDur(sec: number): string {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -1026,11 +1050,14 @@ export default function LogScreen() {
               <Text style={[styles.mealCheckLabel, mealChecklist[key] && styles.mealCheckLabelDone]}>
                 {label}
               </Text>
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: mealChecklist[key] ? Colors.primary : Colors.textTertiary, marginLeft: "auto" }}>
+                {MEAL_CALORIES[key]} kcal
+              </Text>
             </Pressable>
           ))}
           <View style={styles.mealCheckSummary}>
             <Text style={styles.mealCheckSummaryText}>
-              Execution: {Object.values(mealChecklist).filter(Boolean).length} / 6 complete
+              Execution: {Object.values(mealChecklist).filter(Boolean).length} / 6 complete  ·  {computeMealCalories(mealChecklist)} kcal
             </Text>
           </View>
         </View>
