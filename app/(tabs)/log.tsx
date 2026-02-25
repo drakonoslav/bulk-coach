@@ -1565,7 +1565,16 @@ export default function LogScreen() {
               <Ionicons name="heart-outline" size={14} color={cardioSkipped ? "#6B7280" : "#EF4444"} />
               <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: cardioSkipped ? "#6B7280" : "#EF4444" }}>Cardio Session</Text>
               <Pressable
-                onPress={() => setCardioSkipped(!cardioSkipped)}
+                onPress={() => {
+                  const next = !cardioSkipped;
+                  setCardioSkipped(next);
+                  if (next) {
+                    setCardioStartTime("");
+                    setCardioEndTime("");
+                    setCardio("");
+                    setZone1(""); setZone2(""); setZone3(""); setZone4(""); setZone5("");
+                  }
+                }}
                 style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: "auto", backgroundColor: cardioSkipped ? "#EF444418" : "#1A1A2E", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: cardioSkipped ? "#EF444440" : "#333" }}
               >
                 <Ionicons name={cardioSkipped ? "close-circle" : "checkmark-circle-outline"} size={12} color={cardioSkipped ? "#EF4444" : "#6B7280"} />
@@ -1684,7 +1693,17 @@ export default function LogScreen() {
               <Ionicons name="barbell-outline" size={14} color={liftSkipped ? "#6B7280" : "#FBBF24"} />
               <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: liftSkipped ? "#6B7280" : "#FBBF24" }}>Lift Session</Text>
               <Pressable
-                onPress={() => setLiftSkipped(!liftSkipped)}
+                onPress={() => {
+                  const next = !liftSkipped;
+                  setLiftSkipped(next);
+                  if (next) {
+                    setLiftStartTime("");
+                    setLiftEndTime("");
+                    setLiftMin("");
+                    setLiftWorkingMin("");
+                    setLiftZ1(""); setLiftZ2(""); setLiftZ3(""); setLiftZ4(""); setLiftZ5("");
+                  }
+                }}
                 style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: "auto", backgroundColor: liftSkipped ? "#EF444418" : "#1A1A2E", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: liftSkipped ? "#EF444440" : "#333" }}
               >
                 <Ionicons name={liftSkipped ? "close-circle" : "checkmark-circle-outline"} size={12} color={liftSkipped ? "#EF4444" : "#6B7280"} />
