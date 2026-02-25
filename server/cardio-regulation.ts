@@ -226,6 +226,9 @@ export async function computeCardioScheduleStability(
       if (priorSessionDates.has(d)) break;
       missStreak++;
     }
+    if (skippedDays.includes(date)) {
+      missStreak++;
+    }
   }
 
   const avgDeviationMin = allDays.length > 0
