@@ -379,8 +379,8 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     ? Math.max(awakeInBedMin - latencyMin, 0)
     : (wasoMin ?? null);
 
-  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && wasoEst != null)
-    ? clamp(100 * (1 - wasoEst / timeInBedMin), 0, 100)
+  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && wasoEst != null && latencyMin != null)
+    ? clamp(100 * (1 - (wasoEst + 0.5 * latencyMin) / timeInBedMin), 0, 100)
     : null;
 
   const sleepContinuity: number | null = sleepContinuityPct != null ? sleepContinuityPct / 100 : null;
