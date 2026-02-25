@@ -68,6 +68,7 @@ export interface LiftOutcome {
   continuityDenominator: "actual" | null;
   actualSource: "duration_span" | "duration_field" | "none";
   workingSource: "daily_log" | "none";
+  outcomeDay: string | null;
 }
 
 export interface LiftBlock {
@@ -111,10 +112,10 @@ export async function computeLiftScheduleStability(
   let alignmentPenalty: number | null = null;
   let actualStart: string | null = null;
 
-  const todayRow = rows.find((r: any) => r.day === date);
-  if (todayRow) {
-    actualStart = todayRow.lift_start_time;
-    const actualStartMin = toMin(todayRow.lift_start_time);
+  const alignmentRow = rows.find((r: any) => r.day === date) ?? rows[0] ?? null;
+  if (alignmentRow) {
+    actualStart = alignmentRow.lift_start_time;
+    const actualStartMin = toMin(alignmentRow.lift_start_time);
     alignmentPenalty = Math.abs(circularDeltaMinutes(actualStartMin, plannedStartMin));
     alignmentScore = clamp(100 - alignmentPenalty * 100 / 180, 0, 100);
   }
@@ -266,9 +267,14 @@ export async function computeLiftOutcome(
   const plannedMin = schedule.plannedMin;
 
   const { rows } = await pool.query(
-    `SELECT lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
+    `SELECT day, lift_start_time, lift_end_time, lift_min, lift_done, lift_working_min
      FROM daily_log
-     WHERE day = $1 AND user_id = $2`,
+     WHERE user_id = $2
+       AND day <= $1
+       AND day >= ($1::date - 14)::text
+       AND (lift_start_time IS NOT NULL OR lift_min IS NOT NULL OR lift_working_min IS NOT NULL)
+     ORDER BY day DESC
+     LIMIT 1`,
     [date, userId],
   );
 
@@ -321,6 +327,7 @@ export async function computeLiftOutcome(
     continuityDenominator: continuityScore != null ? "actual" as const : null,
     actualSource,
     workingSource,
+    outcomeDay: r?.day ?? null,
   };
 }
 

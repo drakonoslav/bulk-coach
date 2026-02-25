@@ -59,6 +59,7 @@ export interface CardioScheduleStability {
 
 export interface CardioOutcome {
   adequacyScore: number | null;
+  adequacySource: "productive" | "total" | "none";
   productiveMin: number | null;
   cardioTotalMin: number | null;
   cardioTotalSource: "zones_sum" | "spanMinutes" | "cardio_min" | null;
@@ -67,6 +68,7 @@ export interface CardioOutcome {
   continuityScore: number | null;
   continuityDenominator: "total" | null;
   productiveMinSource: "zones_sum" | "none";
+  outcomeDay: string | null;
   z1Min: number | null;
   z2Min: number | null;
   z3Min: number | null;
@@ -98,13 +100,13 @@ export async function computeCardioScheduleStability(
     [userId, date],
   );
 
-  const todayRow = rows.find((r: any) => r.day === date);
+  const alignmentRow = rows.find((r: any) => r.day === date) ?? rows[0] ?? null;
   let alignmentScore: number | null = null;
   let alignmentPenaltyMin: number | null = null;
   let actualStart: string | null = null;
 
-  if (todayRow) {
-    actualStart = todayRow.cardio_start_time;
+  if (alignmentRow) {
+    actualStart = alignmentRow.cardio_start_time;
     const actualStartMin = toMin(actualStart!);
     alignmentPenaltyMin = Math.abs(circularDeltaMinutes(actualStartMin, plannedStartMin));
     alignmentScore = clamp(100 - alignmentPenaltyMin * 100 / 180, 0, 100);
@@ -274,10 +276,16 @@ export async function computeCardioOutcome(
   const plannedDurationMin = schedule.plannedMin;
 
   const { rows } = await pool.query(
-    `SELECT cardio_start_time, cardio_end_time, cardio_min,
+    `SELECT day, cardio_start_time, cardio_end_time, cardio_min,
             zone1_min, zone2_min, zone3_min, zone4_min, zone5_min
      FROM daily_log
-     WHERE day = $1 AND user_id = $2`,
+     WHERE user_id = $2
+       AND day <= $1
+       AND day >= ($1::date - 14)::text
+       AND (cardio_start_time IS NOT NULL OR cardio_min IS NOT NULL
+            OR zone1_min IS NOT NULL)
+     ORDER BY day DESC
+     LIMIT 1`,
     [date, userId],
   );
 
@@ -316,8 +324,9 @@ export async function computeCardioOutcome(
   }
 
   let adequacyScore: number | null = null;
-  if (productiveMin != null && plannedDurationMin > 0) {
-    adequacyScore = clamp(100 * productiveMin / plannedDurationMin, 0, 110);
+  const adequacyNumerator = productiveMin ?? cardioTotalMin;
+  if (adequacyNumerator != null && plannedDurationMin > 0) {
+    adequacyScore = clamp(100 * adequacyNumerator / plannedDurationMin, 0, 110);
   }
 
   let efficiencyScore: number | null = null;
@@ -330,8 +339,12 @@ export async function computeCardioOutcome(
     continuityScore = clamp(100 * (1 - z1! / cardioTotalMin), 0, 100);
   }
 
+  const adequacySource: "productive" | "total" | "none" =
+    productiveMin != null ? "productive" : cardioTotalMin != null ? "total" : "none";
+
   return {
     adequacyScore,
+    adequacySource,
     productiveMin,
     cardioTotalMin,
     cardioTotalSource,
@@ -340,6 +353,7 @@ export async function computeCardioOutcome(
     continuityScore,
     continuityDenominator: continuityScore != null ? "total" as const : null,
     productiveMinSource: hasZones ? "zones_sum" as const : "none" as const,
+    outcomeDay: r?.day ?? null,
     z1Min: z1,
     z2Min: z2,
     z3Min: z3,

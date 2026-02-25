@@ -1074,7 +1074,7 @@ export default function ChecklistScreen() {
                     {debugCardioOutcomeExpanded && (
                       <View style={{ backgroundColor: "#F8717108", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`plannedMin = ${co?.plannedDurationMin ?? "—"}\ncardioTotalMin = ${co?.cardioTotalMin ?? "—"} [totalSource=${co?.cardioTotalSource ?? "none"}]\nz1=${co?.z1Min ?? "—"} z2=${co?.z2Min ?? "—"} z3=${co?.z3Min ?? "—"} z4=${co?.z4Min ?? "—"} z5=${co?.z5Min ?? "—"}\nproductiveMin = z2+z3 = ${co?.productiveMin ?? "—"} [productiveSource=${co?.productiveMinSource ?? "none"}]`}
+                          {`outcomeDay = ${co?.outcomeDay ?? "—"}\nplannedMin = ${co?.plannedDurationMin ?? "—"}\ncardioTotalMin = ${co?.cardioTotalMin ?? "—"} [totalSource=${co?.cardioTotalSource ?? "none"}]\nz1=${co?.z1Min ?? "—"} z2=${co?.z2Min ?? "—"} z3=${co?.z3Min ?? "—"} z4=${co?.z4Min ?? "—"} z5=${co?.z5Min ?? "—"}\nproductiveMin = z2+z3 = ${co?.productiveMin ?? "—"} [productiveSource=${co?.productiveMinSource ?? "none"}]\nadequacySource = ${co?.adequacySource ?? "none"}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
@@ -1158,7 +1158,7 @@ export default function ChecklistScreen() {
                     {debugLiftOutcomeExpanded && (
                       <View style={{ backgroundColor: "#F59E0B08", borderRadius: 6, padding: 8, marginTop: 4, marginBottom: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                          {`plannedMin = ${lo?.plannedMin ?? "—"}\nactualMin = ${lo?.actualMin ?? "—"} [actualSource=${lo?.actualSource ?? "none"}]\nworkingMin = ${lo?.workingMin ?? "—"} [workingSource=${lo?.workingSource ?? "none"}]\nidleMin = ${lo?.idleMin ?? "—"}`}
+                          {`outcomeDay = ${lo?.outcomeDay ?? "—"}\nplannedMin = ${lo?.plannedMin ?? "—"}\nactualMin = ${lo?.actualMin ?? "—"} [actualSource=${lo?.actualSource ?? "none"}]\nworkingMin = ${lo?.workingMin ?? "—"} [workingSource=${lo?.workingSource ?? "none"}]\nidleMin = ${lo?.idleMin ?? "—"}`}
                         </Text>
                         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
