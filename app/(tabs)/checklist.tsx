@@ -943,11 +943,18 @@ export default function ChecklistScreen() {
               {sectionHeader("Meal Adherence", "restaurant-outline", "#F59E0B")}
 
               {(() => {
-                const ma = adh?.mealAdherence;
+                const ma = adh?.mealAdherence as any;
                 if (!ma) return sigRow("Meal data", <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary }}>No meals logged</Text>);
                 const mealColor = ma.mealsChecked >= 6 ? "#34D399" : ma.mealsChecked >= 4 ? "#FBBF24" : "#EF4444";
+                const today = new Date().toISOString().slice(0, 10);
+                const isStale = ma.mealDay && ma.mealDay !== today;
                 return (
                   <>
+                    {isStale && sigRow("Source",
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                        from {ma.mealDay}
+                      </Text>
+                    )}
                     {sigRow("Execution",
                       <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: mealColor }}>
                         {ma.mealsChecked} / {ma.mealsTotal}

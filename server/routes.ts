@@ -1416,10 +1416,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const BASELINE_KCAL = 2696;
 
       const mealLogRow = await pool.query(
-        `SELECT meal_checklist FROM daily_log WHERE day = $1 AND user_id = $2`,
+        `SELECT day, meal_checklist FROM daily_log WHERE day <= $1 AND user_id = $2 AND meal_checklist IS NOT NULL ORDER BY day DESC LIMIT 1`,
         [date, userId],
       );
       const rawChecklist = mealLogRow.rows[0]?.meal_checklist;
+      const mealDay = mealLogRow.rows[0]?.day ?? null;
       const hasLogEntry = mealLogRow.rows.length > 0;
       const mealChecklist: Record<string, boolean> = rawChecklist ?? {};
       const mealKeys = Object.keys(MEAL_CALORIES);
@@ -1459,6 +1460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             missedKcal,
             baselineHitPct,
             biggestMiss,
+            mealDay,
           } : null,
         },
         primaryDriver,
