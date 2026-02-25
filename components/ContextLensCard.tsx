@@ -11,6 +11,7 @@ import {
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
+import { fmtInt, fmtVal, fmtFracToPctInt } from "@/lib/format";
 
 type ContextPhase =
   | "NOVELTY_DISTURBANCE"
@@ -246,7 +247,7 @@ export default function ContextLensCard() {
 
                 <View style={s.scoreBox}>
                   <Text style={[s.scoreValue, { color: scoreColor(lensResult.metrics.disturbanceScore) }]}>
-                    {lensResult.metrics.disturbanceScore.toFixed(0)}
+                    {fmtInt(lensResult.metrics.disturbanceScore)}
                   </Text>
                   <Text style={s.scoreLabelText}>{scoreLabel(lensResult.metrics.disturbanceScore)}</Text>
                 </View>
@@ -260,7 +261,7 @@ export default function ContextLensCard() {
                     />
                     <Text style={[s.slopeText, { color: slopeArrow(lensResult.metrics.disturbanceSlope14d).color }]}>
                       {lensResult.metrics.disturbanceSlope14d > 0 ? "+" : ""}
-                      {lensResult.metrics.disturbanceSlope14d.toFixed(1)}/wk
+                      {fmtVal(lensResult.metrics.disturbanceSlope14d, 1)}/wk
                     </Text>
                   </View>
                 )}
@@ -280,7 +281,7 @@ export default function ContextLensCard() {
                   <>
                     <Text style={s.metaDot}>·</Text>
                     <Text style={[s.metaItem, lensResult.metrics.cortisolFlagRate >= 0.3 ? { color: "#F87171" } : {}]}>
-                      cortisol {(lensResult.metrics.cortisolFlagRate * 100).toFixed(0)}%
+                      cortisol {fmtFracToPctInt(lensResult.metrics.cortisolFlagRate)}
                     </Text>
                   </>
                 )}

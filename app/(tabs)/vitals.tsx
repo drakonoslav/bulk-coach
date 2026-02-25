@@ -21,6 +21,7 @@ import * as LegacyFS from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
+import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt } from "@/lib/format";
 
 interface SessionRow {
   date: string;
@@ -88,9 +89,9 @@ function ProxyChart({ data }: { data: ProxyRow[] }) {
   return (
     <View style={styles.chartContainer}>
       <View style={styles.chartYAxis}>
-        <Text style={styles.chartAxisLabel}>{max.toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{((max + min) / 2).toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{min.toFixed(1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(max, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal((max + min) / 2, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(min, 1)}</Text>
       </View>
       <View style={{ width, height, position: "relative" }}>
         {[0, 0.5, 1].map(pct => (
@@ -594,7 +595,7 @@ export default function VitalsScreen() {
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { borderLeftColor: ACCENT }]}>
             <Text style={styles.statValue}>
-              {latestProxy?.proxy7dAvg?.toFixed(1) ?? latestProxy?.proxyScore?.toFixed(1) ?? "--"}
+              {fmtVal(latestProxy?.proxy7dAvg ?? latestProxy?.proxyScore, 1)}
             </Text>
             <Text style={styles.statLabel}>7d Proxy Avg</Text>
           </View>
@@ -933,12 +934,12 @@ export default function VitalsScreen() {
                       </View>
                       {d.pct != null && (
                         <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 50, textAlign: "right" }}>
-                          {(d.pct * 100).toFixed(0)}% vs 28d
+                          {fmtFracToPctInt(d.pct)} vs 28d
                         </Text>
                       )}
                       {d.diff != null && (
                         <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, width: 50, textAlign: "right" }}>
-                          {d.diff >= 0 ? "+" : ""}{d.diff.toFixed(1)} bpm
+                          {fmtDelta(d.diff, 1, " bpm")}
                         </Text>
                       )}
                       {item.key === "pain" && d.current != null && (
@@ -958,7 +959,7 @@ export default function VitalsScreen() {
                   Cortisol likely suppressing
                 </Text>
                 <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                  HPA score {hpaData.hpaScore}+ with androgen proxy dropped {hpaData.drivers.suppression.proxyDelta != null ? `${(hpaData.drivers.suppression.proxyDelta * 100).toFixed(0)}%` : "≥10%"} below baseline
+                  HPA score {hpaData.hpaScore}+ with androgen proxy dropped {hpaData.drivers.suppression.proxyDelta != null ? fmtFracToPctInt(hpaData.drivers.suppression.proxyDelta) : "≥10%"} below baseline
                 </Text>
               </View>
             )}
@@ -1021,7 +1022,7 @@ export default function VitalsScreen() {
                   const scoreColor = (sc: number) => sc >= 70 ? "#F87171" : sc >= 62 ? "#F59E0B" : sc >= 56 ? "#FCD34D" : "#34D399";
                   const scaleLabel = (sc: number) => sc >= 60 ? "High disturbance" : sc >= 40 ? "Moderate" : sc >= 20 ? "Mild" : "Minimal";
                   const interpColor = (i: string) => i === "improving" ? "#34D399" : i === "worsening" ? "#F87171" : i === "flat" ? "#FBBF24" : Colors.textTertiary;
-                  const fmtDelta = (v: number | null | undefined) => v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+                  const fmtDeltaLocal = (v: number | null | undefined) => v == null ? "\u2014" : fmtDelta(v, 1);
                   const compBarColor = (v: number) => v > 0.3 ? "#F87171" : v > 0 ? "#F59E0B" : "#34D399";
 
                   return (
@@ -1040,7 +1041,7 @@ export default function VitalsScreen() {
                           <View style={{ alignItems: "flex-end" }}>
                             {distScore != null && (
                               <Text style={{ fontSize: 11, fontFamily: "Rubik_600SemiBold", color: scoreColor(distScore) }}>
-                                {distScore.toFixed(0)}
+                                {fmtInt(distScore)}
                               </Text>
                             )}
                             <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={12} color={Colors.textTertiary} />
@@ -1057,7 +1058,7 @@ export default function VitalsScreen() {
                               {distScore != null && (
                                 <View style={{ alignItems: "center" }}>
                                   <Text style={{ fontSize: 18, fontFamily: "Rubik_700Bold", color: scoreColor(distScore) }}>
-                                    {distScore.toFixed(0)}
+                                    {fmtInt(distScore)}
                                   </Text>
                                   <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{scaleLabel(distScore)}</Text>
                                 </View>
@@ -1093,7 +1094,7 @@ export default function VitalsScreen() {
                                 <>
                                   <Text style={{ fontSize: 11, color: Colors.textTertiary }}>·</Text>
                                   <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: tr.cortisolFlagRate21d >= 0.3 ? "#F87171" : Colors.textTertiary }}>
-                                    cortisol {(tr.cortisolFlagRate21d * 100).toFixed(0)}%
+                                    cortisol {fmtFracToPctInt(tr.cortisolFlagRate21d)}
                                   </Text>
                                 </>
                               )}
@@ -1130,7 +1131,7 @@ export default function VitalsScreen() {
                                     <View key={item.label} style={{ backgroundColor: Colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                                       <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{item.label}</Text>
                                       <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.text }}>
-                                        {item.val != null ? `${item.val >= 0 ? "+" : ""}${typeof item.val === "number" ? item.val.toFixed(0) : item.val}${item.suffix}` : "\u2014"}
+                                        {item.val != null ? `${fmtDelta(typeof item.val === "number" ? item.val : null, 0, item.suffix)}` : "\u2014"}
                                       </Text>
                                     </View>
                                   ))}

@@ -24,6 +24,7 @@ import { getApiUrl, authFetch } from "@/lib/query-client";
 import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
 import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-timing";
 import { deriveSleep } from "@/lib/sleep-derivation";
+import { fmtVal, fmtInt, fmtPctVal } from "@/lib/format";
 
 const MEAL_CALORIES: Record<string, number> = {
   preCardio: 104,
@@ -1168,7 +1169,7 @@ export default function LogScreen() {
                 <View style={styles.bfAvg}>
                   <Text style={styles.bfAvgLabel}>Avg</Text>
                   <Text style={[styles.bfAvgValue, a != null && { color: Colors.primary }]}>
-                    {a != null ? `${a.toFixed(1)}%` : "--"}
+                    {a != null ? fmtPctVal(a, 1) : "--"}
                   </Text>
                 </View>
               );
@@ -1222,7 +1223,7 @@ export default function LogScreen() {
                 <View style={styles.bfAvg}>
                   <Text style={styles.bfAvgLabel}>Avg</Text>
                   <Text style={[styles.bfAvgValue, a != null && { color: Colors.secondary }]}>
-                    {a != null ? `${a.toFixed(1)}%` : "--"}
+                    {a != null ? fmtPctVal(a, 1) : "--"}
                   </Text>
                 </View>
               );
@@ -1919,7 +1920,7 @@ export default function LogScreen() {
                     <Ionicons name="pulse-outline" size={14} color="#8B5CF6" />
                     <Text style={fStyles.label}>HRV (RMSSD)</Text>
                   </View>
-                  <Text style={[fStyles.value, { color: "#8B5CF6" }]}>{fitbitData.hrv.toFixed(1)} ms</Text>
+                  <Text style={[fStyles.value, { color: "#8B5CF6" }]}>{fmtVal(fitbitData.hrv, 1)} ms</Text>
                 </View>
               )}
               {fitbitData.restingHr != null && (
@@ -1946,7 +1947,7 @@ export default function LogScreen() {
                     <Ionicons name="analytics-outline" size={14} color="#60A5FA" />
                     <Text style={fStyles.label}>Sleep Efficiency</Text>
                   </View>
-                  <Text style={[fStyles.value, { color: "#60A5FA" }]}>{fitbitData.sleepEfficiency.toFixed(0)}%</Text>
+                  <Text style={[fStyles.value, { color: "#60A5FA" }]}>{fmtPctVal(fitbitData.sleepEfficiency, 0)}</Text>
                 </View>
               )}
               {(fitbitData.sleepStartLocal || fitbitData.sleepEndLocal) && (

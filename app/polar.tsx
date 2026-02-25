@@ -13,6 +13,7 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { fmtVal, fmtPctVal } from "@/lib/format";
 import Colors from "@/constants/colors";
 import { usePolarH10, type PolarStatus, type PolarDevice } from "@/hooks/usePolarH10";
 
@@ -115,11 +116,11 @@ function LiveDisplay({
 
 function AnalysisDisplay({ analysis }: { analysis: any }) {
   const items = [
-    { label: "Pre-session RMSSD", value: analysis.pre_session_rmssd != null ? `${analysis.pre_session_rmssd.toFixed(1)} ms` : "N/A" },
-    { label: "Min RMSSD", value: analysis.min_session_rmssd != null ? `${analysis.min_session_rmssd.toFixed(1)} ms` : "N/A" },
-    { label: "Post RMSSD", value: analysis.post_session_rmssd != null ? `${analysis.post_session_rmssd.toFixed(1)} ms` : "N/A" },
-    { label: "HRV Suppression", value: analysis.hrv_suppression_pct != null ? `${analysis.hrv_suppression_pct.toFixed(1)}%` : "N/A" },
-    { label: "HRV Rebound", value: analysis.hrv_rebound_pct != null ? `${analysis.hrv_rebound_pct.toFixed(1)}%` : "N/A" },
+    { label: "Pre-session RMSSD", value: analysis.pre_session_rmssd != null ? `${fmtVal(analysis.pre_session_rmssd, 1)} ms` : "N/A" },
+    { label: "Min RMSSD", value: analysis.min_session_rmssd != null ? `${fmtVal(analysis.min_session_rmssd, 1)} ms` : "N/A" },
+    { label: "Post RMSSD", value: analysis.post_session_rmssd != null ? `${fmtVal(analysis.post_session_rmssd, 1)} ms` : "N/A" },
+    { label: "HRV Suppression", value: analysis.hrv_suppression_pct != null ? fmtPctVal(analysis.hrv_suppression_pct, 1) : "N/A" },
+    { label: "HRV Rebound", value: analysis.hrv_rebound_pct != null ? fmtPctVal(analysis.hrv_rebound_pct, 1) : "N/A" },
     { label: "Response", value: analysis.hrv_response_flag || "N/A" },
     { label: "Recovery Time", value: analysis.time_to_recovery_sec != null ? `${Math.round(analysis.time_to_recovery_sec)}s` : "N/A" },
   ];

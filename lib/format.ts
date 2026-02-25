@@ -28,9 +28,39 @@ export function fmtMin2(x: number | null | undefined): string {
   return `${x.toFixed(2)}m`;
 }
 
-export function fmtRaw(x: number | null | undefined): string {
+export function fmtRaw(x: number | null | undefined, decimals: number = 2): string {
   if (x == null) return "—";
-  return x.toFixed(2);
+  return x.toFixed(decimals);
+}
+
+export function fmtDelta(x: number | null | undefined, decimals: number = 2, suffix: string = ""): string {
+  if (x == null) return "—";
+  return `${x >= 0 ? "+" : ""}${x.toFixed(decimals)}${suffix}`;
+}
+
+export function fmtVal(x: number | null | undefined, decimals: number = 1, fallback: string = "--"): string {
+  if (x == null) return fallback;
+  return x.toFixed(decimals);
+}
+
+export function fmtInt(x: number | null | undefined, fallback: string = "—"): string {
+  if (x == null) return fallback;
+  return x.toFixed(0);
+}
+
+export function fmtPctInt(x: number | null | undefined): string {
+  if (x == null) return "—";
+  return `${x.toFixed(0)}%`;
+}
+
+export function fmtPctVal(x: number | null | undefined, decimals: number = 1): string {
+  if (x == null) return "--";
+  return `${x.toFixed(decimals)}%`;
+}
+
+export function fmtFracToPctInt(x: number | null | undefined): string {
+  if (x == null) return "—";
+  return `${(x * 100).toFixed(0)}%`;
 }
 
 export function scoreColor(v: number | null | undefined, thresholds?: { good?: number; warn?: number }): string {

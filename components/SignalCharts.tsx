@@ -8,6 +8,7 @@ import {
   PanResponder,
   Platform,
 } from "react-native";
+import { fmtDelta, fmtPctVal } from "@/lib/format";
 import Svg, { Path, Rect, Line, Text as SvgText } from "react-native-svg";
 import Colors from "@/constants/colors";
 
@@ -342,7 +343,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
             <Text style={styles.tooltipLabel}>HRV</Text>
             <Text style={styles.tooltipVal}>
               {selectedPoint.hrvDeltaPct != null
-                ? `${selectedPoint.hrvDeltaPct > 0 ? "+" : ""}${selectedPoint.hrvDeltaPct.toFixed(0)}%`
+                ? fmtDelta(selectedPoint.hrvDeltaPct, 0, "%")
                 : "--"}
             </Text>
           </View>
@@ -356,7 +357,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
             <Text style={styles.tooltipLabel}>Str.Vel</Text>
             <Text style={styles.tooltipVal}>
               {selectedPoint.strengthVelocity != null
-                ? `${selectedPoint.strengthVelocity > 0 ? "+" : ""}${selectedPoint.strengthVelocity.toFixed(1)}%`
+                ? fmtDelta(selectedPoint.strengthVelocity, 1, "%")
                 : "--"}
             </Text>
           </View>

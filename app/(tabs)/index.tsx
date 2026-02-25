@@ -14,6 +14,7 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadEntries } from "@/lib/entry-storage";
 import { authFetch, getApiUrl } from "@/lib/query-client";
+import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
 import {
   DailyEntry,
@@ -141,7 +142,7 @@ function EntryRow({ entry }: { entry: DailyEntry }) {
         {entry.bfMorningPct != null ? (
           <View style={[styles.entryPill, { backgroundColor: "rgba(167, 139, 250, 0.15)" }]}>
             <Ionicons name="body-outline" size={12} color="#A78BFA" />
-            <Text style={[styles.entryPillText, { color: "#A78BFA" }]}>{entry.bfMorningPct.toFixed(1)}%</Text>
+            <Text style={[styles.entryPillText, { color: "#A78BFA" }]}>{fmtPctVal(entry.bfMorningPct, 1)}</Text>
           </View>
         ) : null}
         {entry.adherence != null && entry.adherence < 1 ? (
@@ -261,14 +262,14 @@ export default function DashboardScreen() {
           <View style={styles.heroLeft}>
             <Text style={styles.heroLabel}>7-Day Average</Text>
             <Text style={styles.heroWeight}>
-              {avgWeight != null ? `${avgWeight.toFixed(1)}` : "--"}
+              {fmtVal(avgWeight, 1)}
               <Text style={styles.heroUnit}> lb</Text>
             </Text>
             {wkDelta != null ? (
               <View style={styles.heroTrend}>
                 <Ionicons name={trendIcon as any} size={14} color={trendColor} />
                 <Text style={[styles.heroTrendText, { color: trendColor }]}>
-                  {wkDelta > 0 ? "+" : ""}{wkDelta.toFixed(2)} lb/wk
+                  {fmtDelta(wkDelta, 2, " lb/wk")}
                 </Text>
               </View>
             ) : null}
@@ -283,14 +284,14 @@ export default function DashboardScreen() {
             icon="fitness-outline"
             iconColor={Colors.primary}
             label="Baseline"
-            value={`${BASELINE.calories.toFixed(0)}`}
+            value={fmtInt(BASELINE.calories, "--")}
             subtitle="kcal/day"
           />
           <StatCard
             icon="resize-outline"
             iconColor={Colors.secondary}
             label="Waist"
-            value={wDelta != null ? `${wDelta > 0 ? "+" : ""}${wDelta.toFixed(2)}"` : "--"}
+            value={wDelta != null ? `${fmtDelta(wDelta, 2, '"')}` : "--"}
             subtitle="14-day change"
           />
           <StatCard
@@ -304,7 +305,7 @@ export default function DashboardScreen() {
             icon="body-outline"
             iconColor="#A78BFA"
             label="Lean Mass"
-            value={latestLm != null ? `${latestLm.toFixed(1)}` : "--"}
+            value={fmtVal(latestLm, 1)}
             subtitle="lb (7d avg)"
             chart={<MiniChart data={lmChartData} color="#A78BFA" />}
           />
@@ -312,7 +313,7 @@ export default function DashboardScreen() {
             icon="analytics-outline"
             iconColor="#F472B6"
             label="Body Fat"
-            value={latestBf != null ? `${latestBf.toFixed(1)}%` : "--"}
+            value={latestBf != null ? fmtPctVal(latestBf, 1) : "--"}
             subtitle="latest AM avg"
           />
         </View>

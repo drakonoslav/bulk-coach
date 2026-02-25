@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text } from "react-native";
+import { fmtPct } from "@/lib/format";
 
 interface FuelGaugeProps {
   label: string;
@@ -21,7 +22,7 @@ function gaugeColor(v: number | null | undefined, max: number, thresholds?: { go
 
 function formatValue(v: number | null | undefined): string {
   if (v == null) return "";
-  return `${v.toFixed(2)}%`;
+  return fmtPct(v);
 }
 
 export default function FuelGauge({

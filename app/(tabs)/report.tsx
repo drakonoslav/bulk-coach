@@ -14,7 +14,7 @@ import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadDashboard } from "@/lib/entry-storage";
 import { getApiUrl, authFetch } from "@/lib/query-client";
-import { fmtScore100, fmtScore110, fmtPct, fmtRaw, scoreColor as sharedScoreColor } from "@/lib/format";
+import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
 import { FuelGaugeGroup } from "@/components/FuelGauge";
 import {
   DailyEntry,
@@ -76,9 +76,9 @@ function WeightChart({ data, lineColor }: { data: Array<{ day: string; avg: numb
   return (
     <View style={styles.chartContainer}>
       <View style={styles.chartYAxis}>
-        <Text style={styles.chartAxisLabel}>{max.toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{((max + min) / 2).toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{min.toFixed(1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(max, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal((max + min) / 2, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(min, 1)}</Text>
       </View>
       <View style={{ width, height, position: "relative" }}>
         {[0, 0.5, 1].map((pct) => (
@@ -161,7 +161,7 @@ function StrengthLineChart({
   const height = 120;
   const width = 300;
   const step = width / (data.length - 1);
-  const fmt = yFormat || ((v: number) => v.toFixed(2));
+  const fmt = yFormat || ((v: number) => fmtRaw(v));
 
   const points = values.map((v, i) => ({
     x: i * step,
@@ -282,9 +282,9 @@ function RatioChart({ data }: { data: Array<{ day: string; ratio: number }> }) {
   return (
     <View style={styles.chartContainer}>
       <View style={[styles.chartYAxis, { height }]}>
-        <Text style={styles.chartAxisLabel}>{max.toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{((max + min) / 2).toFixed(1)}</Text>
-        <Text style={styles.chartAxisLabel}>{min.toFixed(1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(max, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal((max + min) / 2, 1)}</Text>
+        <Text style={styles.chartAxisLabel}>{fmtVal(min, 1)}</Text>
       </View>
       <View style={{ width, height, position: "relative" }}>
         {zeroY >= 0 && zeroY <= height ? (
@@ -909,7 +909,7 @@ export default function ReportScreen() {
                       color={modeClass.ffmVelocity >= 0.15 ? "#34D399" : modeClass.ffmVelocity <= -0.15 ? "#F87171" : "#FBBF24"}
                     />
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
-                      FFM: {modeClass.ffmVelocity >= 0 ? "+" : ""}{modeClass.ffmVelocity.toFixed(2)} lb/wk
+                      FFM: {fmtDelta(modeClass.ffmVelocity, 2, " lb/wk")}
                       <Text style={{ color: Colors.textTertiary }}> {modeClass.ffmVelocity >= 0.15 ? "(good)" : modeClass.ffmVelocity <= -0.15 ? "(watch)" : "(stable)"}</Text>
                     </Text>
                   </View>
@@ -922,7 +922,7 @@ export default function ReportScreen() {
                       color={modeClass.waistVelocity <= -0.10 ? "#34D399" : modeClass.waistVelocity >= 0.10 ? "#F87171" : "#FBBF24"}
                     />
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
-                      Waist: {modeClass.waistVelocity >= 0 ? "+" : ""}{modeClass.waistVelocity.toFixed(2)} in/wk
+                      Waist: {fmtDelta(modeClass.waistVelocity, 2, " in/wk")}
                       <Text style={{ color: Colors.textTertiary }}> {modeClass.waistVelocity <= -0.10 ? "(good)" : modeClass.waistVelocity >= 0.10 ? "(watch)" : "(stable)"}</Text>
                     </Text>
                   </View>
@@ -935,7 +935,7 @@ export default function ReportScreen() {
                       color={strengthPhase.isClamped ? "#FBBF24" : modeClass.strengthVelocityPct >= 0.25 ? "#34D399" : modeClass.strengthVelocityPct <= -0.25 ? "#F87171" : "#FBBF24"}
                     />
                     <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.text }}>
-                      Strength: {strengthPhase.displayPctPerWeek != null ? (strengthPhase.displayPctPerWeek >= 0 ? "+" : "") + strengthPhase.displayPctPerWeek.toFixed(2) : "0.00"}%/wk
+                      Strength: {strengthPhase.displayPctPerWeek != null ? fmtDelta(strengthPhase.displayPctPerWeek, 2, "%/wk") : "0.00%/wk"}
                       <Text style={{ color: Colors.textTertiary }}> ({strengthPhase.label})</Text>
                     </Text>
                   </View>
@@ -943,10 +943,10 @@ export default function ReportScreen() {
                 {sV != null ? (
                   <View style={{ marginTop: 4, paddingLeft: 20, gap: 2 }}>
                     <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                      today7dAvg: {sV.si7dToday.toFixed(4)}  prior7dAvg: {sV.si7d14dAgo.toFixed(4)}  delta: {(sV.si7dToday - sV.si7d14dAgo) >= 0 ? "+" : ""}{(sV.si7dToday - sV.si7d14dAgo).toFixed(4)}
+                      today7dAvg: {fmtRaw(sV.si7dToday, 4)}  prior7dAvg: {fmtRaw(sV.si7d14dAgo, 4)}  delta: {fmtDelta(sV.si7dToday - sV.si7d14dAgo, 4)}
                     </Text>
                     <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                      pctPerWeek: {sV.pctPerWeek >= 0 ? "+" : ""}{sV.pctPerWeek.toFixed(2)}%  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.totalSpanDays}d
+                      pctPerWeek: {fmtDelta(sV.pctPerWeek, 2, "%")}  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.totalSpanDays}d
                     </Text>
                   </View>
                 ) : (
@@ -1015,7 +1015,7 @@ export default function ReportScreen() {
               <View style={styles.baselineRow}>
                 <View style={styles.baselineStat}>
                   <Text style={styles.baselineLabel}>Baseline</Text>
-                  <Text style={styles.baselineValue}>{BASELINE.calories.toFixed(0)}</Text>
+                  <Text style={styles.baselineValue}>{fmtInt(BASELINE.calories, "--")}</Text>
                   <Text style={styles.baselineUnit}>kcal/day</Text>
                 </View>
                 <View style={styles.baselineDivider} />
@@ -1092,7 +1092,7 @@ export default function ReportScreen() {
                     },
                   ]}
                 >
-                  {wkGain != null ? `${wkGain > 0 ? "+" : ""}${wkGain.toFixed(2)}` : "--"}
+                  {wkGain != null ? fmtDelta(wkGain, 2) : "--"}
                 </Text>
                 <Text style={styles.metricUnit}>lb/week</Text>
                 <View style={[styles.targetBadge, isOnTarget ? styles.targetBadgeGood : styles.targetBadgeOff]}>
@@ -1112,7 +1112,7 @@ export default function ReportScreen() {
                     },
                   ]}
                 >
-                  {wDelta != null ? `${wDelta > 0 ? "+" : ""}${wDelta.toFixed(2)}` : "--"}
+                  {wDelta != null ? fmtDelta(wDelta, 2) : "--"}
                 </Text>
                 <Text style={styles.metricUnit}>inches (14d)</Text>
               </View>
@@ -1139,7 +1139,7 @@ export default function ReportScreen() {
                             },
                           ]}
                         >
-                          {lgr.toFixed(2)}
+                          {fmtRaw(lgr)}
                         </Text>
                         <Text style={styles.lgrHint}>
                           {lgr >= 0.6
@@ -1199,19 +1199,19 @@ export default function ReportScreen() {
                       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
                         <View>
                           <Text style={{ fontSize: 20, fontFamily: "Rubik_600SemiBold", color: ffmV.velocityLbPerWeek > 0.15 ? Colors.success : ffmV.velocityLbPerWeek < -0.15 ? Colors.danger : Colors.warning }}>
-                            {ffmV.velocityLbPerWeek > 0 ? "+" : ""}{ffmV.velocityLbPerWeek.toFixed(2)} lb/wk
+                            {fmtDelta(ffmV.velocityLbPerWeek, 2, " lb/wk")}
                           </Text>
                           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>{ffmV.label}</Text>
                         </View>
                         <View style={{ alignItems: "flex-end" }}>
-                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>7d avg now: {ffmV.ffm7dToday.toFixed(1)} lb</Text>
-                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{ffmV.spanDays}d ago: {ffmV.ffm7d14dAgo.toFixed(1)} lb</Text>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>7d avg now: {fmtVal(ffmV.ffm7dToday, 1)} lb</Text>
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>{ffmV.spanDays}d ago: {fmtVal(ffmV.ffm7d14dAgo, 1)} lb</Text>
                         </View>
                       </View>
                       {ffmLgr.ratio != null ? (
                         <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#A78BFA20" }}>
                           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
-                            FFM-based LGR: <Text style={{ fontFamily: "Rubik_600SemiBold", color: ffmLgr.ratio >= 0.6 ? Colors.success : ffmLgr.ratio >= 0.3 ? Colors.warning : Colors.danger }}>{ffmLgr.ratio.toFixed(2)}</Text>
+                            FFM-based LGR: <Text style={{ fontFamily: "Rubik_600SemiBold", color: ffmLgr.ratio >= 0.6 ? Colors.success : ffmLgr.ratio >= 0.3 ? Colors.warning : Colors.danger }}>{fmtRaw(ffmLgr.ratio)}</Text>
                             {" — "}{ffmLgr.label}
                           </Text>
                         </View>
@@ -1256,11 +1256,11 @@ export default function ReportScreen() {
                         <Text style={[styles.lgrLabel, { marginBottom: 4 }]}>StrengthIndex (7d Rolling Avg)</Text>
                         <View style={{ flexDirection: "row", gap: 12, marginBottom: 8 }}>
                           <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                            Current: {siChartData[siChartData.length - 1].value.toFixed(4)}
+                            Current: {fmtRaw(siChartData[siChartData.length - 1].value, 4)}
                           </Text>
                           {siFirst != null && (
                             <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                              vs First: {siFirst.toFixed(4)} ({siNormalized.length > 0 ? (siNormalized[siNormalized.length - 1].value >= 0 ? "+" : "") + siNormalized[siNormalized.length - 1].value.toFixed(1) + "%" : "--"})
+                              vs First: {fmtRaw(siFirst, 4)} ({siNormalized.length > 0 ? fmtDelta(siNormalized[siNormalized.length - 1].value, 1, "%") : "--"})
                             </Text>
                           )}
                         </View>
@@ -1268,7 +1268,7 @@ export default function ReportScreen() {
                           data={siChartData}
                           lineColor="#F59E0B"
                           markers={phaseMarkers}
-                          yFormat={(v) => v.toFixed(3)}
+                          yFormat={(v) => fmtRaw(v, 3)}
                         />
                       </View>
                     )}
@@ -1279,7 +1279,7 @@ export default function ReportScreen() {
                           data={siNormalized}
                           lineColor="#A78BFA"
                           markers={phaseMarkers}
-                          yFormat={(v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%"}
+                          yFormat={(v) => fmtDelta(v, 1, "%")}
                           zeroLine
                         />
                       </View>
@@ -1291,7 +1291,7 @@ export default function ReportScreen() {
                           data={svChartData}
                           lineColor="#34D399"
                           markers={phaseMarkers}
-                          yFormat={(v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%"}
+                          yFormat={(v) => fmtDelta(v, 1, "%")}
                           zeroLine
                         />
                       </View>
@@ -1447,7 +1447,7 @@ export default function ReportScreen() {
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Type Lean</Text>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                              {typeLeanVal > 0 ? "+" : ""}{typeLeanVal.toFixed(2)}
+                              {fmtDelta(typeLeanVal, 2)}
                             </Text>
                           </View>
                           <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
@@ -1472,7 +1472,7 @@ export default function ReportScreen() {
                           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Exercise Bias</Text>
                             <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: tierColor }}>
-                              {exerciseBiasVal > 0 ? "+" : ""}{exerciseBiasVal.toFixed(2)}
+                              {fmtDelta(exerciseBiasVal, 2)}
                             </Text>
                           </View>
                           <View style={{ height: 6, borderRadius: 3, backgroundColor: Colors.surface, overflow: "hidden" as const }}>
@@ -1706,7 +1706,7 @@ export default function ReportScreen() {
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`scheduledToday = ${ss?.scheduledToday ?? "—"}\nhasActualData = ${ss?.hasActualDataToday ?? "—"}\nmissStreak = ${ss?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${ss?.missStreak ?? 0}) = ${ss?.suppressionFactor?.toFixed(4) ?? "—"}\navgDeviationMin = ${fmtRaw(ss?.avgDeviationMin)}\ndriftPenalty = ${ss?.driftPenalty?.toFixed(4) ?? "—"}\ndriftFactor = ${ss?.driftFactor?.toFixed(4) ?? "—"}\n\neventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${fmtRaw(ss?.recoveryEventDriftMag0)}\nkDaysUsed = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${fmtRaw(ss?.recoveryFollowAvgDriftMag)}\nrecoveryRaw = ${ss?.recoveryRaw?.toFixed(6) ?? "null"}\nrecoverySuppressed = ${ss?.recoverySuppressed?.toFixed(6) ?? "null"}\nrecoveryFinal = ${ss?.recoveryFinal?.toFixed(6) ?? "null"}\nrecoveryScore = ${fmtRaw(ss?.scheduleRecoveryScore)}\nconfidence = ${ss?.recoveryConfidence ?? "—"}\nreason = ${ss?.recoveryReason ?? "—"}`}
+                                {`scheduledToday = ${ss?.scheduledToday ?? "—"}\nhasActualData = ${ss?.hasActualDataToday ?? "—"}\nmissStreak = ${ss?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${ss?.missStreak ?? 0}) = ${fmtRaw(ss?.suppressionFactor, 4)}\navgDeviationMin = ${fmtRaw(ss?.avgDeviationMin)}\ndriftPenalty = ${fmtRaw(ss?.driftPenalty, 4)}\ndriftFactor = ${fmtRaw(ss?.driftFactor, 4)}\n\neventFound = ${ss?.recoveryEventFound ?? false}\neventSizeMin = ${fmtRaw(ss?.recoveryEventDriftMag0)}\nkDaysUsed = ${ss?.recoveryFollowDaysK ?? "—"}\npostEventAvgDevMin = ${fmtRaw(ss?.recoveryFollowAvgDriftMag)}\nrecoveryRaw = ${fmtRaw(ss?.recoveryRaw, 6)}\nrecoverySuppressed = ${fmtRaw(ss?.recoverySuppressed, 6)}\nrecoveryFinal = ${fmtRaw(ss?.recoveryFinal, 6)}\nrecoveryScore = ${fmtRaw(ss?.scheduleRecoveryScore)}\nconfidence = ${ss?.recoveryConfidence ?? "—"}\nreason = ${ss?.recoveryReason ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1743,7 +1743,7 @@ export default function ReportScreen() {
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`scheduledToday = ${cs?.scheduledToday ?? "—"}\nhasActualData = ${cs?.hasActualDataToday ?? "—"}\nmissStreak = ${cs?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${cs?.missStreak ?? 0}) = ${cs?.suppressionFactor?.toFixed(4) ?? "—"}\navgDeviationMin = ${fmtRaw(cs?.avgDeviationMin)}\ndriftPenalty = ${cs?.driftPenalty?.toFixed(4) ?? "—"}\ndriftFactor = ${cs?.driftFactor?.toFixed(4) ?? "—"}\n\neventFound = ${cs?.recoveryEventFound ?? false}\neventDay = ${cs?.recoveryEventDay ?? "—"}\neventMetric = ${cs?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${cs?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${cs?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${cs?.recoveryFollowAvgDeviation?.toFixed(6) ?? "—"}\nrecoveryRaw = ${cs?.recoveryRaw?.toFixed(6) ?? "null"}\nrecoverySuppressed = ${cs?.recoverySuppressed?.toFixed(6) ?? "null"}\nrecoveryFinal = ${cs?.recoveryFinal?.toFixed(6) ?? "null"}\nrecoveryScore = ${cs?.recoveryScore?.toFixed(6) ?? "null"}\nconfidence = ${cs?.recoveryConfidence ?? "—"}\nreason = ${cs?.recoveryReason ?? "—"}`}
+                                {`scheduledToday = ${cs?.scheduledToday ?? "—"}\nhasActualData = ${cs?.hasActualDataToday ?? "—"}\nmissStreak = ${cs?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${cs?.missStreak ?? 0}) = ${fmtRaw(cs?.suppressionFactor, 4)}\navgDeviationMin = ${fmtRaw(cs?.avgDeviationMin)}\ndriftPenalty = ${fmtRaw(cs?.driftPenalty, 4)}\ndriftFactor = ${fmtRaw(cs?.driftFactor, 4)}\n\neventFound = ${cs?.recoveryEventFound ?? false}\neventDay = ${cs?.recoveryEventDay ?? "—"}\neventMetric = ${cs?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${cs?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${cs?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${fmtRaw(cs?.recoveryFollowAvgDeviation, 6)}\nrecoveryRaw = ${fmtRaw(cs?.recoveryRaw, 6)}\nrecoverySuppressed = ${fmtRaw(cs?.recoverySuppressed, 6)}\nrecoveryFinal = ${fmtRaw(cs?.recoveryFinal, 6)}\nrecoveryScore = ${fmtRaw(cs?.recoveryScore, 6)}\nconfidence = ${cs?.recoveryConfidence ?? "—"}\nreason = ${cs?.recoveryReason ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1773,7 +1773,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacyRaw = 100×productive/planned = ${co?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${co?.efficiencyScore?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1+1.5×(z4+z5) = ${co?.offBandWeighted ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${co?.continuityScore?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
+                                {`adequacyRaw = 100×productive/planned = ${fmtRaw(co?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(co?.adequacyScore)}\n\nefficiencyRaw = 100×productive/total = ${fmtRaw(co?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(co?.efficiencyScore)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1+1.5×(z4+z5) = ${co?.offBandWeighted ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${fmtRaw(co?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(co?.continuityScore)}\ncontinuityDenominator = ${co?.continuityDenominator ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1810,7 +1810,7 @@ export default function ReportScreen() {
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, marginBottom: 4 }}>Recovery (Outcome-Based)</Text>
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`scheduledToday = ${ls?.scheduledToday ?? "—"}\nhasActualData = ${ls?.hasActualDataToday ?? "—"}\nmissStreak = ${ls?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${ls?.missStreak ?? 0}) = ${ls?.suppressionFactor?.toFixed(4) ?? "—"}\navgDeviationMin = ${fmtRaw(ls?.avgDeviationMin)}\ndriftPenalty = ${ls?.driftPenalty?.toFixed(4) ?? "—"}\ndriftFactor = ${ls?.driftFactor?.toFixed(4) ?? "—"}\n\neventFound = ${ls?.recoveryEventFound ?? false}\neventDay = ${ls?.recoveryEventDay ?? "—"}\neventMetric = ${ls?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${ls?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${ls?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${ls?.recoveryFollowAvgDeviation?.toFixed(6) ?? "—"}\nrecoveryRaw = ${ls?.recoveryRaw?.toFixed(6) ?? "null"}\nrecoverySuppressed = ${ls?.recoverySuppressed?.toFixed(6) ?? "null"}\nrecoveryFinal = ${ls?.recoveryFinal?.toFixed(6) ?? "null"}\nrecoveryScore = ${ls?.recoveryScore?.toFixed(6) ?? "null"}\nconfidence = ${ls?.recoveryConfidence ?? "—"}\nreason = ${ls?.recoveryReason ?? "—"}`}
+                                {`scheduledToday = ${ls?.scheduledToday ?? "—"}\nhasActualData = ${ls?.hasActualDataToday ?? "—"}\nmissStreak = ${ls?.missStreak ?? 0}\nsuppressionFactor = 1/(1+${ls?.missStreak ?? 0}) = ${fmtRaw(ls?.suppressionFactor, 4)}\navgDeviationMin = ${fmtRaw(ls?.avgDeviationMin)}\ndriftPenalty = ${fmtRaw(ls?.driftPenalty, 4)}\ndriftFactor = ${fmtRaw(ls?.driftFactor, 4)}\n\neventFound = ${ls?.recoveryEventFound ?? false}\neventDay = ${ls?.recoveryEventDay ?? "—"}\neventMetric = ${ls?.recoveryEventMetric ?? "—"}\nthresholdUsed = ${ls?.recoveryThresholdUsed ?? "—"}\navailableAfterEvent = ${ls?.recoveryFollowDaysK ?? "—"}\npostEventAvgDeviation = ${fmtRaw(ls?.recoveryFollowAvgDeviation, 6)}\nrecoveryRaw = ${fmtRaw(ls?.recoveryRaw, 6)}\nrecoverySuppressed = ${fmtRaw(ls?.recoverySuppressed, 6)}\nrecoveryFinal = ${fmtRaw(ls?.recoveryFinal, 6)}\nrecoveryScore = ${fmtRaw(ls?.recoveryScore, 6)}\nconfidence = ${ls?.recoveryConfidence ?? "—"}\nreason = ${ls?.recoveryReason ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1840,7 +1840,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`workFrac = ${lo?.workFrac?.toFixed(6) ?? "—"}\nhrEngageFrac = (lz2+lz3)/hrTotal = ${lo?.hrEngageFrac?.toFixed(6) ?? "—"}\n\nadequacyRaw = 100×actual/planned = ${lo?.adequacyScore?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = ${lo?.hrTotalMin != null ? "100×(0.6×workFrac+0.4×hrEngageFrac)" : "100×working/actual"} = ${lo?.efficiencyScore?.toFixed(6) ?? "— (workingMin null)"}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = ${lo?.hrTotalMin != null ? "100×(1−0.5×idle/actual−0.5×lz1/hrTotal)" : "100×(1−idle/actual)"} = ${lo?.continuityScore?.toFixed(6) ?? "— (workingMin null)"}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
+                                {`workFrac = ${fmtRaw(lo?.workFrac, 6)}\nhrEngageFrac = (lz2+lz3)/hrTotal = ${fmtRaw(lo?.hrEngageFrac, 6)}\n\nadequacyRaw = 100×actual/planned = ${fmtRaw(lo?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(lo?.adequacyScore)}\n\nefficiencyRaw = ${lo?.hrTotalMin != null ? "100×(0.6×workFrac+0.4×hrEngageFrac)" : "100×working/actual"} = ${fmtRaw(lo?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(lo?.efficiencyScore)}\n\ncontinuityRaw = ${lo?.hrTotalMin != null ? "100×(1−0.5×idle/actual−0.5×lz1/hrTotal)" : "100×(1−idle/actual)"} = ${fmtRaw(lo?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(lo?.continuityScore)}\ncontinuityDenominator = ${lo?.continuityDenominator ?? "—"}`}
                               </Text>
                             </View>
                           )}
@@ -1905,7 +1905,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacyRaw = 100 × TST/planned = 100 × ${tst}/${planned} = ${adequacyRaw?.toFixed(6) ?? "—"}\nadequacyUI = ${fmtScore100(sb.sleepAdequacyScore)}\n\nefficiency = TST/TIB\nefficiencyFrac = ${sb.sleepEfficiencyFrac?.toFixed(6) ?? "—"}\nefficiencyPct = ${sb.sleepEfficiencyPct?.toFixed(6) ?? "—"}\nefficiencyUI = ${fmtPct(sb.sleepEfficiencyPct)}\n✓ pct == frac×100: ${sb.sleepEfficiencyFrac != null && sb.sleepEfficiencyPct != null ? (Math.abs(sb.sleepEfficiencyPct - sb.sleepEfficiencyFrac * 100) < 0.01 ? "PASS" : "FAIL") : "n/a"} (Δ=${sb.sleepEfficiencyFrac != null && sb.sleepEfficiencyPct != null ? Math.abs(sb.sleepEfficiencyPct - sb.sleepEfficiencyFrac * 100).toFixed(6) : "—"})\n\ncontinuity = 1 − (WASO+0.5×latency)/TIB\nwasoEst = ${sb.wasoEst ?? "—"}\ncontinuityFrac = ${sb.sleepContinuityFrac?.toFixed(6) ?? "—"}\ncontinuityPct = ${sb.sleepContinuityPct?.toFixed(6) ?? "—"}\ncontinuityUI = ${fmtPct(sb.sleepContinuityPct)}\n✓ pct == frac×100: ${sb.sleepContinuityFrac != null && sb.sleepContinuityPct != null ? (Math.abs(sb.sleepContinuityPct - sb.sleepContinuityFrac * 100) < 0.01 ? "PASS" : "FAIL") : "n/a"} (Δ=${sb.sleepContinuityFrac != null && sb.sleepContinuityPct != null ? Math.abs(sb.sleepContinuityPct - sb.sleepContinuityFrac * 100).toFixed(6) : "—"})\ncontinuityDenominator = TIB`}
+                                {`adequacyRaw = 100 × TST/planned = 100 × ${tst}/${planned} = ${fmtRaw(adequacyRaw, 6)}\nadequacyUI = ${fmtScore100(sb.sleepAdequacyScore)}\n\nefficiency = TST/TIB\nefficiencyFrac = ${fmtRaw(sb.sleepEfficiencyFrac, 6)}\nefficiencyPct = ${fmtRaw(sb.sleepEfficiencyPct, 6)}\nefficiencyUI = ${fmtPct(sb.sleepEfficiencyPct)}\n✓ pct == frac×100: ${sb.sleepEfficiencyFrac != null && sb.sleepEfficiencyPct != null ? (Math.abs(sb.sleepEfficiencyPct - sb.sleepEfficiencyFrac * 100) < 0.01 ? "PASS" : "FAIL") : "n/a"} (Δ=${fmtRaw(sb.sleepEfficiencyFrac != null && sb.sleepEfficiencyPct != null ? Math.abs(sb.sleepEfficiencyPct - sb.sleepEfficiencyFrac * 100) : null, 6)})\n\ncontinuity = 1 − (WASO+0.5×latency)/TIB\nwasoEst = ${sb.wasoEst ?? "—"}\ncontinuityFrac = ${fmtRaw(sb.sleepContinuityFrac, 6)}\ncontinuityPct = ${fmtRaw(sb.sleepContinuityPct, 6)}\ncontinuityUI = ${fmtPct(sb.sleepContinuityPct)}\n✓ pct == frac×100: ${sb.sleepContinuityFrac != null && sb.sleepContinuityPct != null ? (Math.abs(sb.sleepContinuityPct - sb.sleepContinuityFrac * 100) < 0.01 ? "PASS" : "FAIL") : "n/a"} (Δ=${fmtRaw(sb.sleepContinuityFrac != null && sb.sleepContinuityPct != null ? Math.abs(sb.sleepContinuityPct - sb.sleepContinuityFrac * 100) : null, 6)})\ncontinuityDenominator = TIB`}
                               </Text>
                             </View>
                           )}
@@ -2108,7 +2108,7 @@ export default function ReportScreen() {
                       7-day Rolling Average {proxyImputed ? "(incl. imputed)" : "(measured only)"}
                     </Text>
                     <Text style={{ fontSize: 28, fontFamily: "Rubik_700Bold", color: "#8B5CF6" }}>
-                      {proxyData[proxyData.length - 1]?.proxy7dAvg?.toFixed(1) ?? proxyData[proxyData.length - 1]?.proxyScore?.toFixed(1) ?? "--"}
+                      {fmtVal(proxyData[proxyData.length - 1]?.proxy7dAvg, 1) !== "--" ? fmtVal(proxyData[proxyData.length - 1]?.proxy7dAvg, 1) : fmtVal(proxyData[proxyData.length - 1]?.proxyScore, 1)}
                     </Text>
                   </View>
                   <WeightChart
