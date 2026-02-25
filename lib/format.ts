@@ -44,8 +44,8 @@ export function fmtVal(x: number | null | undefined, decimals: number = 1, fallb
 }
 
 export function fmtInt(x: number | null | undefined, fallback: string = "—"): string {
-  if (x == null) return fallback;
-  return x.toFixed(0);
+  if (x == null || !Number.isFinite(x)) return fallback;
+  return String(Math.round(x));
 }
 
 export function fmtPctInt(x: number | null | undefined): string {
