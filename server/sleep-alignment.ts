@@ -375,8 +375,12 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     sleepAdequacyScore = clamp(100 * timeAsleepMin / plannedSleepMin, 0, 110);
   }
 
-  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && awakeInBedMin != null)
-    ? clamp(100 * (1 - awakeInBedMin / timeInBedMin), 0, 100)
+  const wasoEst: number | null = (awakeInBedMin != null && latencyMin != null)
+    ? Math.max(awakeInBedMin - latencyMin, 0)
+    : (wasoMin ?? null);
+
+  const sleepContinuityPct: number | null = (timeInBedMin != null && timeInBedMin > 0 && wasoEst != null)
+    ? clamp(100 * (1 - wasoEst / timeInBedMin), 0, 100)
     : null;
 
   const sleepContinuity: number | null = sleepContinuityPct != null ? sleepContinuityPct / 100 : null;
@@ -459,6 +463,7 @@ export async function computeSleepBlock(date: string, userId: string = DEFAULT_U
     fitbitVsReportedDeltaMin,
     latencyMin,
     wasoMin,
+    wasoEst,
     awakeInBedMin,
     tossTurnMin,
     sleepEfficiency,
