@@ -251,6 +251,10 @@ export default function LogScreen() {
   const [perfNote, setPerfNote] = useState("");
   const [adherence, setAdherence] = useState(1.0);
   const [notes, setNotes] = useState("");
+  const [mealChecklist, setMealChecklist] = useState<Record<string, boolean>>({
+    preCardio: false, postCardio: false, midday: false,
+    preLift: false, postLift: false, evening: false,
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [erectionBadges, setErectionBadges] = useState<Record<string, "measured" | "imputed">>({});
@@ -469,6 +473,10 @@ export default function LogScreen() {
       setAdherence(existing.adherence ?? 1);
       setNotes(existing.notes || "");
       setPain010(existing.pain010 != null ? Number(existing.pain010) : null);
+      setMealChecklist(existing.mealChecklist ?? {
+        preCardio: false, postCardio: false, midday: false,
+        preLift: false, postLift: false, evening: false,
+      });
       setFitbitData({
         sleepMinutes: existing.sleepMinutes,
         activeZoneMinutes: existing.activeZoneMinutes,
@@ -772,6 +780,10 @@ export default function LogScreen() {
     setNocturnalDuration("");
     setFirmnessAvg("");
     setPain010(null);
+    setMealChecklist({
+      preCardio: false, postCardio: false, midday: false,
+      preLift: false, postLift: false, evening: false,
+    });
     setZone1("");
     setZone2("");
     setZone3("");
@@ -861,6 +873,7 @@ export default function LogScreen() {
         ohpReps: ohpReps ? parseInt(ohpReps, 10) : undefined,
         ohpWeightLb: ohpWeight ? parseFloat(ohpWeight) : undefined,
         pain010: pain010 ?? undefined,
+        mealChecklist: Object.values(mealChecklist).some(v => v) ? mealChecklist : undefined,
       };
 
       await saveEntry(entry);
@@ -987,6 +1000,41 @@ export default function LogScreen() {
         bottomOffset={80}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionLabel}>Meal Execution</Text>
+          {([
+            ["preCardio", "Pre-cardio"],
+            ["postCardio", "Post-cardio"],
+            ["midday", "Midday"],
+            ["preLift", "Pre-lift"],
+            ["postLift", "Post-lift"],
+            ["evening", "Evening"],
+          ] as const).map(([key, label]) => (
+            <Pressable
+              key={key}
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.selectionAsync();
+                setMealChecklist(prev => ({ ...prev, [key]: !prev[key] }));
+              }}
+              style={styles.mealCheckRow}
+            >
+              <Ionicons
+                name={mealChecklist[key] ? "checkbox" : "square-outline"}
+                size={22}
+                color={mealChecklist[key] ? Colors.primary : Colors.textTertiary}
+              />
+              <Text style={[styles.mealCheckLabel, mealChecklist[key] && styles.mealCheckLabelDone]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+          <View style={styles.mealCheckSummary}>
+            <Text style={styles.mealCheckSummaryText}>
+              Execution: {Object.values(mealChecklist).filter(Boolean).length} / 6 complete
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Weight</Text>
           <InputField
@@ -2501,6 +2549,32 @@ const styles = StyleSheet.create({
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
     marginBottom: 12,
+  },
+  mealCheckRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  mealCheckLabel: {
+    fontSize: 15,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.text,
+  },
+  mealCheckLabelDone: {
+    color: Colors.primary,
+    fontFamily: "Rubik_500Medium",
+  },
+  mealCheckSummary: {
+    marginTop: 10,
+    paddingTop: 4,
+  },
+  mealCheckSummaryText: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.textSecondary,
   },
   inputGroup: {
     marginBottom: 12,

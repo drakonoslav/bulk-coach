@@ -742,6 +742,10 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_hpa_user_date ON hpa_activation_daily(user_id, date);
   `);
+
+  await runMigration('014_meal_checklist', `
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS meal_checklist JSONB;
+  `);
 }
 
 export { pool };

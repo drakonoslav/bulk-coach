@@ -72,6 +72,7 @@ export interface DailyEntry {
   ohpReps?: number;
   ohpWeightLb?: number;
   pain010?: number;
+  mealChecklist?: Record<string, boolean>;
 }
 
 export interface CardioFuel {

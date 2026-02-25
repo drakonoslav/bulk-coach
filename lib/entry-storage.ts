@@ -197,5 +197,6 @@ function rowToEntry(row: any): DailyEntry {
     ohpReps: row.ohpReps != null ? Number(row.ohpReps) : undefined,
     ohpWeightLb: row.ohpWeightLb != null ? Number(row.ohpWeightLb) : undefined,
     pain010: row.pain010 != null ? Number(row.pain010) : undefined,
+    mealChecklist: row.mealChecklist ?? undefined,
   };
 }
