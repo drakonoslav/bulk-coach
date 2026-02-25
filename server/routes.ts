@@ -1474,7 +1474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn(`[recovery-shape-violation] date=${date}:`, recoveryShapeChecks.join("; "));
       }
 
-      const sleepDomainOutcome = toDomainOutcomeSleep({
+      const sleepDomainOutcome_ = toDomainOutcomeSleep({
         dateISO: date,
         scheduledToday: schedStab.scheduledToday,
         scheduledTodayReason: schedStab.scheduledTodayReason,
@@ -1485,9 +1485,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         ...result,
-        sleepBlock,
+        sleepBlock: { ...sleepBlock, domainOutcome: sleepDomainOutcome_ },
         sleepTrending,
-        sleepDomainOutcome,
         adherence: {
           alignmentScore: sa?.alignmentScore ?? null,
           bedDevMin: sa?.bedDeviationMin ?? null,
