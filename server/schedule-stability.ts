@@ -92,6 +92,11 @@ export async function computeScheduleStability(
     [userId, date],
   );
 
+  console.log(`[schedStab] query returned ${rows.length} rows for date=${date}, user=${userId}, plannedBed=${plannedBed}, plannedWake=${plannedWake}`);
+  if (rows.length > 0) {
+    console.log(`[schedStab] rows: ${JSON.stringify(rows.map((r: any) => ({ day: r.day, bed: r.actual_bed_time, wake: r.actual_wake_time })))}`);
+  }
+
   const plannedBedMin = toMin(plannedBed);
   const plannedWakeMin = toMin(plannedWake);
 
@@ -115,12 +120,17 @@ export async function computeScheduleStability(
   let scheduleConsistencySdMin: number | null = null;
   const scheduleConsistencyNSamples = last7.length;
 
+  console.log(`[schedStab] allDays=${allDays.length}, last7=${last7.length}, nSamples=${scheduleConsistencyNSamples}`);
+
   if (last7.length >= 4) {
     const mags = last7.map((d) => d.driftMag);
     const sd = stddevPop(mags);
     const CONSISTENCY_SD_CAP = 60;
     scheduleConsistencySdMin = Math.round(sd * 100) / 100;
     scheduleConsistencyScore = clamp(Math.round(100 * (1 - sd / CONSISTENCY_SD_CAP)), 0, 100);
+    console.log(`[schedStab] consistency: sd=${sd.toFixed(2)}, score=${scheduleConsistencyScore}`);
+  } else {
+    console.log(`[schedStab] consistency: SKIPPED (need >=4, have ${last7.length})`);
   }
 
   let scheduleRecoveryScore: number | null = null;
