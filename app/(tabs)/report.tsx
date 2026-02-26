@@ -583,6 +583,7 @@ export default function ReportScreen() {
   const [debugCardioOutcomeExpanded, setDebugCardioOutcomeExpanded] = useState(false);
   const [debugLiftSchedExpanded, setDebugLiftSchedExpanded] = useState(false);
   const [debugLiftOutcomeExpanded, setDebugLiftOutcomeExpanded] = useState(false);
+  const [debugAdaptationExpanded, setDebugAdaptationExpanded] = useState(false);
   const [readiness, setReadiness] = useState<{
     readinessScore: number;
     readinessTier: string;
@@ -895,6 +896,21 @@ export default function ReportScreen() {
                   </View>
                 </View>
               </View>
+              {__DEV__ && (
+                <Pressable onPress={() => setDebugAdaptationExpanded(p => !p)} style={{ marginBottom: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#6B7280" }}>Adaptation debug</Text>
+                    <Ionicons name={debugAdaptationExpanded ? "chevron-up" : "chevron-down"} size={12} color="#6B7280" />
+                  </View>
+                </Pressable>
+              )}
+              {debugAdaptationExpanded && (
+                <View style={{ backgroundColor: "#1F293718", borderRadius: 6, padding: 8, marginBottom: 6 }}>
+                  <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#9CA3AF" }}>
+                    {`trainingAgeDays: ${modeClass.adaptation.debug.trainingAgeDays ?? "—"}\nconsistency4w: ${modeClass.adaptation.debug.consistency4w != null ? modeClass.adaptation.debug.consistency4w.toFixed(2) : "—"}\npctPerWeek: ${modeClass.adaptation.debug.pctPerWeek != null ? modeClass.adaptation.debug.pctPerWeek.toFixed(4) : "—"}\nsPhase: ${modeClass.adaptation.debug.sPhasePhase ?? "—"}\nplateauCondition: ${modeClass.adaptation.debug.plateauCondition ?? "none"}\nsiDelta14d: ${modeClass.adaptation.debug.siDelta14d != null ? modeClass.adaptation.debug.siDelta14d.toFixed(6) : "—"}\nprRecent14d: ${modeClass.adaptation.debug.prRecent14d != null ? modeClass.adaptation.debug.prRecent14d.toFixed(4) : "—"}\nprPrior14d: ${modeClass.adaptation.debug.prPrior14d != null ? modeClass.adaptation.debug.prPrior14d.toFixed(4) : "—"}`}
+                  </Text>
+                </View>
+              )}
               {modeClass.waistWarning.active && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, backgroundColor: "#FBBF2418", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
                   <Ionicons name="warning" size={13} color="#FBBF24" />

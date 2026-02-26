@@ -24,6 +24,7 @@ describe("classifyAdaptationStage", () => {
     const r = classifyAdaptationStage([], baselines);
     expect(r.stage).toBe("INSUFFICIENT_DATA");
     expect(r.noveltyScore).toBeNull();
+    expect(r.debug.trainingAgeDays).toBeNull();
   });
 
   it("returns INSUFFICIENT_DATA with <2 strength sessions in 14d", () => {
@@ -50,6 +51,7 @@ describe("classifyAdaptationStage", () => {
       expect(r.noveltyScore).not.toBeNull();
       expect(r.noveltyScore!).toBeGreaterThan(0);
       expect(r.trainingAgeDays).toBeLessThanOrEqual(90);
+      expect(r.debug.sPhasePhase).toMatch(/NEURAL_REBOUND|LATE_NEURAL/);
     } else {
       expect(["NOVELTY_WINDOW", "STANDARD_HYPERTROPHY"]).toContain(r.stage);
     }
@@ -70,9 +72,10 @@ describe("classifyAdaptationStage", () => {
     const r = classifyAdaptationStage(entries, baselines);
     expect(r.stage).toBe("STANDARD_HYPERTROPHY");
     expect(r.label).toBe("Standard");
+    expect(r.debug.plateauCondition).toBeNull();
   });
 
-  it("classifies PLATEAU_RISK: post-novelty, consistent, stalled velocity", () => {
+  it("classifies PLATEAU_RISK via PR stagnation (condA), not %/wk", () => {
     const entries: DailyEntry[] = [];
     for (let i = 0; i < 120; i++) {
       entries.push(makeDay(daysAgo(120 - i), {
@@ -84,6 +87,20 @@ describe("classifyAdaptationStage", () => {
     expect(r.stage).toBe("PLATEAU_RISK");
     expect(r.label).toBe("Plateau risk");
     expect(r.noveltyScore).not.toBeNull();
+    expect(r.debug.plateauCondition).not.toBeNull();
+    expect(["A_no_pr_improvement", "B_absolute_si_floor"]).toContain(r.debug.plateauCondition);
+  });
+
+  it("does NOT flag PLATEAU_RISK for intermediate with clear PR improvement each 14d window", () => {
+    const entries: DailyEntry[] = [];
+    for (let i = 0; i < 120; i++) {
+      entries.push(makeDay(daysAgo(120 - i), {
+        pushupsReps: Math.round(20 + i * 0.08),
+        pullupsReps: Math.round(10 + i * 0.04),
+      }));
+    }
+    const r = classifyAdaptationStage(entries, baselines);
+    expect(r.stage).not.toBe("PLATEAU_RISK");
   });
 
   it("returns INSUFFICIENT_DATA when strength velocity is null", () => {
@@ -123,5 +140,20 @@ describe("classifyAdaptationStage", () => {
       expect(r30.noveltyScore).toBeGreaterThanOrEqual(r90.noveltyScore);
       expect(r90.noveltyScore).toBeGreaterThanOrEqual(r180.noveltyScore);
     }
+  });
+
+  it("debug object is always populated", () => {
+    const entries: DailyEntry[] = [];
+    for (let i = 0; i < 30; i++) {
+      entries.push(makeDay(daysAgo(30 - i), {
+        pushupsReps: 30 + i,
+        pullupsReps: 15,
+      }));
+    }
+    const r = classifyAdaptationStage(entries, baselines);
+    expect(r.debug).toBeDefined();
+    expect(r.debug.trainingAgeDays).not.toBeNull();
+    expect(r.debug.consistency4w).not.toBeNull();
+    expect(r.debug.sPhasePhase).not.toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import type { DailyEntry } from "./coaching-engine";
 import type { StrengthBaselines } from "./strength-index";
-import { classifyStrengthPhase, strengthVelocity14d } from "./strength-index";
+import { classifyStrengthPhase, strengthVelocity14d, computeDayStrengthIndex } from "./strength-index";
 
 export type AdaptationStage =
   | "INSUFFICIENT_DATA"
@@ -9,6 +9,19 @@ export type AdaptationStage =
   | "ADVANCED_SLOW_GAIN"
   | "PLATEAU_RISK";
 
+export type PlateauCondition = "A_no_pr_improvement" | "B_absolute_si_floor" | null;
+
+export interface AdaptationDebug {
+  trainingAgeDays: number | null;
+  consistency4w: number | null;
+  pctPerWeek: number | null;
+  sPhasePhase: string | null;
+  plateauCondition: PlateauCondition;
+  siDelta14d: number | null;
+  prRecent14d: number | null;
+  prPrior14d: number | null;
+}
+
 export interface AdaptationResult {
   stage: AdaptationStage;
   label: string;
@@ -16,7 +29,10 @@ export interface AdaptationResult {
   consistency4w: number | null;
   noveltyScore: number | null;
   reasons: string[];
+  debug: AdaptationDebug;
 }
+
+const SI_ABSOLUTE_FLOOR = 0.005;
 
 function parseDate(s: string): Date {
   return new Date(s + "T00:00:00");
@@ -84,6 +100,40 @@ function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
 
+function bestSiInWindow(
+  entries: DailyEntry[],
+  baselines: StrengthBaselines,
+  startDay: Date,
+  endDay: Date,
+): number | null {
+  let best: number | null = null;
+  for (const e of entries) {
+    const d = parseDate(e.day);
+    if (d < startDay || d > endDay) continue;
+    if (!isStrengthSession(e)) continue;
+    const si = computeDayStrengthIndex(e, baselines);
+    if (si.strengthIndexRaw != null) {
+      if (best == null || si.strengthIndexRaw > best) {
+        best = si.strengthIndexRaw;
+      }
+    }
+  }
+  return best;
+}
+
+function makeDebug(
+  trainingAgeDays: number | null,
+  consistency4w: number | null,
+  pctPerWeek: number | null,
+  sPhasePhase: string | null,
+  plateauCondition: PlateauCondition = null,
+  siDelta14d: number | null = null,
+  prRecent14d: number | null = null,
+  prPrior14d: number | null = null,
+): AdaptationDebug {
+  return { trainingAgeDays, consistency4w, pctPerWeek, sPhasePhase, plateauCondition, siDelta14d, prRecent14d, prPrior14d };
+}
+
 export function classifyAdaptationStage(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
@@ -91,7 +141,7 @@ export function classifyAdaptationStage(
   const reasons: string[] = [];
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
   if (sorted.length === 0) {
-    return { stage: "INSUFFICIENT_DATA", label: "Data-poor", trainingAgeDays: null, consistency4w: null, noveltyScore: null, reasons: ["No entries"] };
+    return { stage: "INSUFFICIENT_DATA", label: "Data-poor", trainingAgeDays: null, consistency4w: null, noveltyScore: null, reasons: ["No entries"], debug: makeDebug(null, null, null, null) };
   }
 
   const sessions14d = sessionsInLastNDays(sorted, 14);
@@ -106,6 +156,7 @@ export function classifyAdaptationStage(
       consistency4w,
       noveltyScore: null,
       reasons: ["Need ≥2 strength sessions in 14d to classify adaptation stage"],
+      debug: makeDebug(trainingAgeDays, consistency4w, null, null),
     };
   }
 
@@ -121,6 +172,7 @@ export function classifyAdaptationStage(
       consistency4w,
       noveltyScore: null,
       reasons: ["Strength velocity unavailable — cannot classify adaptation stage"],
+      debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase),
     };
   }
 
@@ -134,19 +186,51 @@ export function classifyAdaptationStage(
 
   if (inNoveltyAge && isConsistent && (sPhase.phase === "NEURAL_REBOUND" || sPhase.phase === "LATE_NEURAL")) {
     reasons.push("Training age ≤90d + consistent + neural-phase strength acceleration");
-    return { stage: "NOVELTY_WINDOW", label: "Novelty", trainingAgeDays, consistency4w, noveltyScore, reasons };
+    return { stage: "NOVELTY_WINDOW", label: "Novelty", trainingAgeDays, consistency4w, noveltyScore, reasons, debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase) };
   }
 
   if (trainingAgeDays > 365 && sPhase.phase === "HYPERTROPHY_PROGRESS") {
     reasons.push("Training age >1y + progress phase ⇒ slower gains expected");
-    return { stage: "ADVANCED_SLOW_GAIN", label: "Advanced", trainingAgeDays, consistency4w, noveltyScore, reasons };
+    return { stage: "ADVANCED_SLOW_GAIN", label: "Advanced", trainingAgeDays, consistency4w, noveltyScore, reasons, debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase) };
   }
 
-  if (trainingAgeDays > 90 && sPhase.phase === "STALL_OR_FATIGUE" && isConsistent) {
-    reasons.push("Post-novelty + consistent training + stalled/flat strength velocity");
-    return { stage: "PLATEAU_RISK", label: "Plateau risk", trainingAgeDays, consistency4w, noveltyScore, reasons };
+  if (trainingAgeDays > 90 && isConsistent) {
+    const latest = parseDate(sorted[sorted.length - 1].day);
+    const mid = new Date(latest);
+    mid.setDate(mid.getDate() - 14);
+    const prior = new Date(latest);
+    prior.setDate(prior.getDate() - 28);
+
+    const prRecent14d = bestSiInWindow(sorted, baselines, mid, latest);
+    const prPrior14d = bestSiInWindow(sorted, baselines, prior, mid);
+
+    const siDelta14d = sV != null ? Math.round((sV.si7dToday - sV.si7d14dAgo) * 10000) / 10000 : null;
+
+    let plateauCondition: PlateauCondition = null;
+
+    const condA = prRecent14d != null && prPrior14d != null && prRecent14d <= prPrior14d;
+    const condB = siDelta14d != null && Math.abs(siDelta14d) < SI_ABSOLUTE_FLOOR;
+
+    if (condA) plateauCondition = "A_no_pr_improvement";
+    if (condB && !condA) plateauCondition = "B_absolute_si_floor";
+
+    if (condA || condB) {
+      const detail = condA
+        ? `PR stagnant: recent=${prRecent14d?.toFixed(4)} ≤ prior=${prPrior14d?.toFixed(4)}`
+        : `SI delta below floor: ΔSI=${siDelta14d?.toFixed(4)} < ${SI_ABSOLUTE_FLOOR}`;
+      reasons.push(`Post-novelty + consistent + ${detail}`);
+      return {
+        stage: "PLATEAU_RISK",
+        label: "Plateau risk",
+        trainingAgeDays,
+        consistency4w,
+        noveltyScore,
+        reasons,
+        debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase, plateauCondition, siDelta14d, prRecent14d, prPrior14d),
+      };
+    }
   }
 
   reasons.push("Default: stable regime");
-  return { stage: "STANDARD_HYPERTROPHY", label: "Standard", trainingAgeDays, consistency4w, noveltyScore, reasons };
+  return { stage: "STANDARD_HYPERTROPHY", label: "Standard", trainingAgeDays, consistency4w, noveltyScore, reasons, debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase) };
 }
