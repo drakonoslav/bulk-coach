@@ -331,6 +331,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "day and morningWeightLb required" });
       }
 
+      console.log("[upsert-debug] strength fields:", JSON.stringify({
+        day: b.day,
+        pushupsReps: b.pushupsReps,
+        pullupsReps: b.pullupsReps,
+        benchReps: b.benchReps,
+        benchWeightLb: b.benchWeightLb,
+        ohpReps: b.ohpReps,
+        ohpWeightLb: b.ohpWeightLb,
+      }));
+
       const bfMorningPct = avgOfThree(b.bfMorningR1, b.bfMorningR2, b.bfMorningR3);
       const bfEveningPct = avgOfThree(b.bfEveningR1, b.bfEveningR2, b.bfEveningR3);
 
