@@ -64,7 +64,7 @@ function computeConsistency4w(entries: DailyEntry[]): number | null {
   const weeks: number[] = [];
   for (let w = 0; w < 4; w++) {
     const end = new Date(latest);
-    end.setDate(end.getDate() - (w * 7));
+    end.setDate(end.getDate() - (w * 7) + 1);
     const start = new Date(end);
     start.setDate(start.getDate() - 7);
 
@@ -112,6 +112,17 @@ export function classifyAdaptationStage(
   const sV = strengthVelocity14d(sorted, baselines);
   const pctPerWeek = sV?.pctPerWeek ?? null;
   const sPhase = classifyStrengthPhase(pctPerWeek);
+
+  if (sPhase.phase === "INSUFFICIENT_DATA") {
+    return {
+      stage: "INSUFFICIENT_DATA",
+      label: "Data-poor",
+      trainingAgeDays,
+      consistency4w,
+      noveltyScore: null,
+      reasons: ["Strength velocity unavailable — cannot classify adaptation stage"],
+    };
+  }
 
   const ageFactor = Math.exp(-trainingAgeDays / 90);
   const strengthFactor = clamp(((pctPerWeek ?? 0) / 6), 0, 1);

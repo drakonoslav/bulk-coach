@@ -2,6 +2,8 @@ import type { DailyEntry } from "./coaching-engine";
 import { ffmVelocity14d, ffmRollingAvg, weightVelocity14d } from "./coaching-engine";
 import type { StrengthBaselines, StrengthVelocityResult } from "./strength-index";
 import { strengthVelocity14d, swapPenaltyMultiplier } from "./strength-index";
+import type { AdaptationResult } from "./adaptation-stage";
+import { classifyAdaptationStage } from "./adaptation-stage";
 
 export interface FfmSignalQuality {
   score: number;
@@ -61,6 +63,7 @@ export interface ModeClassification {
   trainingPhase: TrainingPhase;
   waistWarning: WaistWarning;
   strengthPlateau: StrengthPlateau;
+  adaptation: AdaptationResult;
 }
 
 export interface CalorieAction {
@@ -419,6 +422,7 @@ export function classifyMode(
 
   const trainingPhase = detectTrainingPhase(entries, baselines);
   const waistWarning = detectWaistWarning(waistVel);
+  const adaptation = classifyAdaptationStage(entries, baselines);
 
   const reasons: string[] = [];
 
@@ -436,6 +440,7 @@ export function classifyMode(
       trainingPhase,
       waistWarning,
       strengthPlateau: plateau,
+      adaptation,
       reasons: ["Insufficient measurement confidence (SCS < 60)", "Log more frequently: FFM 4x/wk, waist 3x/wk, strength 2x/wk"],
       calorieAction: { delta: 0, reason: "Hold calories — need more data", priority: "low" },
     };
@@ -475,7 +480,7 @@ export function classifyMode(
       color: "#34D399",
       confidence: scs.total,
       ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
-      trainingPhase, waistWarning, strengthPlateau: plateau,
+      trainingPhase, waistWarning, strengthPlateau: plateau, adaptation,
       reasons,
       calorieAction,
     };
@@ -512,7 +517,7 @@ export function classifyMode(
       color: "#FBBF24",
       confidence: scs.total,
       ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
-      trainingPhase, waistWarning, strengthPlateau: plateau,
+      trainingPhase, waistWarning, strengthPlateau: plateau, adaptation,
       reasons,
       calorieAction,
     };
@@ -548,7 +553,7 @@ export function classifyMode(
       color: "#F87171",
       confidence: scs.total,
       ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
-      trainingPhase, waistWarning, strengthPlateau: plateau,
+      trainingPhase, waistWarning, strengthPlateau: plateau, adaptation,
       reasons,
       calorieAction,
     };
@@ -575,7 +580,7 @@ export function classifyMode(
     color: "#6B7280",
     confidence: scs.total,
     ffmVelocity: ffmVel, waistVelocity: waistVel, strengthVelocityPct: strengthPct, weightVelocity: weightVel,
-    trainingPhase, waistWarning, strengthPlateau: fallbackPlateau,
+    trainingPhase, waistWarning, strengthPlateau: fallbackPlateau, adaptation,
     reasons,
     calorieAction: fallbackAction,
   };

@@ -870,6 +870,24 @@ export default function ReportScreen() {
                       {modeClass.trainingPhase === "hypertrophy" ? "Hypertrophy" : "Neural"}
                     </Text>
                   </View>
+                  <View style={{ backgroundColor: "#0EA5E930", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text
+                      testID="mode-banner-adaptation"
+                      style={{
+                        fontSize: 10,
+                        fontFamily: "Rubik_500Medium",
+                        color:
+                          modeClass.adaptation.stage === "NOVELTY_WINDOW" ? "#22C55E" :
+                          modeClass.adaptation.stage === "PLATEAU_RISK" ? "#F87171" :
+                          modeClass.adaptation.stage === "ADVANCED_SLOW_GAIN" ? "#A78BFA" :
+                          modeClass.adaptation.stage === "STANDARD_HYPERTROPHY" ? "#93C5FD" :
+                          "#9CA3AF"
+                      }}
+                    >
+                      {modeClass.adaptation.label}
+                      {modeClass.adaptation.noveltyScore != null ? ` ${modeClass.adaptation.noveltyScore}/100` : ""}
+                    </Text>
+                  </View>
                   <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <Text testID="mode-banner-scs" style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
                       {scs.total}/100
