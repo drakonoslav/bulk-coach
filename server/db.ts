@@ -4,6 +4,10 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+pool.on("error", (err) => {
+  console.error("Unexpected PG pool error:", err.message);
+});
+
 export async function runMigration(name: string, sql: string): Promise<void> {
   const { rows } = await pool.query(
     `SELECT id FROM schema_migrations WHERE name = $1`,
