@@ -807,6 +807,56 @@ export default function ReportScreen() {
 
   const hasStrengthBaselines = strengthBaselines.pushups != null || strengthBaselines.pullups != null || strengthBaselines.benchBarReps != null || strengthBaselines.ohpBarReps != null;
 
+  const hasStrengthEntry = (e: any) =>
+    e.pushupsReps != null || e.pullupsReps != null || e.benchReps != null || e.ohpReps != null;
+
+  const strengthEntriesSorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+  const strengthEntries28 = strengthEntriesSorted.slice(-28).filter(hasStrengthEntry);
+  const shouldShowStrengthSection = strengthEntries28.length >= 2 || siChartData.length >= 2 || svChartData.length >= 2;
+
+  const rawStrengthTrend = (() => {
+    const window = strengthEntriesSorted.slice(-28);
+
+    const firstNonNull = <T,>(arr: T[], getter: (x: T) => number | null | undefined) => {
+      for (const item of arr) {
+        const v = getter(item);
+        if (v != null && Number.isFinite(v)) return Number(v);
+      }
+      return null;
+    };
+
+    const benchE1rm = (e: any) => {
+      if (e.benchReps == null) return null;
+      const w = e.benchWeightLb ?? 45;
+      return w * (1 + (Number(e.benchReps) / 30));
+    };
+    const ohpE1rm = (e: any) => {
+      if (e.ohpReps == null) return null;
+      const w = e.ohpWeightLb ?? 45;
+      return w * (1 + (Number(e.ohpReps) / 30));
+    };
+
+    const basePush = firstNonNull(window, (e: any) => e.pushupsReps);
+    const basePull = firstNonNull(window, (e: any) => e.pullupsReps);
+    const baseBench = firstNonNull(window, benchE1rm);
+    const baseOhp = firstNonNull(window, ohpE1rm);
+
+    const points = window.map((e: any) => {
+      const ratios: number[] = [];
+      if (e.pushupsReps != null && basePush != null && basePush > 0) ratios.push(Number(e.pushupsReps) / basePush);
+      if (e.pullupsReps != null && basePull != null && basePull > 0) ratios.push(Number(e.pullupsReps) / basePull);
+      const b = benchE1rm(e);
+      if (b != null && baseBench != null && baseBench > 0) ratios.push(b / baseBench);
+      const o = ohpE1rm(e);
+      if (o != null && baseOhp != null && baseOhp > 0) ratios.push(o / baseOhp);
+      if (ratios.length === 0) return null;
+      const avg = ratios.reduce((s, v) => s + v, 0) / ratios.length;
+      return { day: e.day, value: avg };
+    }).filter(Boolean) as Array<{ day: string; value: number }>;
+
+    return points;
+  })();
+
   const hasEnoughData = entries.length >= 7;
   const daysWithWeight = entries.filter(e => e.morningWeightLb != null).length;
   const allVelocitiesNull = modeClass.ffmVelocity == null && modeClass.waistVelocity == null && modeClass.strengthVelocityPct == null;
@@ -1268,7 +1318,7 @@ export default function ReportScreen() {
               </View>
             ) : null}
 
-            {(siChartData.length >= 2 || svChartData.length >= 2) && (
+            {shouldShowStrengthSection && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
                 {strengthPhase.phase !== "INSUFFICIENT_DATA" && (
@@ -1285,7 +1335,7 @@ export default function ReportScreen() {
                 )}
                 <View style={styles.lgrCard}>
                   <View style={styles.lgrContent}>
-                    {siChartData.length >= 2 && (
+                    {siChartData.length >= 2 ? (
                       <View>
                         <Text style={[styles.lgrLabel, { marginBottom: 4 }]}>StrengthIndex (7d Rolling Avg)</Text>
                         <View style={{ flexDirection: "row", gap: 12, marginBottom: 8 }}>
@@ -1304,6 +1354,37 @@ export default function ReportScreen() {
                           markers={phaseMarkers}
                           yFormat={(v) => fmtRaw(v, 3)}
                         />
+                      </View>
+                    ) : (
+                      <View>
+                        <Text style={[styles.lgrLabel, { marginBottom: 6 }]}>
+                          Strength Trend (raw, normalized)
+                        </Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 10 }}>
+                          Baselines not ready. Showing normalized trend from raw entries.
+                        </Text>
+                        {rawStrengthTrend.length >= 2 ? (
+                          <StrengthLineChart
+                            data={rawStrengthTrend}
+                            lineColor="#F59E0B"
+                            markers={phaseMarkers}
+                            yFormat={(v) => fmtRaw(v, 3)}
+                          />
+                        ) : (
+                          <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                            Not enough strength points to chart yet.
+                          </Text>
+                        )}
+                        {!hasStrengthBaselines && (
+                          <View style={{ marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: "#F59E0B10", borderWidth: 1, borderColor: "#F59E0B30" }}>
+                            <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "#F59E0B" }}>
+                              Baselines missing
+                            </Text>
+                            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 4 }}>
+                              Save 7 strength days to auto-compute baselines. Once present, StrengthIndex + velocities appear automatically.
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     )}
                     {siNormalized.length >= 2 && (

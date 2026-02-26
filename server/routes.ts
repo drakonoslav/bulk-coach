@@ -590,17 +590,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
             const allEntries = allRows.map(snakeToCamel);
             const sorted = [...allEntries].sort((a: any, b: any) => a.day.localeCompare(b.day));
-            const first7 = sorted.slice(0, 7);
             const avgFn = (vals: number[]) => vals.length > 0 ? vals.reduce((s: number, v: number) => s + v, 0) / vals.length : null;
-            const pushups = avgFn(first7.filter((e: any) => e.pushupsReps != null).map((e: any) => e.pushupsReps));
-            const pullups = avgFn(first7.filter((e: any) => e.pullupsReps != null).map((e: any) => e.pullupsReps));
-            const benchBarReps = avgFn(first7.filter((e: any) => e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)).map((e: any) => e.benchReps));
-            const ohpBarReps = avgFn(first7.filter((e: any) => e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)).map((e: any) => e.ohpReps));
+            const firstN = (arr: any[], n: number) => arr.slice(0, n);
+
+            const pushupsDays = firstN(sorted.filter((e: any) => e.pushupsReps != null), 7);
+            const pullupsDays = firstN(sorted.filter((e: any) => e.pullupsReps != null), 7);
+            const benchBarDays = firstN(sorted.filter((e: any) =>
+              e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)
+            ), 7);
+            const ohpBarDays = firstN(sorted.filter((e: any) =>
+              e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)
+            ), 7);
+
+            const pushups = avgFn(pushupsDays.map((e: any) => e.pushupsReps));
+            const pullups = avgFn(pullupsDays.map((e: any) => e.pullupsReps));
+            const benchBarReps = avgFn(benchBarDays.map((e: any) => e.benchReps));
+            const ohpBarReps = avgFn(ohpBarDays.map((e: any) => e.ohpReps));
             const exercises = [
-              { name: "pushups", val: pushups, type: "reps" },
-              { name: "pullups", val: pullups, type: "reps" },
-              { name: "bench_bar_reps", val: benchBarReps, type: "reps" },
-              { name: "ohp_bar_reps", val: ohpBarReps, type: "reps" },
+              { name: "pushups", val: pushups, type: "reps", days: pushupsDays.length },
+              { name: "pullups", val: pullups, type: "reps", days: pullupsDays.length },
+              { name: "bench_bar_reps", val: benchBarReps, type: "reps", days: benchBarDays.length },
+              { name: "ohp_bar_reps", val: ohpBarReps, type: "reps", days: ohpBarDays.length },
             ];
             for (const ex of exercises) {
               if (ex.val != null) {
@@ -612,7 +622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                      baseline_type = EXCLUDED.baseline_type,
                      computed_from_days = EXCLUDED.computed_from_days,
                      updated_at = NOW()`,
-                  [userId, ex.name, Math.round(ex.val * 10) / 10, ex.type, first7.length],
+                  [userId, ex.name, Math.round(ex.val * 10) / 10, ex.type, ex.days],
                 );
               }
             }
@@ -3649,7 +3659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/strength/baselines/compute", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const maxDays = req.body.maxDays ?? 7;
+      const maxDays = req.body?.maxDays ?? 7;
       const { rows } = await pool.query(
         `SELECT * FROM daily_log WHERE user_id = $1 ORDER BY day ASC`,
         [userId],
@@ -3657,19 +3667,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const entries = rows.map(snakeToCamel);
 
       const sorted = [...entries].sort((a: any, b: any) => a.day.localeCompare(b.day));
-      const recent = sorted.slice(0, maxDays);
+      const firstN = (arr: any[], n: number) => arr.slice(0, n);
+
+      const pushupsDays = firstN(sorted.filter((e: any) => e.pushupsReps != null), maxDays);
+      const pullupsDays = firstN(sorted.filter((e: any) => e.pullupsReps != null), maxDays);
+      const benchBarDays = firstN(sorted.filter((e: any) =>
+        e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)
+      ), maxDays);
+      const ohpBarDays = firstN(sorted.filter((e: any) =>
+        e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)
+      ), maxDays);
 
       const avg = (vals: number[]) => vals.length > 0 ? vals.reduce((s: number, v: number) => s + v, 0) / vals.length : null;
-      const pushups = avg(recent.filter((e: any) => e.pushupsReps != null).map((e: any) => e.pushupsReps));
-      const pullups = avg(recent.filter((e: any) => e.pullupsReps != null).map((e: any) => e.pullupsReps));
-      const benchBarReps = avg(recent.filter((e: any) => e.benchReps != null && (e.benchWeightLb == null || e.benchWeightLb <= 45)).map((e: any) => e.benchReps));
-      const ohpBarReps = avg(recent.filter((e: any) => e.ohpReps != null && (e.ohpWeightLb == null || e.ohpWeightLb <= 45)).map((e: any) => e.ohpReps));
+      const pushups = avg(pushupsDays.map((e: any) => e.pushupsReps));
+      const pullups = avg(pullupsDays.map((e: any) => e.pullupsReps));
+      const benchBarReps = avg(benchBarDays.map((e: any) => e.benchReps));
+      const ohpBarReps = avg(ohpBarDays.map((e: any) => e.ohpReps));
 
-      const exercises: Array<{ name: string; val: number | null }> = [
-        { name: "pushups", val: pushups },
-        { name: "pullups", val: pullups },
-        { name: "bench_bar_reps", val: benchBarReps },
-        { name: "ohp_bar_reps", val: ohpBarReps },
+      const exercises: Array<{ name: string; val: number | null; days: number }> = [
+        { name: "pushups", val: pushups, days: pushupsDays.length },
+        { name: "pullups", val: pullups, days: pullupsDays.length },
+        { name: "bench_bar_reps", val: benchBarReps, days: benchBarDays.length },
+        { name: "ohp_bar_reps", val: ohpBarReps, days: ohpBarDays.length },
       ];
 
       for (const ex of exercises) {
@@ -3682,7 +3701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                baseline_value = EXCLUDED.baseline_value,
                computed_from_days = EXCLUDED.computed_from_days,
                updated_at = NOW()`,
-            [userId, ex.name, rounded, maxDays],
+            [userId, ex.name, rounded, ex.days],
           );
         }
       }
@@ -3695,8 +3714,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           benchBarReps: benchBarReps != null ? Math.round(benchBarReps * 10) / 10 : null,
           ohpBarReps: ohpBarReps != null ? Math.round(ohpBarReps * 10) / 10 : null,
         },
-        computedFromDays: maxDays,
-        dataPoints: recent.length,
+        dataPoints: {
+          pushups: pushupsDays.length,
+          pullups: pullupsDays.length,
+          benchBarReps: benchBarDays.length,
+          ohpBarReps: ohpBarDays.length,
+        },
       });
     } catch (err) {
       console.error("strength baselines compute error:", err);
