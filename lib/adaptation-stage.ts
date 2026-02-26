@@ -196,28 +196,35 @@ export function classifyAdaptationStage(
 
   if (trainingAgeDays > 90 && isConsistent) {
     const latest = parseDate(sorted[sorted.length - 1].day);
-    const mid = new Date(latest);
-    mid.setDate(mid.getDate() - 14);
-    const prior = new Date(latest);
-    prior.setDate(prior.getDate() - 28);
+    const w1End = latest;
+    const w1Start = new Date(latest);
+    w1Start.setDate(w1Start.getDate() - 14);
+    const w2Start = new Date(latest);
+    w2Start.setDate(w2Start.getDate() - 28);
+    const w3Start = new Date(latest);
+    w3Start.setDate(w3Start.getDate() - 42);
 
-    const prRecent14d = bestSiInWindow(sorted, baselines, mid, latest);
-    const prPrior14d = bestSiInWindow(sorted, baselines, prior, mid);
+    const prWindow1 = bestSiInWindow(sorted, baselines, w1Start, w1End);
+    const prWindow2 = bestSiInWindow(sorted, baselines, w2Start, w1Start);
+    const prWindow3 = bestSiInWindow(sorted, baselines, w3Start, w2Start);
 
     const siDelta14d = sV != null ? Math.round((sV.si7dToday - sV.si7d14dAgo) * 10000) / 10000 : null;
 
+    const w1StagnantA = prWindow1 != null && prWindow2 != null && prWindow1 <= prWindow2;
+    const w2StagnantA = prWindow2 != null && prWindow3 != null && prWindow2 <= prWindow3;
+    const persistentA = w1StagnantA && w2StagnantA;
+
+    const w1StagnantB = siDelta14d != null && Math.abs(siDelta14d) < SI_ABSOLUTE_FLOOR;
+    const persistentB = w1StagnantB && w1StagnantA;
+
     let plateauCondition: PlateauCondition = null;
+    if (persistentA) plateauCondition = "A_no_pr_improvement";
+    if (persistentB && !persistentA) plateauCondition = "B_absolute_si_floor";
 
-    const condA = prRecent14d != null && prPrior14d != null && prRecent14d <= prPrior14d;
-    const condB = siDelta14d != null && Math.abs(siDelta14d) < SI_ABSOLUTE_FLOOR;
-
-    if (condA) plateauCondition = "A_no_pr_improvement";
-    if (condB && !condA) plateauCondition = "B_absolute_si_floor";
-
-    if (condA || condB) {
-      const detail = condA
-        ? `PR stagnant: recent=${prRecent14d?.toFixed(4)} ≤ prior=${prPrior14d?.toFixed(4)}`
-        : `SI delta below floor: ΔSI=${siDelta14d?.toFixed(4)} < ${SI_ABSOLUTE_FLOOR}`;
+    if (persistentA || persistentB) {
+      const detail = persistentA
+        ? `PR stagnant ≥28d: w1=${prWindow1?.toFixed(4)} ≤ w2=${prWindow2?.toFixed(4)} ≤ w3=${prWindow3?.toFixed(4)}`
+        : `SI delta below floor ≥28d: ΔSI=${siDelta14d?.toFixed(4)} < ${SI_ABSOLUTE_FLOOR}`;
       reasons.push(`Post-novelty + consistent + ${detail}`);
       return {
         stage: "PLATEAU_RISK",
@@ -226,7 +233,7 @@ export function classifyAdaptationStage(
         consistency4w,
         noveltyScore,
         reasons,
-        debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase, plateauCondition, siDelta14d, prRecent14d, prPrior14d),
+        debug: makeDebug(trainingAgeDays, consistency4w, pctPerWeek, sPhase.phase, plateauCondition, siDelta14d, prWindow1, prWindow2),
       };
     }
   }

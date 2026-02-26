@@ -91,6 +91,25 @@ describe("classifyAdaptationStage", () => {
     expect(["A_no_pr_improvement", "B_absolute_si_floor"]).toContain(r.debug.plateauCondition);
   });
 
+  it("does NOT flag PLATEAU_RISK from single-window stall (requires ≥28d persistence)", () => {
+    const entries: DailyEntry[] = [];
+    for (let i = 0; i < 100; i++) {
+      if (i < 88) {
+        entries.push(makeDay(daysAgo(100 - i), {
+          pushupsReps: Math.round(20 + i * 0.08),
+          pullupsReps: Math.round(10 + i * 0.04),
+        }));
+      } else {
+        entries.push(makeDay(daysAgo(100 - i), {
+          pushupsReps: 27,
+          pullupsReps: 14,
+        }));
+      }
+    }
+    const r = classifyAdaptationStage(entries, baselines);
+    expect(r.stage).not.toBe("PLATEAU_RISK");
+  });
+
   it("does NOT flag PLATEAU_RISK for intermediate with clear PR improvement each 14d window", () => {
     const entries: DailyEntry[] = [];
     for (let i = 0; i < 120; i++) {
