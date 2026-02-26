@@ -326,7 +326,7 @@ export function detectTrainingPhase(
 
     if (phase === "neural") {
       const met =
-        sV != null && sV.pctPerWeek >= 0.02 &&
+        sV != null && sV.pctPerWeek >= 0.25 &&
         ffmV != null && ffmV.velocityLbPerWeek >= 0 &&
         penalty >= 0.90;
       if (met) { hypertrophyStreak++; } else { hypertrophyStreak = 0; }
