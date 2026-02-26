@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { initDb, pool } from "./db";
-import { recomputeRange } from "./recompute";
+import { recomputeRange, backfillDashboardCacheForUser } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import { classifyDayRange } from "./day-classifier";
@@ -768,8 +768,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const start = (req.query.start as string) || "2020-01-01";
       const end = (req.query.end as string) || "2099-12-31";
 
+      backfillDashboardCacheForUser(userId, start, end).catch((err: unknown) =>
+        console.error("dashboard cache backfill error:", err)
+      );
+
       const { rows } = await pool.query(
-        `SELECT d.day,
+        `SELECT l.day,
                 l.morning_weight_lb, l.evening_weight_lb, l.waist_in,
                 l.bf_morning_r1, l.bf_morning_r2, l.bf_morning_r3,
                 l.bf_morning_pct,
@@ -786,10 +790,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 l.pushups_reps, l.pullups_reps,
                 l.bench_reps, l.bench_weight_lb,
                 l.ohp_reps, l.ohp_weight_lb
-         FROM dashboard_cache d
-         JOIN daily_log l ON l.day = d.day AND l.user_id = d.user_id
-         WHERE d.user_id = $3 AND d.day BETWEEN $1 AND $2
-         ORDER BY d.day ASC`,
+         FROM daily_log l
+         LEFT JOIN dashboard_cache d ON d.day = l.day AND d.user_id = l.user_id
+         WHERE l.user_id = $3 AND l.day BETWEEN $1 AND $2
+         ORDER BY l.day ASC`,
         [start, end, userId],
       );
 
@@ -1549,6 +1553,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(readinessPayload);
     } catch (err: unknown) {
       console.error("readiness error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/debug/data-integrity", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const days = parseInt(req.query.days as string) || 60;
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+      const { rows: logDays } = await pool.query(
+        `SELECT day FROM daily_log WHERE user_id = $1 AND day >= $2 ORDER BY day`,
+        [userId, cutoffStr],
+      );
+
+      const { rows: cacheDays } = await pool.query(
+        `SELECT day FROM dashboard_cache WHERE user_id = $1 AND day >= $2 ORDER BY day`,
+        [userId, cutoffStr],
+      );
+
+      const { rows: missingInCache } = await pool.query(
+        `SELECT dl.day
+         FROM daily_log dl
+         LEFT JOIN dashboard_cache dc ON dc.user_id = dl.user_id AND dc.day = dl.day
+         WHERE dl.user_id = $1 AND dl.day >= $2 AND dc.day IS NULL
+         ORDER BY dl.day`,
+        [userId, cutoffStr],
+      );
+
+      const { rows: fieldCounts } = await pool.query(
+        `SELECT
+           COUNT(*)::int AS total_days,
+           COUNT(dl.pushups_reps)::int AS dl_pushups,
+           COUNT(dl.pullups_reps)::int AS dl_pullups,
+           COUNT(dl.bench_reps)::int AS dl_bench,
+           COUNT(dl.ohp_reps)::int AS dl_ohp,
+           COUNT(dl.pain_0_10)::int AS dl_pain,
+           COUNT(dl.sleep_start)::int AS dl_sleep_start,
+           COUNT(dl.morning_weight_lb)::int AS dl_weight,
+           COUNT(dl.meal_checklist)::int AS dl_meal_checklist,
+           COUNT(dl.cardio_min)::int AS dl_cardio
+         FROM daily_log dl
+         WHERE dl.user_id = $1 AND dl.day >= $2`,
+        [userId, cutoffStr],
+      );
+
+      const { rows: dashFieldCounts } = await pool.query(
+        `SELECT
+           COUNT(*)::int AS total_days,
+           COUNT(l.pushups_reps)::int AS dash_pushups,
+           COUNT(l.pullups_reps)::int AS dash_pullups,
+           COUNT(l.bench_reps)::int AS dash_bench,
+           COUNT(l.ohp_reps)::int AS dash_ohp,
+           COUNT(l.pain_0_10)::int AS dash_pain,
+           COUNT(l.sleep_start)::int AS dash_sleep_start,
+           COUNT(l.morning_weight_lb)::int AS dash_weight,
+           COUNT(l.meal_checklist)::int AS dash_meal_checklist,
+           COUNT(l.cardio_min)::int AS dash_cardio
+         FROM daily_log l
+         LEFT JOIN dashboard_cache d ON d.user_id = l.user_id AND d.day = l.day
+         WHERE l.user_id = $1 AND l.day >= $2`,
+        [userId, cutoffStr],
+      );
+
+      const dlCounts = fieldCounts[0] || {};
+      const dashCounts = dashFieldCounts[0] || {};
+
+      const purgatoryFields: string[] = [];
+      for (const field of ["pushups", "pullups", "bench", "ohp", "pain", "sleep_start", "weight", "meal_checklist", "cardio"]) {
+        const dlKey = `dl_${field}`;
+        const dashKey = `dash_${field}`;
+        if ((dlCounts as any)[dlKey] > (dashCounts as any)[dashKey]) {
+          purgatoryFields.push(field);
+        }
+      }
+
+      res.json({
+        ok: true,
+        window: days,
+        dailyLogDays: logDays.length,
+        cacheDays: cacheDays.length,
+        missingInCache: missingInCache.map((r: any) => r.day),
+        purgatoryDetected: purgatoryFields.length > 0,
+        purgatoryFields,
+        fieldCounts: {
+          dailyLog: dlCounts,
+          dashboardJoin: dashCounts,
+        },
+      });
+    } catch (err) {
+      console.error("data-integrity error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

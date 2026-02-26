@@ -40,6 +40,25 @@ function cardioFuelNote(cardioMin: number | null): string | null {
   return null;
 }
 
+export async function backfillDashboardCacheForUser(userId: string, startDay: string, endDay: string): Promise<number> {
+  const { rows: missingDays } = await pool.query(
+    `SELECT dl.day
+     FROM daily_log dl
+     LEFT JOIN dashboard_cache dc ON dc.user_id = dl.user_id AND dc.day = dl.day
+     WHERE dl.user_id = $1 AND dl.day BETWEEN $2 AND $3 AND dc.day IS NULL
+     ORDER BY dl.day`,
+    [userId, startDay, endDay],
+  );
+
+  if (missingDays.length === 0) return 0;
+
+  for (const { day } of missingDays) {
+    await recomputeRange(day, userId);
+  }
+
+  return missingDays.length;
+}
+
 export async function recomputeRange(targetDay: string, userId: string = DEFAULT_USER_ID): Promise<void> {
   const targetDate = new Date(targetDay + "T00:00:00Z");
   const recomputeStart = new Date(targetDate);
