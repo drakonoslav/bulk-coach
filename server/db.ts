@@ -776,6 +776,199 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_start_local TEXT;
     ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_end_local TEXT;
   `);
+
+  await runMigration('017_strength_v2_tables', `
+    CREATE TABLE IF NOT EXISTS strength_exercises (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      is_bodyweight BOOLEAN DEFAULT FALSE,
+      active BOOLEAN DEFAULT TRUE
+    );
+
+    CREATE TABLE IF NOT EXISTS strength_sets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      day TEXT NOT NULL,
+      exercise_id TEXT NOT NULL REFERENCES strength_exercises(id),
+      weight_lb REAL,
+      reps INTEGER,
+      rir INTEGER,
+      seconds INTEGER,
+      set_type TEXT NOT NULL DEFAULT 'top',
+      is_measured BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_strength_sets_user_day ON strength_sets(user_id, day);
+    CREATE INDEX IF NOT EXISTS idx_strength_sets_ex ON strength_sets(exercise_id);
+
+    CREATE TABLE IF NOT EXISTS muscle_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      parent_id TEXT REFERENCES muscle_groups(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS exercise_muscle_weights (
+      exercise_id TEXT NOT NULL REFERENCES strength_exercises(id),
+      muscle_id TEXT NOT NULL REFERENCES muscle_groups(id),
+      weight_pct REAL NOT NULL,
+      role TEXT DEFAULT 'secondary',
+      version INTEGER NOT NULL DEFAULT 1,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      PRIMARY KEY (exercise_id, muscle_id, version)
+    );
+  `);
+
+  await runMigration('018_strength_v2_seed_exercises', `
+    INSERT INTO strength_exercises (id, name, category, is_bodyweight)
+    VALUES
+      ('back_squat','Back Squat','legs',false),
+      ('rdl','Romanian Deadlift','legs',false),
+      ('hip_thrust','Hip Thrust','legs',false),
+      ('leg_curl','Leg Curl','legs',false),
+      ('calf_raise','Calf Raise','legs',false),
+      ('tib_raise','Tibialis Raise','legs',false),
+      ('bench_press','Bench Press','push',false),
+      ('incline_db_press','Incline DB Press','push',false),
+      ('ohp','Overhead Press','push',false),
+      ('pullup_or_pulldown','Pull-up / Lat Pulldown','pull',true),
+      ('chest_supported_row','Chest-Supported Row','pull',false),
+      ('face_pull','Face Pull / Reverse Pec Deck','pull',false),
+      ('farmer_carry','Farmer Carry','carry',false),
+      ('cable_crunch_or_abwheel','Cable Crunch / Ab Wheel','core',false)
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  await runMigration('019_strength_v2_seed_muscles', `
+    INSERT INTO muscle_groups (id, name, parent_id)
+    VALUES
+      ('chest','Chest',NULL),
+      ('traps','Traps',NULL),
+      ('upper_traps','Upper Traps','traps'),
+      ('mid_traps','Mid Traps','traps'),
+      ('lower_traps','Lower Traps','traps'),
+      ('glutes','Glutes',NULL),
+      ('hamstrings','Hamstrings',NULL),
+      ('quads','Quads',NULL),
+      ('adductors','Adductors',NULL),
+      ('calves','Calves',NULL),
+      ('shins','Shins',NULL),
+      ('arms','Arms',NULL),
+      ('biceps','Biceps','arms'),
+      ('forearms','Forearms','arms'),
+      ('triceps','Triceps','arms'),
+      ('delts','Delts',NULL),
+      ('front_delt','Front/Anterior Delt','delts'),
+      ('lateral_delt','Side/Lateral Delt','delts'),
+      ('rear_delt','Rear/Posterior Delt','delts'),
+      ('back','Back',NULL),
+      ('lats','Lats','back'),
+      ('upper_back','Upper Back','back'),
+      ('middle_back','Middle Back','back'),
+      ('lower_back','Lower Back','back'),
+      ('core','Core',NULL),
+      ('abs','Abs','core'),
+      ('obliques','Obliques','core')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  await runMigration('020_strength_v2_seed_weights_v1', `
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('back_squat','quads',0.40,'prime'),
+      ('back_squat','glutes',0.25,'secondary'),
+      ('back_squat','adductors',0.15,'secondary'),
+      ('back_squat','hamstrings',0.10,'stabilizer'),
+      ('back_squat','lower_back',0.05,'stabilizer'),
+      ('back_squat','abs',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('rdl','hamstrings',0.45,'prime'),
+      ('rdl','glutes',0.25,'secondary'),
+      ('rdl','lower_back',0.20,'secondary'),
+      ('rdl','forearms',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('hip_thrust','glutes',0.65,'prime'),
+      ('hip_thrust','hamstrings',0.20,'secondary'),
+      ('hip_thrust','quads',0.05,'stabilizer'),
+      ('hip_thrust','abs',0.05,'stabilizer'),
+      ('hip_thrust','lower_back',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('leg_curl','hamstrings',0.95,'prime'),
+      ('leg_curl','glutes',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('calf_raise','calves',0.95,'prime'),
+      ('calf_raise','shins',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('tib_raise','shins',0.95,'prime'),
+      ('tib_raise','calves',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('bench_press','chest',0.50,'prime'),
+      ('bench_press','triceps',0.30,'secondary'),
+      ('bench_press','front_delt',0.20,'secondary')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('incline_db_press','chest',0.45,'prime'),
+      ('incline_db_press','front_delt',0.30,'secondary'),
+      ('incline_db_press','triceps',0.25,'secondary')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('ohp','front_delt',0.40,'prime'),
+      ('ohp','lateral_delt',0.25,'secondary'),
+      ('ohp','triceps',0.25,'secondary'),
+      ('ohp','upper_traps',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('pullup_or_pulldown','lats',0.50,'prime'),
+      ('pullup_or_pulldown','biceps',0.20,'secondary'),
+      ('pullup_or_pulldown','forearms',0.15,'stabilizer'),
+      ('pullup_or_pulldown','middle_back',0.10,'secondary'),
+      ('pullup_or_pulldown','rear_delt',0.05,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('chest_supported_row','middle_back',0.35,'prime'),
+      ('chest_supported_row','lats',0.25,'secondary'),
+      ('chest_supported_row','rear_delt',0.15,'secondary'),
+      ('chest_supported_row','biceps',0.15,'secondary'),
+      ('chest_supported_row','forearms',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('face_pull','rear_delt',0.45,'prime'),
+      ('face_pull','mid_traps',0.25,'secondary'),
+      ('face_pull','lower_traps',0.20,'secondary'),
+      ('face_pull','upper_traps',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('farmer_carry','forearms',0.45,'prime'),
+      ('farmer_carry','upper_traps',0.20,'secondary'),
+      ('farmer_carry','abs',0.15,'secondary'),
+      ('farmer_carry','obliques',0.10,'secondary'),
+      ('farmer_carry','lower_back',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO exercise_muscle_weights (exercise_id, muscle_id, weight_pct, role) VALUES
+      ('cable_crunch_or_abwheel','abs',0.70,'prime'),
+      ('cable_crunch_or_abwheel','obliques',0.20,'secondary'),
+      ('cable_crunch_or_abwheel','lower_back',0.10,'stabilizer')
+    ON CONFLICT DO NOTHING;
+  `);
 }
 
 export { pool };
