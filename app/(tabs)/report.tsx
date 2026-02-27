@@ -904,8 +904,8 @@ export default function ReportScreen() {
         ) : (
           <>
             <View testID="mode-banner" style={{ backgroundColor: modeClass.color + "18", borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: modeClass.color + "40" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 }}>
                   <Ionicons
                     name={modeClass.mode === "LEAN_BULK" ? "trending-up" : modeClass.mode === "RECOMP" ? "swap-horizontal" : modeClass.mode === "CUT" ? "trending-down" : "help-circle"}
                     size={20}
@@ -915,7 +915,7 @@ export default function ReportScreen() {
                     Mode: {modeClass.label}
                   </Text>
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <View style={{ backgroundColor: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA30" : "#6B728030", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
                     <Text testID="mode-banner-phase" style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: modeClass.trainingPhase === "hypertrophy" ? "#A78BFA" : "#9CA3AF" }}>
                       {modeClass.trainingPhase === "hypertrophy" ? "Hypertrophy" : "Neural"}
@@ -1621,13 +1621,13 @@ export default function ReportScreen() {
                         ))}
                       </View>
 
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10 }}>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 10, gap: 4 }}>
                         <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
                           Recommended Intensity
                         </Text>
                         <Text style={{
                           fontSize: 13, fontFamily: "Rubik_700Bold",
-                          color: tierColor,
+                          color: tierColor, flexShrink: 1, textAlign: "right" as const,
                         }}>
                           {tier === "GREEN" ? "HIGH (heavy compounds)" : tier === "BLUE" ? "LOW (deload/pump)" : "MEDIUM (normal hypertrophy)"}
                         </Text>
@@ -1659,9 +1659,9 @@ export default function ReportScreen() {
                   const confGradeVal = readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None";
 
                   const sigRow = (label: string, valueEl: React.ReactNode, last = false) => (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, ...(last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.border }) }}>
-                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{label}</Text>
-                      {valueEl}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, gap: 8, ...(last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.border }) }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, flexShrink: 0 }}>{label}</Text>
+                      <View style={{ flexShrink: 1, alignItems: "flex-end" }}>{valueEl}</View>
                     </View>
                   );
 
@@ -1823,11 +1823,11 @@ export default function ReportScreen() {
                             );
                           })}
                           {ma14.nextBestMeal?.label && sigRow("Next best meal",
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", flexShrink: 1 }}>
                               <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#F59E0B" }}>
                                 {ma14.nextBestMeal.label}
                               </Text>
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, flexShrink: 1 }}>
                                 ({(ma14.nextBestMeal.reason ?? "").replace(/_/g, " ")})
                               </Text>
                             </View>

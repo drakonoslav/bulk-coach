@@ -724,11 +724,11 @@ export default function ChecklistScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.readinessTitle}>Training Readiness</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <Text style={[styles.readinessScore, { color: tierColor }]}>
                       {score === 0 ? "—" : (readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "—" : score}
                     </Text>
-                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2, flexShrink: 1 }}>
                       {score === 0 ? "No data — start logging to build your baseline" : (readiness.gate === "NONE" || (readiness.daysInWindow ?? 0) < 7) ? "Provisional floor — need 7+ days" : (readiness.daysInWindow ?? 0) < 28 ? "Partial baseline — score may shift" : "Estimates recovery permissiveness"}
                     </Text>
                     <View style={[styles.readinessTierBadge, { backgroundColor: tierColor + "18" }]}>
@@ -858,9 +858,9 @@ export default function ChecklistScreen() {
           const confGradeVal = readiness.confidenceBreakdown?.grade ?? readiness.confidenceGrade ?? "None";
 
           const sigRow = (label: string, valueEl: React.ReactNode, last = false) => (
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, ...(last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.border }) }}>
-              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{label}</Text>
-              {valueEl}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, gap: 8, ...(last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.border }) }}>
+              <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, flexShrink: 0 }}>{label}</Text>
+              <View style={{ flexShrink: 1, alignItems: "flex-end" }}>{valueEl}</View>
             </View>
           );
 
@@ -1022,11 +1022,11 @@ export default function ChecklistScreen() {
                       );
                     })}
                     {ma14.nextBestMeal?.label && sigRow("Next best meal",
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", flexShrink: 1 }}>
                         <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#F59E0B" }}>
                           {ma14.nextBestMeal.label}
                         </Text>
-                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, flexShrink: 1 }}>
                           ({(ma14.nextBestMeal.reason ?? "").replace(/_/g, " ")})
                         </Text>
                       </View>
