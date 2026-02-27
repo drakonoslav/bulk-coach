@@ -773,27 +773,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       const { rows } = await pool.query(
-        `SELECT l.day,
-                l.morning_weight_lb, l.evening_weight_lb, l.waist_in,
-                l.bf_morning_r1, l.bf_morning_r2, l.bf_morning_r3,
-                l.bf_morning_pct,
-                l.bf_evening_r1, l.bf_evening_r2, l.bf_evening_r3,
-                l.bf_evening_pct,
-                l.sleep_start, l.sleep_end, l.sleep_quality,
-                l.water_liters, l.steps, l.cardio_min,
-                l.lift_done, l.deload_week,
-                l.adherence, l.performance_note, l.notes,
-                d.lean_mass_lb, d.fat_mass_lb,
-                d.weight_7d_avg, d.waist_7d_avg, d.lean_mass_7d_avg,
-                d.lean_gain_ratio_14d_roll, d.cardio_fuel_note,
-                l.fat_free_mass_lb,
-                l.pushups_reps, l.pullups_reps,
-                l.bench_reps, l.bench_weight_lb,
-                l.ohp_reps, l.ohp_weight_lb
-         FROM daily_log l
-         LEFT JOIN dashboard_cache d ON d.day = l.day AND d.user_id = l.user_id
-         WHERE l.user_id = $3 AND l.day BETWEEN $1 AND $2
-         ORDER BY l.day ASC`,
+        `WITH bounds AS (
+          SELECT
+            GREATEST($1::date, MIN(day::date)) AS lo,
+            LEAST($2::date, MAX(day::date)) AS hi
+          FROM daily_log WHERE user_id = $3
+        ),
+        spine AS (
+          SELECT d::date AS day
+          FROM bounds, generate_series(bounds.lo, bounds.hi, interval '1 day') d
+        )
+        SELECT
+          s.day::text AS day,
+
+          l.morning_weight_lb, l.evening_weight_lb, l.waist_in,
+          l.bf_morning_r1, l.bf_morning_r2, l.bf_morning_r3,
+          l.bf_morning_pct,
+          l.bf_evening_r1, l.bf_evening_r2, l.bf_evening_r3,
+          l.bf_evening_pct,
+          l.sleep_start, l.sleep_end, l.sleep_quality,
+          l.water_liters, l.steps, l.cardio_min,
+          l.lift_done, l.deload_week,
+          l.adherence, l.performance_note, l.notes,
+          l.fat_free_mass_lb,
+          l.pushups_reps, l.pullups_reps,
+          l.bench_reps, l.bench_weight_lb,
+          l.ohp_reps, l.ohp_weight_lb,
+
+          d.lean_mass_lb, d.fat_mass_lb,
+          d.weight_7d_avg, d.waist_7d_avg, d.lean_mass_7d_avg,
+          d.lean_gain_ratio_14d_roll, d.cardio_fuel_note
+
+        FROM spine s
+        LEFT JOIN daily_log l
+          ON l.user_id = $3 AND l.day = s.day::text
+        LEFT JOIN dashboard_cache d
+          ON d.user_id = $3 AND d.day = s.day::text
+        ORDER BY s.day ASC`,
         [start, end, userId],
       );
 
