@@ -63,7 +63,15 @@ export async function exportBackup(): Promise<BackupPayload> {
     pool.query(`SELECT * FROM androgen_proxy_daily ORDER BY date ASC, computed_with_imputed ASC`),
   ]);
 
-  const serializeSessions = sessions.rows.map((r: Record<string, unknown>) => ({
+  const stripNulls = (obj: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== null && v !== undefined) out[k] = v;
+    }
+    return out;
+  };
+
+  const serializeSessions = sessions.rows.map((r: Record<string, unknown>) => stripNulls({
     ...r,
     date: dateToStr(r.date),
     imputed_source_date_start: dateToStr(r.imputed_source_date_start),
@@ -71,33 +79,40 @@ export async function exportBackup(): Promise<BackupPayload> {
     updated_at: tsToStr(r.updated_at),
   }));
 
-  const serializeSnapshots = snapshots.rows.map((r: Record<string, unknown>) => ({
+  const serializeSnapshots = snapshots.rows.map((r: Record<string, unknown>) => stripNulls({
     ...r,
     session_date: dateToStr(r.session_date),
     uploaded_at: tsToStr(r.uploaded_at),
   }));
 
-  const serializeProxy = proxyDaily.rows.map((r: Record<string, unknown>) => ({
+  const serializeProxy = proxyDaily.rows.map((r: Record<string, unknown>) => stripNulls({
     ...r,
     date: dateToStr(r.date),
     computed_at: tsToStr(r.computed_at),
   }));
 
-  const serializeFitbit = fitbitImports.rows.map((r: Record<string, unknown>) => ({
+  const serializeFitbit = fitbitImports.rows.map((r: Record<string, unknown>) => stripNulls({
     ...r,
     uploaded_at: tsToStr(r.uploaded_at),
   }));
 
-  const serializeDashboard = dashboardCache.rows.map((r: Record<string, unknown>) => ({
+  const serializeDashboard = dashboardCache.rows.map((r: Record<string, unknown>) => stripNulls({
     ...r,
     recomputed_at: tsToStr(r.recomputed_at),
   }));
 
-  const serializeDailyLogs = dailyLogs.rows.map((r: Record<string, unknown>) => ({
-    ...r,
-    created_at: tsToStr(r.created_at),
-    updated_at: tsToStr(r.updated_at),
-  }));
+  const serializeDailyLogs = dailyLogs.rows.map((r: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(r)) {
+      if (val === null || val === undefined) continue;
+      if (key === "created_at" || key === "updated_at") {
+        out[key] = tsToStr(val);
+      } else {
+        out[key] = val;
+      }
+    }
+    return out;
+  });
 
   return {
     metadata: {
