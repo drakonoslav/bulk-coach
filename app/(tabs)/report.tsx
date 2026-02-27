@@ -1424,6 +1424,13 @@ export default function ReportScreen() {
               </View>
             ) : null}
 
+            {__DEV__ && (
+              <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: "#1a1a2e", borderRadius: 8, marginHorizontal: 16, marginBottom: 4 }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "#9CA3AF" }}>
+                  V2: sets={strengthSets.length} muscles={strengthV2Mapping?.muscles.length ?? 0} weights={strengthV2Mapping?.weights.length ?? 0} hasV2={String(hasV2)} globalDays={globalV2?.length ?? 0} siRa={siRa.length} svChart={svChartData.length} gate={String(shouldShowStrengthSection)}
+                </Text>
+              </View>
+            )}
             {shouldShowStrengthSection && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
