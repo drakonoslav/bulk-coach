@@ -2130,6 +2130,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/backup/schema-audit", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const { rows: schemaCols } = await pool.query(
+        `SELECT column_name, data_type, is_nullable
+         FROM information_schema.columns
+         WHERE table_name = 'daily_log'
+         ORDER BY ordinal_position`
+      );
+
+      const { rows: logRows } = await pool.query(`SELECT * FROM daily_log ORDER BY day ASC`);
+
+      const columnNames = schemaCols.map((c: any) => c.column_name);
+      const perDaySummary = logRows.map((row: any) => {
+        const nonNull: Record<string, unknown> = {};
+        for (const col of columnNames) {
+          if (row[col] != null) nonNull[col] = row[col];
+        }
+        return { day: row.day, filledColumns: Object.keys(nonNull).length, totalColumns: columnNames.length, data: nonNull };
+      });
+
+      res.json({
+        schemaColumns: schemaCols,
+        totalColumnsInSchema: schemaCols.length,
+        totalRows: logRows.length,
+        perDaySummary,
+      });
+    } catch (err: unknown) {
+      console.error("schema audit error:", err);
+      res.status(500).json({ error: "Audit failed" });
+    }
+  });
+
   app.post("/api/backup/import", requireAdmin, rateLimit(60000, 3), upload.single("file"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
