@@ -2101,6 +2101,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/backup/export", requireAdmin, rateLimit(60000, 5), async (_req: Request, res: Response) => {
     try {
       const payload = await exportBackup();
+      const dlCount = payload.daily_logs.length;
+      const sampleRow = payload.daily_logs[0] as Record<string, unknown> | undefined;
+      const colCount = sampleRow ? Object.keys(sampleRow).length : 0;
+      const strengthSample = sampleRow ? {
+        day: sampleRow.day,
+        pushups_reps: sampleRow.pushups_reps,
+        pullups_reps: sampleRow.pullups_reps,
+        bench_reps: sampleRow.bench_reps,
+        calories_in: sampleRow.calories_in,
+        meal_checklist: sampleRow.meal_checklist,
+        morning_weight_lb: sampleRow.morning_weight_lb,
+      } : null;
+      console.log(`[EXPORT] ${dlCount} daily_logs, ${colCount} columns per row, sample:`, JSON.stringify(strengthSample));
+
+      const nonNullStrength = payload.daily_logs.filter((r: Record<string, unknown>) =>
+        r.pushups_reps != null || r.calories_in != null || r.meal_checklist != null
+      ).length;
+      console.log(`[EXPORT] rows with strength/calories/meals: ${nonNullStrength}/${dlCount}`);
+
       const filename = `bulk-coach-backup-${new Date().toISOString().slice(0, 10)}.json`;
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

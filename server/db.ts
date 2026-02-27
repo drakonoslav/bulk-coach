@@ -755,6 +755,27 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS cardio_skipped BOOLEAN DEFAULT false;
     ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS lift_skipped BOOLEAN DEFAULT false;
   `);
+
+  await runMigration('016_daily_log_all_columns', `
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS calories_in INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS training_load REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS fat_free_mass_lb REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS pushups_reps INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS pullups_reps INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS bench_reps INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS bench_weight_lb REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS ohp_reps INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS ohp_weight_lb REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS tossed_minutes INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_plan_bedtime TEXT;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_plan_wake TEXT;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_efficiency REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS bedtime_deviation_min REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS wake_deviation_min REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_plan_alignment_score REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_start_local TEXT;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS sleep_end_local TEXT;
+  `);
 }
 
 export { pool };
