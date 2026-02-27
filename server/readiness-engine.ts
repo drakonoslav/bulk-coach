@@ -546,18 +546,46 @@ export async function getReadiness(date: string, userId: string = DEFAULT_USER_I
   };
 }
 
-export async function getReadinessRange(from: string, to: string, userId: string = DEFAULT_USER_ID): Promise<ReadinessResult[]> {
+export async function getReadinessRange(from: string, to: string, userId: string = DEFAULT_USER_ID): Promise<(ReadinessResult | null)[]> {
   const { rows } = await pool.query(
-    `SELECT * FROM readiness_daily WHERE date BETWEEN $1::date AND $2::date AND user_id = $3 ORDER BY date ASC`,
+    `SELECT s.day::date::text AS spine_day, rd.*
+     FROM generate_series($1::date, $2::date, interval '1 day') s(day)
+     LEFT JOIN readiness_daily rd
+       ON rd.date = s.day::date AND rd.user_id = $3
+     ORDER BY s.day ASC`,
     [from, to, userId],
   );
   const sufficiency = await getDataSufficiency(userId);
   const gateValue: "NONE" | "LOW" | "MED" | "HIGH" = sufficiency.gate30 ? "HIGH" : sufficiency.gate14 ? "MED" : sufficiency.gate7 ? "LOW" : "NONE";
   return rows.map((r: Record<string, unknown>) => {
+    if (r.readiness_score == null) {
+      return {
+        date: r.spine_day as string,
+        readinessScore: null,
+        readinessTier: null,
+        compoundBudgetPoints: null,
+        confidenceGrade: "None" as const,
+        typeLean: 0,
+        exerciseBias: 0,
+        cortisolFlag: false,
+        hrvDelta: null,
+        rhrDelta: null,
+        sleepDelta: null,
+        proxyDelta: null,
+        hrv7d: null, hrv28d: null, rhr7d: null, rhr28d: null,
+        sleep7d: null, sleep28d: null, proxy7d: null, proxy28d: null,
+        drivers: [],
+        analysisStartDate: sufficiency.analysisStartDate,
+        daysInWindow: sufficiency.daysWithData,
+        gate: gateValue,
+        deltas: { hrv_pct: null, rhr_bpm: null, sleep_pct: null, proxy_pct: null, hrv_str: null, rhr_str: null, sleep_str: null, proxy_str: null },
+        confidenceBreakdown: { grade: "None" as const, measured_7d: 0, imputed_7d: 0, combined_7d: 0 },
+      } as any;
+    }
     const grade = r.confidence_grade as "High" | "Med" | "Low" | "None";
     const rowGate = (r.gate as string) || gateValue;
     return {
-      date: (r.date as Date).toISOString().slice(0, 10),
+      date: r.spine_day as string,
       readinessScore: Number(r.readiness_score),
       readinessTier: r.readiness_tier as "GREEN" | "YELLOW" | "BLUE",
       compoundBudgetPoints: compoundBudgetPoints(Number(r.readiness_score)),

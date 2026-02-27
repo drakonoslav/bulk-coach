@@ -1,4 +1,6 @@
 import { pool } from "./db";
+import { computeReadiness } from "./readiness-engine";
+import { computeAndUpsertHpa } from "./hpa-engine";
 
 const DEFAULT_USER_ID = 'local_default';
 
@@ -57,6 +59,50 @@ export async function backfillDashboardCacheForUser(userId: string, startDay: st
   }
 
   return missingDays.length;
+}
+
+export async function backfillReadinessForUser(userId: string, startDay: string, endDay: string): Promise<number> {
+  const { rows: missingDays } = await pool.query(
+    `SELECT s.day::text AS day
+     FROM generate_series($2::date, $3::date, interval '1 day') s(day)
+     LEFT JOIN readiness_daily rd ON rd.date = s.day AND rd.user_id = $1
+     WHERE rd.date IS NULL
+     ORDER BY s.day`,
+    [userId, startDay, endDay],
+  );
+
+  if (missingDays.length === 0) return 0;
+
+  let filled = 0;
+  for (const { day } of missingDays) {
+    try {
+      await computeReadiness(day, userId);
+      filled++;
+    } catch (_) {}
+  }
+  return filled;
+}
+
+export async function backfillHpaForUser(userId: string, startDay: string, endDay: string): Promise<number> {
+  const { rows: missingDays } = await pool.query(
+    `SELECT s.day::text AS day
+     FROM generate_series($2::date, $3::date, interval '1 day') s(day)
+     LEFT JOIN hpa_activation_daily h ON h.date = s.day AND h.user_id = $1
+     WHERE h.date IS NULL
+     ORDER BY s.day`,
+    [userId, startDay, endDay],
+  );
+
+  if (missingDays.length === 0) return 0;
+
+  let filled = 0;
+  for (const { day } of missingDays) {
+    try {
+      await computeAndUpsertHpa(day, userId);
+      filled++;
+    } catch (_) {}
+  }
+  return filled;
 }
 
 export async function recomputeRange(targetDay: string, userId: string = DEFAULT_USER_ID): Promise<void> {

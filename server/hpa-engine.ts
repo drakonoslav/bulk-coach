@@ -231,17 +231,18 @@ export async function getHpaRange(
   startDate: string,
   endDate: string,
   userId: string = DEFAULT_USER_ID
-): Promise<Array<{ date: string; hpaScore: number; suppressionFlag: boolean }>> {
+): Promise<Array<{ date: string; hpaScore: number | null; suppressionFlag: boolean }>> {
   const { rows } = await pool.query(
-    `SELECT date::text as date, hpa_score, suppression_flag
-     FROM hpa_activation_daily
-     WHERE user_id = $1 AND date >= $2 AND date <= $3
-     ORDER BY date ASC`,
+    `SELECT s.day::date::text AS spine_day, h.hpa_score, h.suppression_flag
+     FROM generate_series($2::date, $3::date, interval '1 day') s(day)
+     LEFT JOIN hpa_activation_daily h
+       ON h.date = s.day::date::text AND h.user_id = $1
+     ORDER BY s.day ASC`,
     [userId, startDate, endDate]
   );
   return rows.map(r => ({
-    date: r.date,
-    hpaScore: Number(r.hpa_score),
-    suppressionFlag: r.suppression_flag,
+    date: r.spine_day,
+    hpaScore: r.hpa_score != null ? Number(r.hpa_score) : null,
+    suppressionFlag: !!r.suppression_flag,
   }));
 }

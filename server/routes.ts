@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { initDb, pool } from "./db";
-import { recomputeRange, backfillDashboardCacheForUser } from "./recompute";
+import { recomputeRange, backfillDashboardCacheForUser, backfillReadinessForUser, backfillHpaForUser } from "./recompute";
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import { classifyDayRange } from "./day-classifier";
@@ -1565,25 +1565,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const todayStr = new Date().toISOString().slice(0, 10);
 
-      const { rows: logDays } = await pool.query(
-        `SELECT day FROM daily_log WHERE user_id = $1 AND day >= $2 ORDER BY day`,
-        [userId, cutoffStr],
-      );
+      const [logRes, cacheRes, readinessRes, hpaRes, vitalsRes, sleepRes, androgenRes, hrvBaseRes] = await Promise.all([
+        pool.query(`SELECT day FROM daily_log WHERE user_id = $1 AND day >= $2 ORDER BY day`, [userId, cutoffStr]),
+        pool.query(`SELECT day FROM dashboard_cache WHERE user_id = $1 AND day >= $2 ORDER BY day`, [userId, cutoffStr]),
+        pool.query(`SELECT date::text AS day FROM readiness_daily WHERE user_id = $1 AND date >= $2::date ORDER BY date`, [userId, cutoffStr]),
+        pool.query(`SELECT date AS day FROM hpa_activation_daily WHERE user_id = $1 AND date >= $2 ORDER BY date`, [userId, cutoffStr]),
+        pool.query(`SELECT date::text AS day FROM vitals_daily WHERE user_id = $1 AND date::text >= $2 ORDER BY date`, [userId, cutoffStr]),
+        pool.query(`SELECT date::text AS day FROM sleep_summary_daily WHERE user_id = $1 AND date::text >= $2 ORDER BY date`, [userId, cutoffStr]),
+        pool.query(`SELECT date::text AS day FROM androgen_proxy_daily WHERE user_id = $1 AND date::text >= $2 ORDER BY date`, [userId, cutoffStr]),
+        pool.query(`SELECT date::text AS day FROM hrv_baseline_daily WHERE user_id = $1 AND date::text >= $2 ORDER BY date`, [userId, cutoffStr]),
+      ]);
 
-      const { rows: cacheDays } = await pool.query(
-        `SELECT day FROM dashboard_cache WHERE user_id = $1 AND day >= $2 ORDER BY day`,
-        [userId, cutoffStr],
-      );
+      const logDays = new Set(logRes.rows.map((r: any) => r.day));
+      const toSet = (rows: any[]) => new Set(rows.map((r: any) => r.day));
 
-      const { rows: missingInCache } = await pool.query(
-        `SELECT dl.day
-         FROM daily_log dl
-         LEFT JOIN dashboard_cache dc ON dc.user_id = dl.user_id AND dc.day = dl.day
-         WHERE dl.user_id = $1 AND dl.day >= $2 AND dc.day IS NULL
-         ORDER BY dl.day`,
-        [userId, cutoffStr],
-      );
+      const derivedTables: Record<string, { present: number; missing: string[] }> = {};
+      const derivedSets: Record<string, Set<string>> = {
+        dashboard_cache: toSet(cacheRes.rows),
+        readiness_daily: toSet(readinessRes.rows),
+        hpa_activation_daily: toSet(hpaRes.rows),
+        vitals_daily: toSet(vitalsRes.rows),
+        sleep_summary_daily: toSet(sleepRes.rows),
+        androgen_proxy_daily: toSet(androgenRes.rows),
+        hrv_baseline_daily: toSet(hrvBaseRes.rows),
+      };
+
+      for (const [table, dSet] of Object.entries(derivedSets)) {
+        const missing: string[] = [];
+        for (const day of logDays) {
+          if (!dSet.has(day)) missing.push(day);
+        }
+        derivedTables[table] = { present: dSet.size, missing };
+      }
+
+      const purgatoryDetected = Object.values(derivedTables).some(t => t.missing.length > 0);
 
       const { rows: fieldCounts } = await pool.query(
         `SELECT
@@ -1602,48 +1619,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [userId, cutoffStr],
       );
 
-      const { rows: dashFieldCounts } = await pool.query(
-        `SELECT
-           COUNT(*)::int AS total_days,
-           COUNT(l.pushups_reps)::int AS dash_pushups,
-           COUNT(l.pullups_reps)::int AS dash_pullups,
-           COUNT(l.bench_reps)::int AS dash_bench,
-           COUNT(l.ohp_reps)::int AS dash_ohp,
-           COUNT(l.pain_0_10)::int AS dash_pain,
-           COUNT(l.sleep_start)::int AS dash_sleep_start,
-           COUNT(l.morning_weight_lb)::int AS dash_weight,
-           COUNT(l.meal_checklist)::int AS dash_meal_checklist,
-           COUNT(l.cardio_min)::int AS dash_cardio
-         FROM daily_log l
-         LEFT JOIN dashboard_cache d ON d.user_id = l.user_id AND d.day = l.day
-         WHERE l.user_id = $1 AND l.day >= $2`,
+      const { rows: staleRows } = await pool.query(
+        `SELECT dc.day, dc.recomputed_at, dl.updated_at
+         FROM dashboard_cache dc
+         JOIN daily_log dl ON dl.user_id = dc.user_id AND dl.day = dc.day
+         WHERE dc.user_id = $1 AND dc.day >= $2
+           AND dl.updated_at > dc.recomputed_at
+         ORDER BY dc.day`,
         [userId, cutoffStr],
       );
-
-      const dlCounts = fieldCounts[0] || {};
-      const dashCounts = dashFieldCounts[0] || {};
-
-      const purgatoryFields: string[] = [];
-      for (const field of ["pushups", "pullups", "bench", "ohp", "pain", "sleep_start", "weight", "meal_checklist", "cardio"]) {
-        const dlKey = `dl_${field}`;
-        const dashKey = `dash_${field}`;
-        if ((dlCounts as any)[dlKey] > (dashCounts as any)[dashKey]) {
-          purgatoryFields.push(field);
-        }
-      }
 
       res.json({
         ok: true,
         window: days,
-        dailyLogDays: logDays.length,
-        cacheDays: cacheDays.length,
-        missingInCache: missingInCache.map((r: any) => r.day),
-        purgatoryDetected: purgatoryFields.length > 0,
-        purgatoryFields,
-        fieldCounts: {
-          dailyLog: dlCounts,
-          dashboardJoin: dashCounts,
-        },
+        dailyLogDays: logDays.size,
+        derivedTables,
+        purgatoryDetected,
+        staleCacheDays: staleRows.map((r: any) => r.day),
+        fieldCounts: fieldCounts[0] || {},
       });
     } catch (err) {
       console.error("data-integrity error:", err);
@@ -1854,6 +1847,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      backfillReadinessForUser(userId, from, to).catch((err: unknown) =>
+        console.error("readiness backfill error:", err)
+      );
       const results = await getReadinessRange(from, to, userId);
       res.json(results);
     } catch (err: unknown) {
@@ -1922,6 +1918,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      backfillHpaForUser(userId, from, to).catch((err: unknown) =>
+        console.error("hpa backfill error:", err)
+      );
       const results = await getHpaRange(from, to, userId);
       res.json(results);
     } catch (err: unknown) {
@@ -1999,13 +1998,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }]));
       const svMap = new Map(svOverTime.map(s => [s.day, s.pctPerWeek]));
 
-      const allDates = new Set<string>();
-      hpaRows.forEach(h => allDates.add(h.date));
-      readinessRows.forEach((r: any) => allDates.add(r.date));
-      svOverTime.forEach(s => allDates.add(s.day));
+      const allDates: string[] = [];
+      const cur = new Date(from + "T00:00:00Z");
+      const end = new Date(to + "T00:00:00Z");
+      while (cur <= end) {
+        allDates.push(cur.toISOString().slice(0, 10));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
 
-      const sortedDates = [...allDates].sort();
-      const points = sortedDates.map(date => {
+      const points = allDates.map(date => {
         const rd = readinessMap.get(date);
         return {
           date,
