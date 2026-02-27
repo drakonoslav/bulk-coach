@@ -2225,7 +2225,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userScopedTables = [
         "context_lens_archives",
         "context_lens_episodes",
+        "context_events",
         "hpa_activation_daily",
+        "calorie_decisions",
         "daily_log",
         "dashboard_cache",
         "erection_sessions",
