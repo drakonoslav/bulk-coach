@@ -89,6 +89,52 @@ export interface DashboardRow {
   cardioFuelNote?: string;
 }
 
+export interface StrengthExercise {
+  id: string;
+  name: string;
+  category: string;
+  isBodyweight?: boolean;
+  active?: boolean;
+}
+
+export interface StrengthSet {
+  id: string;
+  day: string;
+  exerciseId: string;
+  weightLb?: number;
+  reps?: number;
+  rir?: number;
+  seconds?: number;
+  setType?: string;
+  isMeasured?: boolean;
+  createdAt?: string;
+}
+
+function rowToStrengthExercise(row: any): StrengthExercise {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    category: String(row.category),
+    isBodyweight: row.is_bodyweight != null ? Boolean(row.is_bodyweight) : undefined,
+    active: row.active != null ? Boolean(row.active) : undefined,
+  };
+}
+
+function rowToStrengthSet(row: any): StrengthSet {
+  return {
+    id: String(row.id),
+    day: String(row.day),
+    exerciseId: String(row.exercise_id),
+    weightLb: row.weight_lb != null ? Number(row.weight_lb) : undefined,
+    reps: row.reps != null ? Number(row.reps) : undefined,
+    rir: row.rir != null ? Number(row.rir) : undefined,
+    seconds: row.seconds != null ? Number(row.seconds) : undefined,
+    setType: row.set_type ?? undefined,
+    isMeasured: row.is_measured != null ? Boolean(row.is_measured) : undefined,
+    createdAt: row.created_at ?? undefined,
+  };
+}
+
 export async function loadEntry(day: string): Promise<DailyEntry | null> {
   try {
     const baseUrl = getApiUrl();
@@ -120,6 +166,83 @@ export async function loadBaseline(): Promise<Baseline> {
 
 export async function saveBaseline(baseline: Baseline): Promise<void> {
   await AsyncStorage.setItem(BASELINE_KEY, JSON.stringify(baseline));
+}
+
+export async function loadStrengthExercises(): Promise<StrengthExercise[]> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/strength-exercises", baseUrl);
+    const res = await authFetch(url.toString());
+    if (!res.ok) throw new Error(`${res.status}`);
+    const raw = await res.json();
+    const rows: any[] = Array.isArray(raw?.exercises) ? raw.exercises : [];
+    return rows.map(rowToStrengthExercise);
+  } catch (err) {
+    console.error("loadStrengthExercises API error:", err);
+    return [];
+  }
+}
+
+export async function loadStrengthSets(start: string, end: string): Promise<StrengthSet[]> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/strength-sets", baseUrl);
+    url.searchParams.set("start", start);
+    url.searchParams.set("end", end);
+    const res = await authFetch(url.toString());
+    if (!res.ok) throw new Error(`${res.status}`);
+    const raw = await res.json();
+    const rows: any[] = Array.isArray(raw?.sets) ? raw.sets : [];
+    return rows.map(rowToStrengthSet);
+  } catch (err) {
+    console.error("loadStrengthSets API error:", err);
+    return [];
+  }
+}
+
+export async function saveStrengthSets(
+  day: string,
+  sets: Array<{
+    id?: string;
+    exerciseId: string;
+    weightLb?: number;
+    reps?: number;
+    rir?: number;
+    seconds?: number;
+  }>
+): Promise<StrengthSet[]> {
+  const payload = { day, sets };
+  const res = await apiRequest("POST", "/api/strength-sets/upsert", payload);
+  const raw = await res.json();
+  const rows: any[] = Array.isArray(raw?.sets) ? raw.sets : [];
+  return rows.map(rowToStrengthSet);
+}
+
+export async function loadStrengthMapping(): Promise<{
+  muscles: Array<{ id: string; name: string; parent_id?: string | null }>;
+  weights: Array<{
+    exercise_id: string;
+    muscle_id: string;
+    weight_pct: number;
+    role?: string;
+    version: number;
+    active: boolean;
+  }>;
+}> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/strength-mapping", baseUrl);
+    const res = await authFetch(url.toString());
+    if (!res.ok) throw new Error(`${res.status}`);
+    const raw = await res.json();
+    return {
+      muscles: Array.isArray(raw?.muscles) ? raw.muscles : [],
+      weights: Array.isArray(raw?.weights) ? raw.weights : [],
+    };
+  } catch (err) {
+    console.error("loadStrengthMapping API error:", err);
+    return { muscles: [], weights: [] };
+  }
 }
 
 function rowToEntry(row: any): DailyEntry {
