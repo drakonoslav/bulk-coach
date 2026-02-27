@@ -12,7 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
-import { loadDashboard } from "@/lib/entry-storage";
+import { loadDashboard, loadStrengthSets, loadStrengthMapping, type StrengthSet } from "@/lib/entry-storage";
+import { computeGlobalStrengthIndexV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping } from "@/lib/strength-v2";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
 import { FuelGaugeGroup } from "@/components/FuelGauge";
@@ -657,6 +658,8 @@ export default function ReportScreen() {
   const [strengthBaselines, setStrengthBaselines] = useState<StrengthBaselines>({
     pushups: null, pullups: null, benchBarReps: null, ohpBarReps: null,
   });
+  const [strengthSets, setStrengthSets] = useState<StrengthSet[]>([]);
+  const [strengthV2Mapping, setStrengthV2Mapping] = useState<StrengthV2Mapping | null>(null);
   const [calorieHistory, setCalorieHistory] = useState<Array<{
     day: string; deltaKcal: number; source: string; priority: string; reason: string; wkGainLb: number | null; mode: string | null;
   }>>([]);
@@ -729,6 +732,21 @@ export default function ReportScreen() {
           });
         }
       } catch {}
+      try {
+        const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
+        if (sorted.length > 0) {
+          const start = sorted[Math.max(0, sorted.length - 60)].day;
+          const end = sorted[sorted.length - 1].day;
+          const [v2Sets, v2Map] = await Promise.all([
+            loadStrengthSets(start, end),
+            loadStrengthMapping(),
+          ]);
+          setStrengthSets(v2Sets);
+          setStrengthV2Mapping({ muscles: v2Map.muscles as any, weights: v2Map.weights as any });
+        }
+      } catch (e) {
+        console.warn("Strength V2 load failed:", e);
+      }
     } catch {}
   }, [proxyImputed]);
 
@@ -760,7 +778,16 @@ export default function ReportScreen() {
   const ffmV = ffmVelocity14d(entries);
   const ffmLgr = ffmLeanGainRatio(entries);
   const scs = computeSCS(entries, strengthBaselines);
-  const modeClass = classifyMode(entries, strengthBaselines);
+  const waistV = waistVelocity14d(entries);
+
+  const hasV2 = strengthSets.length >= 2 && strengthV2Mapping != null;
+  const globalV2 = hasV2 ? computeGlobalStrengthIndexV2(strengthSets, strengthV2Mapping!) : null;
+
+  const sV = hasV2 && globalV2
+    ? strengthVelocity14dV2(globalV2)
+    : strengthVelocity14d(entries, strengthBaselines);
+
+  const modeClass = classifyMode(entries, strengthBaselines, sV?.pctPerWeek ?? null);
 
   const isLocalFallback = appliedCalorieDelta == null;
   const finalKcal =
@@ -777,18 +804,21 @@ export default function ReportScreen() {
 
   const adjustments =
     finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
-  const waistV = waistVelocity14d(entries);
-  const sV = strengthVelocity14d(entries, strengthBaselines);
+
   const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
 
-  const siRa = strengthIndexRollingAvg(entries, strengthBaselines, 7);
+  const siRa = hasV2 && globalV2
+    ? strengthIndexRollingAvgV2(globalV2, 7)
+    : strengthIndexRollingAvg(entries, strengthBaselines, 7);
   const siChartData = siRa.slice(-28).map(d => ({ day: d.day, value: d.avg }));
   const siFirst = siRa.length > 0 ? siRa[0].avg : null;
   const siNormalized = siFirst != null && siFirst > 0
     ? siRa.slice(-28).map(d => ({ day: d.day, value: ((d.avg - siFirst) / siFirst) * 100 }))
     : [];
 
-  const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
+  const svOverTime = hasV2 && globalV2
+    ? strengthVelocityOverTimeV2(globalV2)
+    : strengthVelocityOverTime(entries, strengthBaselines);
   const svChartData = svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
 
   const phaseTransitions = detectPhaseTransitions(entries, strengthBaselines);

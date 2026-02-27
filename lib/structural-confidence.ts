@@ -408,6 +408,7 @@ function capCalorieDelta(delta: number, phase: TrainingPhase, wkGainLb?: number 
 export function classifyMode(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
+  strengthPctOverride?: number | null,
 ): ModeClassification {
   const scs = computeSCS(entries, baselines);
   const ffmV = ffmVelocity14d(entries);
@@ -417,7 +418,7 @@ export function classifyMode(
 
   const ffmVel = ffmV?.velocityLbPerWeek ?? null;
   const waistVel = waistV;
-  const strengthPct = sV?.pctPerWeek ?? null;
+  const strengthPct = strengthPctOverride != null ? strengthPctOverride : (sV?.pctPerWeek ?? null);
   const weightVel = wV;
 
   const trainingPhase = detectTrainingPhase(entries, baselines);
