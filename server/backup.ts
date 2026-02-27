@@ -116,84 +116,76 @@ export async function exportBackup(): Promise<BackupPayload> {
   };
 }
 
+const DAILY_LOG_COLUMNS = [
+  "user_id", "day",
+  "morning_weight_lb", "evening_weight_lb", "waist_in",
+  "bf_morning_r1", "bf_morning_r2", "bf_morning_r3", "bf_morning_pct",
+  "bf_evening_r1", "bf_evening_r2", "bf_evening_r3", "bf_evening_pct",
+  "sleep_start", "sleep_end", "sleep_quality", "sleep_minutes",
+  "water_liters", "steps", "cardio_min", "active_zone_minutes",
+  "lift_done", "deload_week", "adherence", "performance_note", "notes",
+  "energy_burned_kcal", "resting_hr", "hrv",
+  "sleep_plan_bedtime", "sleep_plan_wake", "tossed_minutes",
+  "planned_bed_time", "planned_wake_time",
+  "actual_bed_time", "actual_wake_time",
+  "sleep_latency_min", "sleep_waso_min", "nap_minutes",
+  "sleep_awake_min", "sleep_rem_min", "sleep_core_min", "sleep_deep_min",
+  "sleep_source_mode",
+  "calories_in", "training_load",
+  "cardio_start_time", "cardio_end_time",
+  "lift_start_time", "lift_end_time", "lift_min", "lift_working_min",
+  "zone1_min", "zone2_min", "zone3_min", "zone4_min", "zone5_min",
+  "below_zone1_min",
+  "lift_z1_min", "lift_z2_min", "lift_z3_min", "lift_z4_min", "lift_z5_min",
+  "fat_free_mass_lb",
+  "pushups_reps", "pullups_reps", "bench_reps", "bench_weight_lb", "ohp_reps", "ohp_weight_lb",
+  "pain_0_10",
+  "meal_checklist",
+  "cardio_skipped", "lift_skipped",
+  "sleep_efficiency", "bedtime_deviation_min", "wake_deviation_min", "sleep_plan_alignment_score",
+  "sleep_start_local", "sleep_end_local",
+  "created_at", "updated_at",
+] as const;
+
+const DAILY_LOG_BOOL_COLS = new Set(["lift_done", "deload_week", "cardio_skipped", "lift_skipped"]);
+
 async function upsertDailyLog(row: Record<string, unknown>): Promise<"insert" | "update" | "skip"> {
   const day = row.day as string;
-  const { rows: existing } = await pool.query(`SELECT day FROM daily_log WHERE day = $1`, [day]);
+  const userId = (row.user_id as string) || "local_default";
+  const { rows: existing } = await pool.query(
+    `SELECT day FROM daily_log WHERE user_id = $1 AND day = $2`,
+    [userId, day],
+  );
   const isUpdate = existing.length > 0;
 
+  const cols = DAILY_LOG_COLUMNS;
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+  const updateSet = cols
+    .filter(c => c !== "user_id" && c !== "day" && c !== "created_at")
+    .map(c => {
+      if (c === "updated_at") return `updated_at = NOW()`;
+      return `${c} = EXCLUDED.${c}`;
+    })
+    .join(", ");
+
+  const values = cols.map(c => {
+    if (c === "user_id") return userId;
+    if (c === "created_at") return row.created_at ?? new Date().toISOString();
+    if (c === "updated_at") return row.updated_at ?? new Date().toISOString();
+    if (DAILY_LOG_BOOL_COLS.has(c)) return row[c] ?? false;
+    if (c === "meal_checklist") {
+      const v = row[c];
+      if (v == null) return null;
+      return typeof v === "string" ? v : JSON.stringify(v);
+    }
+    return row[c] ?? null;
+  });
+
   await pool.query(
-    `INSERT INTO daily_log (
-      day, morning_weight_lb, evening_weight_lb, waist_in,
-      bf_morning_r1, bf_morning_r2, bf_morning_r3, bf_morning_pct,
-      bf_evening_r1, bf_evening_r2, bf_evening_r3, bf_evening_pct,
-      sleep_start, sleep_end, sleep_quality, sleep_minutes,
-      water_liters, steps, cardio_min, active_zone_minutes,
-      lift_done, deload_week, adherence, performance_note, notes,
-      energy_burned_kcal, resting_hr, hrv, created_at, updated_at
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
-    )
-    ON CONFLICT (day) DO UPDATE SET
-      morning_weight_lb = EXCLUDED.morning_weight_lb,
-      evening_weight_lb = EXCLUDED.evening_weight_lb,
-      waist_in = EXCLUDED.waist_in,
-      bf_morning_r1 = EXCLUDED.bf_morning_r1,
-      bf_morning_r2 = EXCLUDED.bf_morning_r2,
-      bf_morning_r3 = EXCLUDED.bf_morning_r3,
-      bf_morning_pct = EXCLUDED.bf_morning_pct,
-      bf_evening_r1 = EXCLUDED.bf_evening_r1,
-      bf_evening_r2 = EXCLUDED.bf_evening_r2,
-      bf_evening_r3 = EXCLUDED.bf_evening_r3,
-      bf_evening_pct = EXCLUDED.bf_evening_pct,
-      sleep_start = EXCLUDED.sleep_start,
-      sleep_end = EXCLUDED.sleep_end,
-      sleep_quality = EXCLUDED.sleep_quality,
-      sleep_minutes = EXCLUDED.sleep_minutes,
-      water_liters = EXCLUDED.water_liters,
-      steps = EXCLUDED.steps,
-      cardio_min = EXCLUDED.cardio_min,
-      active_zone_minutes = EXCLUDED.active_zone_minutes,
-      lift_done = EXCLUDED.lift_done,
-      deload_week = EXCLUDED.deload_week,
-      adherence = EXCLUDED.adherence,
-      performance_note = EXCLUDED.performance_note,
-      notes = EXCLUDED.notes,
-      energy_burned_kcal = EXCLUDED.energy_burned_kcal,
-      resting_hr = EXCLUDED.resting_hr,
-      hrv = EXCLUDED.hrv,
-      updated_at = NOW()`,
-    [
-      day,
-      row.morning_weight_lb ?? null,
-      row.evening_weight_lb ?? null,
-      row.waist_in ?? null,
-      row.bf_morning_r1 ?? null,
-      row.bf_morning_r2 ?? null,
-      row.bf_morning_r3 ?? null,
-      row.bf_morning_pct ?? null,
-      row.bf_evening_r1 ?? null,
-      row.bf_evening_r2 ?? null,
-      row.bf_evening_r3 ?? null,
-      row.bf_evening_pct ?? null,
-      row.sleep_start ?? null,
-      row.sleep_end ?? null,
-      row.sleep_quality ?? null,
-      row.sleep_minutes ?? null,
-      row.water_liters ?? null,
-      row.steps ?? null,
-      row.cardio_min ?? null,
-      row.active_zone_minutes ?? null,
-      row.lift_done ?? false,
-      row.deload_week ?? false,
-      row.adherence ?? null,
-      row.performance_note ?? null,
-      row.notes ?? null,
-      row.energy_burned_kcal ?? null,
-      row.resting_hr ?? null,
-      row.hrv ?? null,
-      row.created_at ?? new Date().toISOString(),
-      row.updated_at ?? new Date().toISOString(),
-    ],
+    `INSERT INTO daily_log (${cols.join(", ")})
+     VALUES (${placeholders})
+     ON CONFLICT (user_id, day) DO UPDATE SET ${updateSet}`,
+    values,
   );
 
   return isUpdate ? "update" : "insert";
@@ -204,15 +196,17 @@ async function upsertSnapshot(row: Record<string, unknown>): Promise<"insert" | 
   const { rows: existing } = await pool.query(`SELECT id FROM erection_summary_snapshots WHERE sha256 = $1`, [sha]);
   if (existing.length > 0) return "skip";
 
+  const userId = (row.user_id as string) || "local_default";
   await pool.query(
     `INSERT INTO erection_summary_snapshots (
-      id, sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds,
+      id, user_id, sha256, session_date, total_nights, total_nocturnal_erections, total_nocturnal_duration_seconds,
       number_of_recordings, erectile_fitness_score, avg_firmness_nocturnal, avg_erections_per_night, avg_duration_per_night_sec,
       original_filename, uploaded_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     ON CONFLICT (sha256) DO NOTHING`,
     [
       row.id ?? null,
+      userId,
       sha,
       row.session_date,
       row.total_nights,
@@ -233,16 +227,20 @@ async function upsertSnapshot(row: Record<string, unknown>): Promise<"insert" | 
 
 async function upsertSession(row: Record<string, unknown>): Promise<"insert" | "update" | "skip"> {
   const date = dateToStr(row.date) as string;
-  const { rows: existing } = await pool.query(`SELECT date FROM erection_sessions WHERE date = $1`, [date]);
+  const userId = (row.user_id as string) || "local_default";
+  const { rows: existing } = await pool.query(
+    `SELECT date FROM erection_sessions WHERE user_id = $1 AND date = $2`,
+    [userId, date],
+  );
   const isUpdate = existing.length > 0;
 
   await pool.query(
     `INSERT INTO erection_sessions (
-      date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id,
+      user_id, date, nocturnal_erections, nocturnal_duration_seconds, snapshot_id,
       is_imputed, imputed_method, imputed_source_date_start, imputed_source_date_end,
       multi_night_combined, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    ON CONFLICT (date) DO UPDATE SET
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    ON CONFLICT (user_id, date) DO UPDATE SET
       nocturnal_erections = EXCLUDED.nocturnal_erections,
       nocturnal_duration_seconds = EXCLUDED.nocturnal_duration_seconds,
       snapshot_id = EXCLUDED.snapshot_id,
@@ -253,6 +251,7 @@ async function upsertSession(row: Record<string, unknown>): Promise<"insert" | "
       multi_night_combined = EXCLUDED.multi_night_combined,
       updated_at = NOW()`,
     [
+      userId,
       date,
       row.nocturnal_erections ?? null,
       row.nocturnal_duration_seconds ?? null,
@@ -271,21 +270,23 @@ async function upsertSession(row: Record<string, unknown>): Promise<"insert" | "
 
 async function upsertProxyDaily(row: Record<string, unknown>): Promise<"insert" | "update" | "skip"> {
   const date = dateToStr(row.date) as string;
+  const userId = (row.user_id as string) || "local_default";
   const cwi = row.computed_with_imputed ?? false;
   const { rows: existing } = await pool.query(
-    `SELECT date FROM androgen_proxy_daily WHERE date = $1 AND computed_with_imputed = $2`,
-    [date, cwi],
+    `SELECT date FROM androgen_proxy_daily WHERE user_id = $1 AND date = $2 AND computed_with_imputed = $3`,
+    [userId, date, cwi],
   );
   const isUpdate = existing.length > 0;
 
   await pool.query(
-    `INSERT INTO androgen_proxy_daily (date, proxy_score, proxy_7d_avg, computed_with_imputed, computed_at)
-     VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (date, computed_with_imputed) DO UPDATE SET
+    `INSERT INTO androgen_proxy_daily (user_id, date, proxy_score, proxy_7d_avg, computed_with_imputed, computed_at)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (user_id, date, computed_with_imputed) DO UPDATE SET
        proxy_score = EXCLUDED.proxy_score,
        proxy_7d_avg = EXCLUDED.proxy_7d_avg,
        computed_at = NOW()`,
     [
+      userId,
       date,
       row.proxy_score ?? null,
       row.proxy_7d_avg ?? null,
@@ -299,13 +300,17 @@ async function upsertProxyDaily(row: Record<string, unknown>): Promise<"insert" 
 
 async function upsertDashboardCache(row: Record<string, unknown>): Promise<"insert" | "update" | "skip"> {
   const day = row.day as string;
-  const { rows: existing } = await pool.query(`SELECT day FROM dashboard_cache WHERE day = $1`, [day]);
+  const userId = (row.user_id as string) || "local_default";
+  const { rows: existing } = await pool.query(
+    `SELECT day FROM dashboard_cache WHERE user_id = $1 AND day = $2`,
+    [userId, day],
+  );
   const isUpdate = existing.length > 0;
 
   await pool.query(
-    `INSERT INTO dashboard_cache (day, lean_mass_lb, fat_mass_lb, weight_7d_avg, waist_7d_avg, lean_mass_7d_avg, lean_gain_ratio_14d_roll, cardio_fuel_note, recomputed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
-     ON CONFLICT (day) DO UPDATE SET
+    `INSERT INTO dashboard_cache (user_id, day, lean_mass_lb, fat_mass_lb, weight_7d_avg, waist_7d_avg, lean_mass_7d_avg, lean_gain_ratio_14d_roll, cardio_fuel_note, recomputed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+     ON CONFLICT (user_id, day) DO UPDATE SET
        lean_mass_lb = EXCLUDED.lean_mass_lb,
        fat_mass_lb = EXCLUDED.fat_mass_lb,
        weight_7d_avg = EXCLUDED.weight_7d_avg,
@@ -315,6 +320,7 @@ async function upsertDashboardCache(row: Record<string, unknown>): Promise<"inse
        cardio_fuel_note = EXCLUDED.cardio_fuel_note,
        recomputed_at = NOW()`,
     [
+      userId,
       day,
       row.lean_mass_lb ?? null,
       row.fat_mass_lb ?? null,
@@ -331,6 +337,7 @@ async function upsertDashboardCache(row: Record<string, unknown>): Promise<"inse
 
 async function upsertFitbitImport(row: Record<string, unknown>): Promise<"insert" | "update" | "skip"> {
   const sha = row.sha256 as string | null;
+  const userId = (row.user_id as string) || "local_default";
   if (sha) {
     const { rows: existing } = await pool.query(`SELECT id FROM fitbit_imports WHERE sha256 = $1`, [sha]);
     if (existing.length > 0) return "skip";
@@ -338,11 +345,12 @@ async function upsertFitbitImport(row: Record<string, unknown>): Promise<"insert
 
   const id = row.id as string || Date.now().toString() + Math.random().toString(36).substr(2, 9);
   await pool.query(
-    `INSERT INTO fitbit_imports (id, uploaded_at, original_filename, sha256, date_range_start, date_range_end, rows_imported, rows_upserted, rows_skipped, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `INSERT INTO fitbit_imports (id, user_id, uploaded_at, original_filename, sha256, date_range_start, date_range_end, rows_imported, rows_upserted, rows_skipped, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (id) DO NOTHING`,
     [
       id,
+      userId,
       row.uploaded_at ?? new Date().toISOString(),
       row.original_filename ?? null,
       sha,
@@ -411,7 +419,8 @@ export async function importBackup(
     const wouldUpdate: ImportCounts = { ...wouldInsert };
 
     for (const row of tables.daily_logs) {
-      const { rows } = await pool.query(`SELECT day FROM daily_log WHERE day = $1`, [row.day]);
+      const userId = (row.user_id as string) || "local_default";
+      const { rows } = await pool.query(`SELECT day FROM daily_log WHERE user_id = $1 AND day = $2`, [userId, row.day]);
       if (rows.length > 0) wouldUpdate.daily_logs++;
       else wouldInsert.daily_logs++;
     }
@@ -421,8 +430,9 @@ export async function importBackup(
       else wouldInsert.erection_summary_snapshots++;
     }
     for (const row of tables.erection_sessions) {
+      const userId = (row.user_id as string) || "local_default";
       const d = dateToStr(row.date);
-      const { rows } = await pool.query(`SELECT date FROM erection_sessions WHERE date = $1`, [d]);
+      const { rows } = await pool.query(`SELECT date FROM erection_sessions WHERE user_id = $1 AND date = $2`, [userId, d]);
       if (rows.length > 0) wouldUpdate.erection_sessions++;
       else wouldInsert.erection_sessions++;
     }

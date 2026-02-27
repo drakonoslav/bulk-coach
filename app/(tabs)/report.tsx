@@ -1944,7 +1944,7 @@ export default function ReportScreen() {
                               </Text>
                               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 6 }} />
                               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, lineHeight: 16 }}>
-                                {`adequacyRaw = 100×productive/planned = ${fmtRaw(co?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(cdo?.outcome?.adequacy)}\n\nefficiencyRaw = 100×productive/total = ${fmtRaw(co?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(cdo?.outcome?.efficiency)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1+1.5×(z4+z5) = ${co?.offBandWeighted ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${fmtRaw(co?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(cdo?.outcome?.continuity)}\ncontinuityDenominator = ${cdo?.outcome?.continuityDenominator ?? "—"}`}
+                                {`adequacyRaw = 100×productive/planned = ${fmtRaw(co?.adequacyScore, 6)}\nadequacyUI = ${fmtScore110(cdo?.outcome?.adequacy)}\n\nefficiencyRaw = 100×productive/total = ${fmtRaw(co?.efficiencyScore, 6)}\nefficiencyUI = ${fmtPct(cdo?.outcome?.efficiency)}\n\noffBandMin = z1+z4+z5 = ${co?.offBandMin ?? "—"}\noffBandWeighted = 0.5×z1Penalty+1.25×(z4+z5) = ${co?.offBandWeighted ?? "—"}\nz1Grace = ${co?.z1Grace ?? "—"}\nz1Penalty = ${co?.z1Penalty ?? "—"}\ncontinuityRaw = 100×(1−offBandWeighted/total) = ${fmtRaw(co?.continuityScore, 6)}\ncontinuityUI = ${fmtPct(cdo?.outcome?.continuity)}\ncontinuityDenominator = ${cdo?.outcome?.continuityDenominator ?? "—"}`}
                               </Text>
                             </View>
                           )}
