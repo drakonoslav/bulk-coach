@@ -2223,6 +2223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userScopedTables = [
+        "context_lens_archives",
+        "context_lens_episodes",
+        "hpa_activation_daily",
         "daily_log",
         "dashboard_cache",
         "erection_sessions",
@@ -2232,10 +2235,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "sleep_summary_daily",
         "hrv_baseline_daily",
         "readiness_daily",
-        "workout_session",
         "workout_hr_samples",
         "workout_rr_intervals",
         "workout_events",
+        "workout_session",
         "muscle_weekly_load",
         "fitbit_imports",
         "fitbit_takeout_imports",
