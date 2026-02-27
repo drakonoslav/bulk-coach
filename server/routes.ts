@@ -4131,6 +4131,150 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/strength-exercises", async (_req: Request, res: Response) => {
+    try {
+      const rows = await pool.query(
+        `SELECT id, name, category, is_bodyweight, active
+         FROM strength_exercises
+         WHERE active = TRUE
+         ORDER BY category, name`
+      );
+      return res.json({ exercises: rows.rows });
+    } catch (err: any) {
+      console.error("GET /api/strength-exercises error:", err);
+      return res.status(500).json({ error: "Failed to load strength exercises" });
+    }
+  });
+
+  app.get("/api/strength-sets", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const start = String(req.query.start || "");
+      const end = String(req.query.end || "");
+
+      if (!start || !end) {
+        return res.status(400).json({ error: "start and end are required (YYYY-MM-DD)" });
+      }
+
+      const r = await pool.query(
+        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, created_at
+         FROM strength_sets
+         WHERE user_id = $1
+           AND day >= $2
+           AND day <= $3
+         ORDER BY day ASC, created_at ASC`,
+        [userId, start, end]
+      );
+
+      return res.json({ sets: r.rows });
+    } catch (err: any) {
+      console.error("GET /api/strength-sets error:", err);
+      return res.status(500).json({ error: "Failed to load strength sets" });
+    }
+  });
+
+  app.post("/api/strength-sets/upsert", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    const b = req.body || {};
+    const day = String(b.day || "");
+    const sets = Array.isArray(b.sets) ? b.sets : null;
+
+    if (!day) return res.status(400).json({ error: "day is required (YYYY-MM-DD)" });
+    if (!sets) return res.status(400).json({ error: "sets must be an array" });
+
+    for (let i = 0; i < sets.length; i++) {
+      const s = sets[i] || {};
+      if (!s.exerciseId) {
+        return res.status(400).json({ error: `sets[${i}].exerciseId is required` });
+      }
+      if (s.reps != null && (typeof s.reps !== "number" || s.reps < 0 || s.reps > 200)) {
+        return res.status(400).json({ error: `sets[${i}].reps invalid` });
+      }
+      if (s.weightLb != null && (typeof s.weightLb !== "number" || s.weightLb < 0 || s.weightLb > 2000)) {
+        return res.status(400).json({ error: `sets[${i}].weightLb invalid` });
+      }
+      if (s.rir != null && (typeof s.rir !== "number" || s.rir < 0 || s.rir > 5)) {
+        return res.status(400).json({ error: `sets[${i}].rir invalid` });
+      }
+      if (s.seconds != null && (typeof s.seconds !== "number" || s.seconds < 0 || s.seconds > 36000)) {
+        return res.status(400).json({ error: `sets[${i}].seconds invalid` });
+      }
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `DELETE FROM strength_sets
+         WHERE user_id = $1 AND day = $2`,
+        [userId, day]
+      );
+
+      for (const s of sets) {
+        const id = String(s.id || crypto.randomUUID());
+        const exerciseId = String(s.exerciseId);
+        const weightLb = s.weightLb != null ? Number(s.weightLb) : null;
+        const reps = s.reps != null ? Number(s.reps) : null;
+        const rir = s.rir != null ? Number(s.rir) : null;
+        const seconds = s.seconds != null ? Number(s.seconds) : null;
+
+        await client.query(
+          `INSERT INTO strength_sets (
+             id, user_id, day, exercise_id,
+             weight_lb, reps, rir, seconds,
+             set_type, is_measured
+           ) VALUES (
+             $1,$2,$3,$4,$5,$6,$7,$8,'top',TRUE
+           )`,
+          [id, userId, day, exerciseId, weightLb, reps, rir, seconds]
+        );
+      }
+
+      await client.query("COMMIT");
+
+      const out = await pool.query(
+        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, created_at
+         FROM strength_sets
+         WHERE user_id = $1 AND day = $2
+         ORDER BY created_at ASC`,
+        [userId, day]
+      );
+
+      return res.json({ day, sets: out.rows });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/strength-sets/upsert error:", err);
+      return res.status(500).json({ error: "Failed to upsert strength sets" });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get("/api/strength-mapping", async (_req: Request, res: Response) => {
+    try {
+      const muscles = await pool.query(
+        `SELECT id, name, parent_id
+         FROM muscle_groups
+         ORDER BY name ASC`
+      );
+
+      const weights = await pool.query(
+        `SELECT exercise_id, muscle_id, weight_pct, role, version, active
+         FROM exercise_muscle_weights
+         WHERE active = TRUE AND version = 1`
+      );
+
+      return res.json({
+        muscles: muscles.rows,
+        weights: weights.rows,
+      });
+    } catch (err: any) {
+      console.error("GET /api/strength-mapping error:", err);
+      return res.status(500).json({ error: "Failed to load strength mapping" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
