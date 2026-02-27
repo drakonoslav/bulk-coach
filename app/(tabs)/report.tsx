@@ -13,7 +13,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadDashboard, loadStrengthSets, loadStrengthMapping, type StrengthSet } from "@/lib/entry-storage";
-import { computeGlobalStrengthIndexV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping } from "@/lib/strength-v2";
+import { computeGlobalStrengthIndexV2, computeRegionalMuscleIndicesV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping, type MuscleIndexDay } from "@/lib/strength-v2";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
 import { FuelGaugeGroup } from "@/components/FuelGauge";
@@ -821,6 +821,84 @@ export default function ReportScreen() {
     : strengthVelocityOverTime(entries, strengthBaselines);
   const svChartData = svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
 
+  const regionalRows = React.useMemo(() => {
+    const v2Active = strengthSets.length >= 2 && strengthV2Mapping != null;
+    if (!v2Active) return [];
+
+    const mapping = strengthV2Mapping as StrengthV2Mapping;
+    const regional = computeRegionalMuscleIndicesV2(strengthSets, mapping, 21);
+
+    const parentIds = new Set(mapping.muscles.map((m) => m.parent_id).filter(Boolean) as string[]);
+    const leafMuscles = mapping.muscles.filter((m) => !parentIds.has(m.id));
+
+    const byMuscle = new Map<string, MuscleIndexDay[]>();
+    for (const r of regional) {
+      if (!byMuscle.has(r.muscleId)) byMuscle.set(r.muscleId, []);
+      byMuscle.get(r.muscleId)!.push(r);
+    }
+
+    const out: Array<{
+      muscleId: string;
+      muscleName: string;
+      pct14d: number | null;
+      confidence: number;
+      quantCount: number;
+      todayIndex: number;
+    }> = [];
+
+    for (const m of leafMuscles) {
+      const arr = byMuscle.get(m.id);
+      if (!arr || arr.length < 2) continue;
+
+      const sorted = [...arr].sort((a, b) => a.day.localeCompare(b.day));
+      const today = sorted[sorted.length - 1];
+      const todayDate = new Date(today.day + "T00:00:00");
+
+      let prior: MuscleIndexDay | null = null;
+      for (let i = sorted.length - 2; i >= 0; i--) {
+        const d = new Date(sorted[i].day + "T00:00:00");
+        const span = Math.round((todayDate.getTime() - d.getTime()) / 86400000);
+        if (span >= 10 && span <= 18) {
+          prior = sorted[i];
+          break;
+        }
+      }
+      if (!prior) {
+        for (let i = sorted.length - 2; i >= 0; i--) {
+          const d = new Date(sorted[i].day + "T00:00:00");
+          const span = Math.round((todayDate.getTime() - d.getTime()) / 86400000);
+          if (span >= 7) {
+            prior = sorted[i];
+            break;
+          }
+        }
+      }
+
+      let pct14d: number | null = null;
+      if (prior && prior.index > 0) {
+        pct14d = ((today.index / prior.index) - 1) * 100;
+      }
+
+      out.push({
+        muscleId: m.id,
+        muscleName: m.name,
+        pct14d: pct14d != null ? Math.round(pct14d * 10) / 10 : null,
+        confidence: today.confidence,
+        quantCount: today.quantCount,
+        todayIndex: today.index,
+      });
+    }
+
+    out.sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      const aa = Math.abs(a.pct14d ?? 0);
+      const bb = Math.abs(b.pct14d ?? 0);
+      return bb - aa;
+    });
+
+    return out;
+  }, [strengthSets, strengthV2Mapping]);
+
   const phaseTransitions = detectPhaseTransitions(entries, strengthBaselines);
 
   const phaseMarkers = phaseTransitions.map(t => ({
@@ -1439,6 +1517,79 @@ export default function ReportScreen() {
                           yFormat={(v) => fmtDelta(v, 1, "%")}
                           zeroLine
                         />
+                      </View>
+                    )}
+                    {regionalRows.length > 0 && (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>
+                          Regional Strength (leaf muscles) — ~14d change
+                        </Text>
+
+                        <View style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: "hidden" }}>
+                          <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 10, backgroundColor: Colors.cardBgElevated }}>
+                            <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
+                              Muscle
+                            </Text>
+                            <Text style={{ flex: 0.8, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                              14d
+                            </Text>
+                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                              Conf
+                            </Text>
+                            <Text style={{ flex: 0.6, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                              Q
+                            </Text>
+                          </View>
+
+                          {regionalRows.slice(0, 18).map((r) => {
+                            const pct = r.pct14d;
+                            const pctColor =
+                              pct == null ? Colors.textTertiary :
+                              pct >= 1.5 ? "#34D399" :
+                              pct >= 0.25 ? "#FBBF24" :
+                              pct > -0.25 ? "#9CA3AF" :
+                              "#F87171";
+
+                            const confColor =
+                              r.confidence >= 0.75 ? "#34D399" :
+                              r.confidence >= 0.45 ? "#FBBF24" :
+                              "#9CA3AF";
+
+                            return (
+                              <View
+                                key={r.muscleId}
+                                style={{
+                                  flexDirection: "row",
+                                  paddingVertical: 8,
+                                  paddingHorizontal: 10,
+                                  borderTopWidth: 1,
+                                  borderTopColor: Colors.border,
+                                  backgroundColor: "#00000000",
+                                }}
+                              >
+                                <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.text }}>
+                                  {r.muscleName}
+                                </Text>
+
+                                <Text style={{ flex: 0.8, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: pctColor, textAlign: "right" }}>
+                                  {pct == null ? "--" : fmtDelta(pct, 1, "%")}
+                                </Text>
+
+                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: confColor, textAlign: "right" }}>
+                                  {fmtVal(r.confidence, 2)}
+                                </Text>
+
+                                <Text style={{ flex: 0.6, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: r.quantCount >= 2 ? "#34D399" : Colors.textTertiary, textAlign: "right" }}>
+                                  {r.quantCount}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+
+                        <Text style={{ marginTop: 8, fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 14 }}>
+                          Conf = confidence (coverage + attribution). Q = unique meaningful exercises in last 21d (goal ≥2–3).
+                        </Text>
                       </View>
                     )}
                     {phaseTransitions.length > 0 && (

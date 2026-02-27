@@ -4,6 +4,7 @@ import {
   Text,
   View,
   TextInput,
+  ScrollView,
   Pressable,
   Platform,
   Alert,
@@ -18,7 +19,15 @@ import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import Colors from "@/constants/colors";
-import { saveEntry, loadEntry } from "@/lib/entry-storage";
+import {
+  saveEntry,
+  loadEntry,
+  loadStrengthExercises,
+  loadStrengthSets,
+  saveStrengthSets,
+  type StrengthExercise,
+  type StrengthSet,
+} from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { computeClientDeviation, deviationHumanLabel, formatSignedMinutes } from "@/lib/sleep-deviation";
@@ -308,6 +317,42 @@ export default function LogScreen() {
   const [firmnessAvg, setFirmnessAvg] = useState("");
   const [pain010, setPain010] = useState<number | null>(null);
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
+
+  const [strengthExercises, setStrengthExercises] = useState<StrengthExercise[]>([]);
+  const [strengthSetsDay, setStrengthSetsDay] = useState<StrengthSet[]>([]);
+  const [strengthSetsSaving, setStrengthSetsSaving] = useState(false);
+  const [strengthSetsDirty, setStrengthSetsDirty] = useState(false);
+  const [strengthModalVisible, setStrengthModalVisible] = useState(false);
+  const [exercisePickerVisible, setExercisePickerVisible] = useState(false);
+  const [draftExerciseId, setDraftExerciseId] = useState<string>("");
+  const [draftWeightLb, setDraftWeightLb] = useState("");
+  const [draftReps, setDraftReps] = useState("");
+  const [draftRir, setDraftRir] = useState("");
+  const [draftSeconds, setDraftSeconds] = useState("");
+
+  const exerciseNameById = React.useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const e of strengthExercises) m[e.id] = e.name;
+    return m;
+  }, [strengthExercises]);
+
+  function resetStrengthDraft(defaultExerciseId?: string) {
+    setDraftExerciseId(defaultExerciseId || strengthExercises[0]?.id || "");
+    setDraftWeightLb("");
+    setDraftReps("");
+    setDraftRir("");
+    setDraftSeconds("");
+  }
+
+  function formatTopSetRow(s: StrengthSet): string {
+    const name = exerciseNameById[s.exerciseId] || s.exerciseId;
+    if (s.seconds != null && s.weightLb != null) return `${name} — ${s.weightLb} lb × ${s.seconds}s`;
+    const parts: string[] = [];
+    if (s.weightLb != null) parts.push(`${s.weightLb} lb`);
+    if (s.reps != null) parts.push(`× ${s.reps}`);
+    if (s.rir != null) parts.push(`(RIR ${s.rir})`);
+    return `${name} — ${parts.join(" ")}`.trim();
+  }
 
   interface ContextEvent {
     id: number;
@@ -635,6 +680,25 @@ export default function LogScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      const ex = await loadStrengthExercises();
+      setStrengthExercises(ex);
+      if (!draftExerciseId && ex.length) setDraftExerciseId(ex[0].id);
+    })();
+  }, []);
+
+  const loadStrengthV2ForDay = useCallback(async (day: string) => {
+    try {
+      const sets = await loadStrengthSets(day, day);
+      setStrengthSetsDay(sets);
+      setStrengthSetsDirty(false);
+    } catch {
+      setStrengthSetsDay([]);
+      setStrengthSetsDirty(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDateEntry(selectedDate);
@@ -644,9 +708,10 @@ export default function LogScreen() {
       loadDayState(selectedDate);
       loadAndrogenForDate(selectedDate);
       loadEpisodes(selectedDate);
+      loadStrengthV2ForDay(selectedDate);
       if (!sleepPlan) loadSleepPlan();
       setUploadResult(null);
-    }, [selectedDate])
+    }, [selectedDate, loadStrengthV2ForDay])
   );
 
   useEffect(() => {
@@ -1362,6 +1427,346 @@ export default function LogScreen() {
             </View>
           </View>
         </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <Ionicons name="stats-chart-outline" size={14} color="#F59256" />
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#F59256" }}>
+              Top Sets (Session)
+            </Text>
+            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>
+              strength v2
+            </Text>
+          </View>
+
+          {strengthSetsDay.length === 0 ? (
+            <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 16 }}>
+              No top sets logged for this day.
+            </Text>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {strengthSetsDay.map((s) => (
+                <View
+                  key={s.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    paddingVertical: 8,
+                    paddingHorizontal: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "#FFFFFF10",
+                    backgroundColor: "#0B1220",
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                      {formatTopSetRow(s)}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                      {selectedDate}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setStrengthSetsDay((prev) => prev.filter((x) => x.id !== s.id));
+                      setStrengthSetsDirty(true);
+                    }}
+                    hitSlop={10}
+                    style={{ padding: 6 }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                resetStrengthDraft(strengthExercises[0]?.id);
+                setStrengthModalVisible(true);
+              }}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#F5925640",
+                backgroundColor: "#F5925615",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#F59256" }}>
+                Add Top Set
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={async () => {
+                try {
+                  if (strengthSetsSaving) return;
+                  setStrengthSetsSaving(true);
+                  const payload = strengthSetsDay.map((s) => ({
+                    id: s.id,
+                    exerciseId: s.exerciseId,
+                    weightLb: s.weightLb,
+                    reps: s.reps,
+                    rir: s.rir,
+                    seconds: s.seconds,
+                  }));
+                  const saved = await saveStrengthSets(selectedDate, payload);
+                  setStrengthSetsDay(saved);
+                  setStrengthSetsDirty(false);
+                  if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                } catch (e: any) {
+                  Alert.alert("Save failed", e?.message || "Unable to save strength sets.");
+                } finally {
+                  setStrengthSetsSaving(false);
+                }
+              }}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 10,
+                backgroundColor: strengthSetsDirty ? "#F59256" : "#334155",
+                alignItems: "center",
+                opacity: strengthSetsSaving ? 0.7 : 1,
+              }}
+            >
+              {strengthSetsSaving ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: "#fff" }}>
+                  {strengthSetsDirty ? "Save Sets" : "Saved"}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+
+        <Modal
+          visible={strengthModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setStrengthModalVisible(false)}
+        >
+          <Pressable
+            style={ctxStyles.modalOverlay}
+            onPress={() => setStrengthModalVisible(false)}
+          >
+            <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
+                  Add Top Set
+                </Text>
+                <Pressable onPress={() => setStrengthModalVisible(false)} hitSlop={12}>
+                  <Ionicons name="close" size={22} color={Colors.textTertiary} />
+                </Pressable>
+              </View>
+
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>
+                Exercise
+              </Text>
+              <Pressable
+                onPress={() => setExercisePickerVisible(true)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#FFFFFF15",
+                  backgroundColor: "#0B1220",
+                  marginBottom: 12,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                  {exerciseNameById[draftExerciseId] || "Select exercise"}
+                </Text>
+              </Pressable>
+
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                    Weight
+                  </Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.input}
+                      value={draftWeightLb}
+                      onChangeText={setDraftWeightLb}
+                      placeholder="e.g. 135"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      keyboardAppearance="dark"
+                    />
+                    <Text style={styles.inputSuffix}>lb</Text>
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                    Reps
+                  </Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.input}
+                      value={draftReps}
+                      onChangeText={setDraftReps}
+                      placeholder="e.g. 8"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="number-pad"
+                      keyboardAppearance="dark"
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                    RIR (optional)
+                  </Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.input}
+                      value={draftRir}
+                      onChangeText={setDraftRir}
+                      placeholder="0–4"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="number-pad"
+                      keyboardAppearance="dark"
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                    Seconds (carry)
+                  </Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.input}
+                      value={draftSeconds}
+                      onChangeText={setDraftSeconds}
+                      placeholder="e.g. 45"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="number-pad"
+                      keyboardAppearance="dark"
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={() => {
+                  const exId = draftExerciseId;
+                  if (!exId) {
+                    Alert.alert("Missing exercise", "Select an exercise first.");
+                    return;
+                  }
+
+                  const weight = draftWeightLb ? Number(draftWeightLb) : undefined;
+                  const reps = draftReps ? Number(draftReps) : undefined;
+                  const rir = draftRir ? Number(draftRir) : undefined;
+                  const seconds = draftSeconds ? Number(draftSeconds) : undefined;
+
+                  const hasLift = weight != null && reps != null && reps > 0;
+                  const hasCarry = weight != null && seconds != null && seconds > 0;
+                  const hasRepsOnly = reps != null && reps > 0;
+
+                  if (!hasLift && !hasCarry && !hasRepsOnly) {
+                    Alert.alert("Incomplete set", "Enter weight + reps, or weight + seconds (carry), or reps.");
+                    return;
+                  }
+
+                  const newSet: StrengthSet = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    day: selectedDate,
+                    exerciseId: exId,
+                    weightLb: weight,
+                    reps: reps,
+                    rir: rir,
+                    seconds: seconds,
+                    setType: "top",
+                    isMeasured: true,
+                  };
+
+                  setStrengthSetsDay((prev) => [...prev, newSet]);
+                  setStrengthSetsDirty(true);
+                  setStrengthModalVisible(false);
+                }}
+                style={{
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  backgroundColor: "#F59256",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontSize: 14, fontFamily: "Rubik_700Bold", color: "#fff" }}>
+                  Add
+                </Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={exercisePickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setExercisePickerVisible(false)}
+        >
+          <Pressable style={ctxStyles.modalOverlay} onPress={() => setExercisePickerVisible(false)}>
+            <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
+                  Select Exercise
+                </Text>
+                <Pressable onPress={() => setExercisePickerVisible(false)} hitSlop={12}>
+                  <Ionicons name="close" size={22} color={Colors.textTertiary} />
+                </Pressable>
+              </View>
+
+              <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 8 }}>
+                  {strengthExercises.map((ex) => {
+                    const selected = ex.id === draftExerciseId;
+                    return (
+                      <Pressable
+                        key={ex.id}
+                        onPress={() => {
+                          setDraftExerciseId(ex.id);
+                          setExercisePickerVisible(false);
+                        }}
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: selected ? "#F59256" : "#FFFFFF15",
+                          backgroundColor: selected ? "#F5925615" : "#0B1220",
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: selected ? "#F59256" : Colors.text }}>
+                          {ex.name}
+                        </Text>
+                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                          {ex.category}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Sleep — Self-Report</Text>
