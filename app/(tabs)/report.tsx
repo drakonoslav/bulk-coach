@@ -682,6 +682,19 @@ export default function ReportScreen() {
     setPolicySource(dash.policySource);
     setModeInsightReason(dash.modeInsightReason);
     setCalorieHistory(dash.decisions14d ?? []);
+
+    try {
+      const v2End = end;
+      const v2Start = start;
+      const [v2Sets, v2Map] = await Promise.all([
+        loadStrengthSets(v2Start, v2End),
+        loadStrengthMapping(),
+      ]);
+      setStrengthSets(v2Sets);
+      setStrengthV2Mapping({ muscles: v2Map.muscles as any, weights: v2Map.weights as any });
+    } catch (e) {
+      console.warn("Strength V2 load failed:", e);
+    }
   }, []);
 
   const fetchProxy = useCallback(async () => {
@@ -732,21 +745,6 @@ export default function ReportScreen() {
           });
         }
       } catch {}
-      try {
-        const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
-        if (sorted.length > 0) {
-          const start = sorted[Math.max(0, sorted.length - 60)].day;
-          const end = sorted[sorted.length - 1].day;
-          const [v2Sets, v2Map] = await Promise.all([
-            loadStrengthSets(start, end),
-            loadStrengthMapping(),
-          ]);
-          setStrengthSets(v2Sets);
-          setStrengthV2Mapping({ muscles: v2Map.muscles as any, weights: v2Map.weights as any });
-        }
-      } catch (e) {
-        console.warn("Strength V2 load failed:", e);
-      }
     } catch {}
   }, [proxyImputed]);
 
