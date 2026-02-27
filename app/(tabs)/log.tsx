@@ -323,7 +323,7 @@ export default function LogScreen() {
   const [strengthSetsSaving, setStrengthSetsSaving] = useState(false);
   const [strengthSetsDirty, setStrengthSetsDirty] = useState(false);
   const [strengthModalVisible, setStrengthModalVisible] = useState(false);
-  const [exercisePickerVisible, setExercisePickerVisible] = useState(false);
+  const [strengthModalView, setStrengthModalView] = useState<"form" | "picker">("form");
   const [draftExerciseId, setDraftExerciseId] = useState<string>("");
   const [draftWeightLb, setDraftWeightLb] = useState("");
   const [draftReps, setDraftReps] = useState("");
@@ -342,6 +342,7 @@ export default function LogScreen() {
     setDraftReps("");
     setDraftRir("");
     setDraftSeconds("");
+    setStrengthModalView("form");
   }
 
   function formatTopSetRow(s: StrengthSet): string {
@@ -1558,212 +1559,221 @@ export default function LogScreen() {
         >
           <Pressable
             style={ctxStyles.modalOverlay}
-            onPress={() => setStrengthModalVisible(false)}
+            onPress={() => {
+              if (strengthModalView === "picker") {
+                setStrengthModalView("form");
+              } else {
+                setStrengthModalVisible(false);
+              }
+            }}
           >
             <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
-                  Add Top Set
-                </Text>
-                <Pressable onPress={() => setStrengthModalVisible(false)} hitSlop={12}>
-                  <Ionicons name="close" size={22} color={Colors.textTertiary} />
-                </Pressable>
-              </View>
-
-              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>
-                Exercise
-              </Text>
-              <Pressable
-                onPress={() => setExercisePickerVisible(true)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: "#FFFFFF15",
-                  backgroundColor: "#0B1220",
-                  marginBottom: 12,
-                }}
-              >
-                <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.text }}>
-                  {exerciseNameById[draftExerciseId] || "Select exercise"}
-                </Text>
-              </Pressable>
-
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
-                    Weight
-                  </Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.input}
-                      value={draftWeightLb}
-                      onChangeText={setDraftWeightLb}
-                      placeholder="e.g. 135"
-                      placeholderTextColor={Colors.textTertiary}
-                      keyboardType="decimal-pad"
-                      keyboardAppearance="dark"
-                    />
-                    <Text style={styles.inputSuffix}>lb</Text>
+              {strengthModalView === "form" ? (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
+                      Add Top Set
+                    </Text>
+                    <Pressable onPress={() => setStrengthModalVisible(false)} hitSlop={12}>
+                      <Ionicons name="close" size={22} color={Colors.textTertiary} />
+                    </Pressable>
                   </View>
-                </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
-                    Reps
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6 }}>
+                    Exercise
                   </Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.input}
-                      value={draftReps}
-                      onChangeText={setDraftReps}
-                      placeholder="e.g. 8"
-                      placeholderTextColor={Colors.textTertiary}
-                      keyboardType="number-pad"
-                      keyboardAppearance="dark"
-                    />
+                  <Pressable
+                    onPress={() => setStrengthModalView("picker")}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: "#F5925640",
+                      backgroundColor: "#0B1220",
+                      marginBottom: 12,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                      {exerciseNameById[draftExerciseId] || "Select exercise"}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={Colors.textTertiary} />
+                  </Pressable>
+
+                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                        Weight
+                      </Text>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          value={draftWeightLb}
+                          onChangeText={setDraftWeightLb}
+                          placeholder="e.g. 135"
+                          placeholderTextColor={Colors.textTertiary}
+                          keyboardType="decimal-pad"
+                          keyboardAppearance="dark"
+                        />
+                        <Text style={styles.inputSuffix}>lb</Text>
+                      </View>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                        Reps
+                      </Text>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          value={draftReps}
+                          onChangeText={setDraftReps}
+                          placeholder="e.g. 8"
+                          placeholderTextColor={Colors.textTertiary}
+                          keyboardType="number-pad"
+                          keyboardAppearance="dark"
+                        />
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </View>
 
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
-                    RIR (optional)
-                  </Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.input}
-                      value={draftRir}
-                      onChangeText={setDraftRir}
-                      placeholder="0–4"
-                      placeholderTextColor={Colors.textTertiary}
-                      keyboardType="number-pad"
-                      keyboardAppearance="dark"
-                    />
+                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                        RIR (optional)
+                      </Text>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          value={draftRir}
+                          onChangeText={setDraftRir}
+                          placeholder="0–4"
+                          placeholderTextColor={Colors.textTertiary}
+                          keyboardType="number-pad"
+                          keyboardAppearance="dark"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
+                        Seconds (carry)
+                      </Text>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          value={draftSeconds}
+                          onChangeText={setDraftSeconds}
+                          placeholder="e.g. 45"
+                          placeholderTextColor={Colors.textTertiary}
+                          keyboardType="number-pad"
+                          keyboardAppearance="dark"
+                        />
+                      </View>
+                    </View>
                   </View>
-                </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 4 }}>
-                    Seconds (carry)
-                  </Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.input}
-                      value={draftSeconds}
-                      onChangeText={setDraftSeconds}
-                      placeholder="e.g. 45"
-                      placeholderTextColor={Colors.textTertiary}
-                      keyboardType="number-pad"
-                      keyboardAppearance="dark"
-                    />
+                  <Pressable
+                    onPress={() => {
+                      const exId = draftExerciseId;
+                      if (!exId) {
+                        Alert.alert("Missing exercise", "Select an exercise first.");
+                        return;
+                      }
+
+                      const weight = draftWeightLb ? Number(draftWeightLb) : undefined;
+                      const reps = draftReps ? Number(draftReps) : undefined;
+                      const rir = draftRir ? Number(draftRir) : undefined;
+                      const seconds = draftSeconds ? Number(draftSeconds) : undefined;
+
+                      const hasLift = weight != null && reps != null && reps > 0;
+                      const hasCarry = weight != null && seconds != null && seconds > 0;
+                      const hasRepsOnly = reps != null && reps > 0;
+
+                      if (!hasLift && !hasCarry && !hasRepsOnly) {
+                        Alert.alert("Incomplete set", "Enter weight + reps, or weight + seconds (carry), or reps.");
+                        return;
+                      }
+
+                      const newSet: StrengthSet = {
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                        day: selectedDate,
+                        exerciseId: exId,
+                        weightLb: weight,
+                        reps: reps,
+                        rir: rir,
+                        seconds: seconds,
+                        setType: "top",
+                        isMeasured: true,
+                      };
+
+                      setStrengthSetsDay((prev) => [...prev, newSet]);
+                      setStrengthSetsDirty(true);
+                      setStrengthModalVisible(false);
+                    }}
+                    style={{
+                      paddingVertical: 12,
+                      borderRadius: 10,
+                      backgroundColor: "#F59256",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontFamily: "Rubik_700Bold", color: "#fff" }}>
+                      Add
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <Pressable onPress={() => setStrengthModalView("form")} hitSlop={12} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Ionicons name="chevron-back" size={18} color={Colors.textTertiary} />
+                      <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Back</Text>
+                    </Pressable>
+                    <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
+                      Select Exercise
+                    </Text>
+                    <Pressable onPress={() => { setStrengthModalView("form"); }} hitSlop={12}>
+                      <Ionicons name="close" size={22} color={Colors.textTertiary} />
+                    </Pressable>
                   </View>
-                </View>
-              </View>
 
-              <Pressable
-                onPress={() => {
-                  const exId = draftExerciseId;
-                  if (!exId) {
-                    Alert.alert("Missing exercise", "Select an exercise first.");
-                    return;
-                  }
-
-                  const weight = draftWeightLb ? Number(draftWeightLb) : undefined;
-                  const reps = draftReps ? Number(draftReps) : undefined;
-                  const rir = draftRir ? Number(draftRir) : undefined;
-                  const seconds = draftSeconds ? Number(draftSeconds) : undefined;
-
-                  const hasLift = weight != null && reps != null && reps > 0;
-                  const hasCarry = weight != null && seconds != null && seconds > 0;
-                  const hasRepsOnly = reps != null && reps > 0;
-
-                  if (!hasLift && !hasCarry && !hasRepsOnly) {
-                    Alert.alert("Incomplete set", "Enter weight + reps, or weight + seconds (carry), or reps.");
-                    return;
-                  }
-
-                  const newSet: StrengthSet = {
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    day: selectedDate,
-                    exerciseId: exId,
-                    weightLb: weight,
-                    reps: reps,
-                    rir: rir,
-                    seconds: seconds,
-                    setType: "top",
-                    isMeasured: true,
-                  };
-
-                  setStrengthSetsDay((prev) => [...prev, newSet]);
-                  setStrengthSetsDirty(true);
-                  setStrengthModalVisible(false);
-                }}
-                style={{
-                  paddingVertical: 12,
-                  borderRadius: 10,
-                  backgroundColor: "#F59256",
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ fontSize: 14, fontFamily: "Rubik_700Bold", color: "#fff" }}>
-                  Add
-                </Text>
-              </Pressable>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        <Modal
-          visible={exercisePickerVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setExercisePickerVisible(false)}
-        >
-          <Pressable style={ctxStyles.modalOverlay} onPress={() => setExercisePickerVisible(false)}>
-            <Pressable style={ctxStyles.modalCard} onPress={() => {}}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <Text style={{ fontSize: 16, fontFamily: "Rubik_700Bold", color: Colors.text }}>
-                  Select Exercise
-                </Text>
-                <Pressable onPress={() => setExercisePickerVisible(false)} hitSlop={12}>
-                  <Ionicons name="close" size={22} color={Colors.textTertiary} />
-                </Pressable>
-              </View>
-
-              <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-                <View style={{ gap: 8 }}>
-                  {strengthExercises.map((ex) => {
-                    const selected = ex.id === draftExerciseId;
-                    return (
-                      <Pressable
-                        key={ex.id}
-                        onPress={() => {
-                          setDraftExerciseId(ex.id);
-                          setExercisePickerVisible(false);
-                        }}
-                        style={{
-                          paddingVertical: 10,
-                          paddingHorizontal: 12,
-                          borderRadius: 10,
-                          borderWidth: 1,
-                          borderColor: selected ? "#F59256" : "#FFFFFF15",
-                          backgroundColor: selected ? "#F5925615" : "#0B1220",
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: selected ? "#F59256" : Colors.text }}>
-                          {ex.name}
-                        </Text>
-                        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
-                          {ex.category}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+                  <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                    <View style={{ gap: 8 }}>
+                      {strengthExercises.map((ex) => {
+                        const selected = ex.id === draftExerciseId;
+                        return (
+                          <Pressable
+                            key={ex.id}
+                            onPress={() => {
+                              setDraftExerciseId(ex.id);
+                              setStrengthModalView("form");
+                            }}
+                            style={{
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderRadius: 10,
+                              borderWidth: 1,
+                              borderColor: selected ? "#F59256" : "#FFFFFF15",
+                              backgroundColor: selected ? "#F5925615" : "#0B1220",
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: selected ? "#F59256" : Colors.text }}>
+                              {ex.name}
+                            </Text>
+                            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                              {ex.category}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </>
+              )}
             </Pressable>
           </Pressable>
         </Modal>
