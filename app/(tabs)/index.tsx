@@ -16,6 +16,8 @@ import { loadEntries } from "@/lib/entry-storage";
 import { authFetch, getApiUrl } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
+import MuscleMapCard from "@/components/MuscleMapCard";
+import { MuscleState } from "@/lib/muscle_map_layout";
 import {
   DailyEntry,
   rollingAvg,
@@ -170,6 +172,41 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [signalPoints, setSignalPoints] = useState<SignalPoint[]>([]);
   const [signalDays, setSignalDays] = useState(30);
+  const [muscleMapData, setMuscleMapData] = useState<MuscleState[]>([]);
+  const [muscleMapDate, setMuscleMapDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [muscleMapLoading, setMuscleMapLoading] = useState(false);
+  const [muscleMapError, setMuscleMapError] = useState<string | null>(null);
+
+  const fetchMuscleMap = useCallback(async () => {
+    setMuscleMapLoading(true);
+    setMuscleMapError(null);
+    try {
+      const baseUrl = getApiUrl();
+      const today = new Date().toISOString().slice(0, 10);
+      setMuscleMapDate(today);
+      const url = new URL("/api/intel/muscle-map", baseUrl);
+      url.searchParams.set("date", today);
+      const res = await authFetch(url.toString());
+      if (res.ok) {
+        const raw = await res.json();
+        const data = raw?.upstream_json ?? raw;
+        if (data?.muscles && Array.isArray(data.muscles)) {
+          setMuscleMapData(data.muscles);
+        } else {
+          setMuscleMapData([]);
+          if (data?.detail === "Not Found") {
+            setMuscleMapError("Intel muscle-map endpoint not available yet");
+          }
+        }
+      } else {
+        setMuscleMapError("Failed to load muscle map");
+      }
+    } catch {
+      setMuscleMapError("Network error loading muscle map");
+    } finally {
+      setMuscleMapLoading(false);
+    }
+  }, []);
 
   const fetchSignals = useCallback(async (days: number) => {
     try {
@@ -193,14 +230,15 @@ export default function DashboardScreen() {
     useCallback(() => {
       fetchEntries();
       fetchSignals(signalDays);
-    }, [fetchEntries, fetchSignals, signalDays])
+      fetchMuscleMap();
+    }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchEntries(), fetchSignals(signalDays)]);
+    await Promise.all([fetchEntries(), fetchSignals(signalDays), fetchMuscleMap()]);
     setRefreshing(false);
-  }, [fetchEntries, fetchSignals, signalDays]);
+  }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap]);
 
   const handleRangeChange = useCallback((days: number) => {
     setSignalDays(days);
@@ -256,6 +294,13 @@ export default function DashboardScreen() {
           points={signalPoints}
           rangeDays={signalDays}
           onRangeChange={handleRangeChange}
+        />
+
+        <MuscleMapCard
+          muscles={muscleMapData}
+          date={muscleMapDate}
+          loading={muscleMapLoading}
+          error={muscleMapError}
         />
 
         <View style={styles.heroCard}>
