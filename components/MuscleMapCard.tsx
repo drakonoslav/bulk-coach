@@ -8,30 +8,38 @@ interface Props {
   date: string;
   loading?: boolean;
   error?: string | null;
+  doseMode: "total" | "direct";
+  onDoseModeChange: (mode: "total" | "direct") => void;
 }
 
-const COLS = 3;
 const ROWS = 10;
 
-function readinessColor(r: number | undefined): string {
-  if (r == null) return Colors.surface;
-  if (r >= 80) return "#22C55E";
-  if (r >= 60) return "#84CC16";
-  if (r >= 40) return "#EAB308";
-  if (r >= 20) return "#F97316";
+function intensityColor(dose: number, maxDose: number): string {
+  if (dose <= 0) return Colors.surface;
+  const pct = Math.min(dose / (maxDose || 1), 1);
+  if (pct >= 0.8) return "#22C55E";
+  if (pct >= 0.6) return "#84CC16";
+  if (pct >= 0.4) return "#EAB308";
+  if (pct >= 0.2) return "#F97316";
   return "#EF4444";
 }
 
-function readinessOpacity(r: number | undefined): number {
-  if (r == null) return 0.15;
-  return 0.3 + 0.7 * (r / 100);
+function intensityOpacity(dose: number, maxDose: number): number {
+  if (dose <= 0) return 0.15;
+  const pct = Math.min(dose / (maxDose || 1), 1);
+  return 0.35 + 0.65 * pct;
 }
 
-export default function MuscleMapCard({ muscles, date, loading, error }: Props) {
+export default function MuscleMapCard({ muscles, date, loading, error, doseMode, onDoseModeChange }: Props) {
   const [selected, setSelected] = useState<MuscleState | null>(null);
 
   const stateMap = new Map<MuscleKey, MuscleState>();
   for (const m of muscles) stateMap.set(m.key, m);
+
+  const maxDose = Math.max(
+    ...muscles.map(m => doseMode === "total" ? m.total_dose : m.direct_dose),
+    1
+  );
 
   const rows: GridCell[][] = [];
   for (const cell of MUSCLE_MAP_GRID) {
@@ -44,6 +52,21 @@ export default function MuscleMapCard({ muscles, date, loading, error }: Props) 
       <View style={styles.header}>
         <Text style={styles.title}>Muscle Map (Intel)</Text>
         <Text style={styles.dateLabel}>{date}</Text>
+      </View>
+
+      <View style={styles.toggleRow}>
+        <Pressable
+          style={[styles.toggleBtn, doseMode === "total" && styles.toggleBtnActive]}
+          onPress={() => onDoseModeChange("total")}
+        >
+          <Text style={[styles.toggleText, doseMode === "total" && styles.toggleTextActive]}>Total</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.toggleBtn, doseMode === "direct" && styles.toggleBtnActive]}
+          onPress={() => onDoseModeChange("direct")}
+        >
+          <Text style={[styles.toggleText, doseMode === "direct" && styles.toggleTextActive]}>Direct</Text>
+        </Pressable>
       </View>
 
       {loading && <Text style={styles.loading}>Loading…</Text>}
@@ -61,8 +84,9 @@ export default function MuscleMapCard({ muscles, date, loading, error }: Props) 
               <View key={rowIdx} style={styles.gridRow}>
                 {cellsInRow.map((cell) => {
                   const ms = stateMap.get(cell.key);
-                  const color = readinessColor(ms?.readiness);
-                  const opacity = readinessOpacity(ms?.readiness);
+                  const dose = ms ? (doseMode === "total" ? ms.total_dose : ms.direct_dose) : 0;
+                  const color = intensityColor(dose, maxDose);
+                  const opacity = intensityOpacity(dose, maxDose);
                   const span = cell.colSpan || 1;
                   return (
                     <Pressable
@@ -78,7 +102,7 @@ export default function MuscleMapCard({ muscles, date, loading, error }: Props) 
                       ]}
                     >
                       <Text style={styles.cellLabel} numberOfLines={1}>{cell.label}</Text>
-                      {ms && <Text style={styles.cellValue}>{Math.round(ms.readiness)}</Text>}
+                      {dose > 0 && <Text style={styles.cellValue}>{dose.toFixed(1)}</Text>}
                     </Pressable>
                   );
                 })}
@@ -90,24 +114,20 @@ export default function MuscleMapCard({ muscles, date, loading, error }: Props) 
 
       <View style={styles.legend}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: "#EF4444" }]} />
-          <Text style={styles.legendText}>0–20</Text>
+          <View style={[styles.legendDot, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]} />
+          <Text style={styles.legendText}>0</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: "#F97316" }]} />
-          <Text style={styles.legendText}>20–40</Text>
+          <View style={[styles.legendDot, { backgroundColor: "#EF4444" }]} />
+          <Text style={styles.legendText}>Low</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: "#EAB308" }]} />
-          <Text style={styles.legendText}>40–60</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: "#84CC16" }]} />
-          <Text style={styles.legendText}>60–80</Text>
+          <Text style={styles.legendText}>Med</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: "#22C55E" }]} />
-          <Text style={styles.legendText}>80+</Text>
+          <Text style={styles.legendText}>High</Text>
         </View>
       </View>
 
@@ -123,18 +143,18 @@ export default function MuscleMapCard({ muscles, date, loading, error }: Props) 
               <>
                 <Text style={styles.modalTitle}>{selected.key.replace(/_/g, " ").toUpperCase()}</Text>
                 <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Readiness</Text>
-                  <Text style={[styles.modalValue, { color: readinessColor(selected.readiness) }]}>
-                    {selected.readiness.toFixed(1)}
-                  </Text>
+                  <Text style={styles.modalLabel}>Total Dose</Text>
+                  <Text style={styles.modalValue}>{selected.total_dose.toFixed(2)}</Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Direct Dose</Text>
+                  <Text style={styles.modalValue}>{selected.direct_dose.toFixed(2)}</Text>
                 </View>
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Load (7d)</Text>
-                  <Text style={styles.modalValue}>{selected.load_7d.toFixed(1)}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Fatigue</Text>
-                  <Text style={styles.modalValue}>{selected.fatigue.toFixed(1)}</Text>
+                  <Text style={[styles.modalValue, { color: Colors.textSecondary }]}>
+                    {selected.load_7d > 0 ? selected.load_7d.toFixed(1) : "—"}
+                  </Text>
                 </View>
                 {selected.last_hit && (
                   <View style={styles.modalRow}>
@@ -166,7 +186,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   title: {
     fontSize: 15,
@@ -177,6 +197,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 10,
+  },
+  toggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  toggleBtnActive: {
+    backgroundColor: Colors.primary + "20",
+    borderColor: Colors.primary,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textSecondary,
+  },
+  toggleTextActive: {
+    color: Colors.primary,
   },
   loading: {
     fontSize: 13,
@@ -221,7 +266,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   cellValue: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
     marginTop: 1,
@@ -229,13 +274,13 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 12,
+    gap: 16,
     marginTop: 10,
   },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: 4,
   },
   legendDot: {
     width: 8,

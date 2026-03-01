@@ -9,6 +9,8 @@ export type MuscleKey =
 
 export type MuscleState = {
   key: MuscleKey;
+  total_dose: number;
+  direct_dose: number;
   load_7d: number;
   fatigue: number;
   readiness: number;
@@ -61,3 +63,75 @@ export const MUSCLE_MAP_GRID: GridCell[] = [
 ];
 
 export const ALL_MUSCLE_KEYS: MuscleKey[] = MUSCLE_MAP_GRID.map(c => c.key);
+
+const INTEL_NAME_TO_KEY: Record<string, MuscleKey> = {
+  "Forearms": "forearms",
+  "Biceps": "biceps",
+  "Triceps": "triceps",
+  "Deltoids": "delts",
+  "Front/Anterior Delt": "delts_front",
+  "Rear/Posterior Delt": "delts_rear",
+  "Side/Lateral Delt": "delts_side",
+  "Neck": "neck",
+  "Traps": "traps",
+  "Upper Traps": "traps_upper",
+  "Mid Traps": "traps_mid",
+  "Lower Traps": "traps_lower",
+  "Upper Back": "upper_back",
+  "Middle Back": "middle_back",
+  "Lower Back": "lower_back",
+  "Lats": "lats",
+  "Chest": "pecs",
+  "Obliques": "obliques",
+  "Abs": "abs",
+  "Glutes": "glutes",
+  "Adductors": "adductors",
+  "Abductors": "abductors",
+  "Quads": "quads",
+  "Hamstrings": "hamstrings",
+  "Shins": "shins",
+  "Calves": "calves",
+};
+
+const INTEL_ID_TO_KEY: Record<number, MuscleKey> = {
+  1: "forearms", 2: "biceps", 3: "triceps", 4: "delts",
+  5: "delts_front", 6: "delts_rear", 7: "delts_side", 8: "neck",
+  9: "traps", 10: "traps_upper", 11: "traps_mid", 12: "traps_lower",
+  13: "upper_back", 14: "middle_back", 15: "lower_back", 16: "lats",
+  17: "pecs", 18: "obliques", 19: "abs", 20: "glutes",
+  21: "adductors", 22: "abductors", 23: "quads", 24: "hamstrings",
+  25: "shins", 26: "calves",
+};
+
+export interface IntelRegion {
+  muscle: string;
+  muscle_id: number;
+  total_dose: number;
+  direct_dose: number;
+}
+
+export function transformIntelResponse(
+  intelData: { date: string; regions: IntelRegion[] },
+  mode: "total" | "direct" = "total"
+): MuscleState[] {
+  const regions = intelData.regions || [];
+  const maxDose = Math.max(...regions.map(r => mode === "total" ? r.total_dose : r.direct_dose), 1);
+
+  return regions
+    .map((r) => {
+      const key = INTEL_ID_TO_KEY[r.muscle_id] ?? INTEL_NAME_TO_KEY[r.muscle];
+      if (!key) return null;
+      const dose = mode === "total" ? r.total_dose : r.direct_dose;
+      const score = Math.min(100, (dose / maxDose) * 100);
+      return {
+        key,
+        total_dose: r.total_dose,
+        direct_dose: r.direct_dose,
+        load_7d: 0,
+        fatigue: 0,
+        readiness: score,
+        last_hit: dose > 0 ? intelData.date : undefined,
+      } as MuscleState;
+    })
+    .filter((m): m is MuscleState => m != null);
+}

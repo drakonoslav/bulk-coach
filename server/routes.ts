@@ -4317,7 +4317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
     try {
-      const r = await fetch(`${INTEL_BASE}/muscle-map?date=${encodeURIComponent(date)}`);
+      const r = await fetch(`${INTEL_BASE}/muscle/day?date=${encodeURIComponent(date)}`);
       return intelProxy(r, res);
     } catch (err: any) {
       console.error("GET /api/intel/muscle-map error:", err);

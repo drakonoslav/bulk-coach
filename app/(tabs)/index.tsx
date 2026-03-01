@@ -17,7 +17,7 @@ import { authFetch, getApiUrl } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
 import MuscleMapCard from "@/components/MuscleMapCard";
-import { MuscleState } from "@/lib/muscle_map_layout";
+import { MuscleState, transformIntelResponse } from "@/lib/muscle_map_layout";
 import {
   DailyEntry,
   rollingAvg,
@@ -176,6 +176,8 @@ export default function DashboardScreen() {
   const [muscleMapDate, setMuscleMapDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [muscleMapLoading, setMuscleMapLoading] = useState(false);
   const [muscleMapError, setMuscleMapError] = useState<string | null>(null);
+  const [muscleMapRaw, setMuscleMapRaw] = useState<any>(null);
+  const [muscleDoseMode, setMuscleDoseMode] = useState<"total" | "direct">("total");
 
   const fetchMuscleMap = useCallback(async () => {
     setMuscleMapLoading(true);
@@ -190,10 +192,12 @@ export default function DashboardScreen() {
       if (res.ok) {
         const raw = await res.json();
         const data = raw?.upstream_json ?? raw;
-        if (data?.muscles && Array.isArray(data.muscles)) {
-          setMuscleMapData(data.muscles);
+        if (data?.regions && Array.isArray(data.regions)) {
+          setMuscleMapRaw(data);
+          setMuscleMapData(transformIntelResponse(data, muscleDoseMode));
         } else {
           setMuscleMapData([]);
+          setMuscleMapRaw(null);
           if (data?.detail === "Not Found") {
             setMuscleMapError("Intel muscle-map endpoint not available yet");
           }
@@ -206,7 +210,14 @@ export default function DashboardScreen() {
     } finally {
       setMuscleMapLoading(false);
     }
-  }, []);
+  }, [muscleDoseMode]);
+
+  const handleDoseModeChange = useCallback((mode: "total" | "direct") => {
+    setMuscleDoseMode(mode);
+    if (muscleMapRaw) {
+      setMuscleMapData(transformIntelResponse(muscleMapRaw, mode));
+    }
+  }, [muscleMapRaw]);
 
   const fetchSignals = useCallback(async (days: number) => {
     try {
@@ -301,6 +312,8 @@ export default function DashboardScreen() {
           date={muscleMapDate}
           loading={muscleMapLoading}
           error={muscleMapError}
+          doseMode={muscleDoseMode}
+          onDoseModeChange={handleDoseModeChange}
         />
 
         <View style={styles.heroCard}>
