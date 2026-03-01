@@ -2,7 +2,7 @@ export type MuscleKey =
   | "neck" | "delts_front" | "delts_side" | "delts_rear" | "delts"
   | "pecs" | "traps" | "traps_upper" | "traps_mid" | "traps_lower"
   | "upper_back" | "middle_back" | "lower_back" | "lats"
-  | "biceps" | "triceps" | "forearms"
+  | "biceps" | "triceps" | "forearms" | "hands_grip"
   | "abs" | "obliques"
   | "glutes" | "quads" | "hamstrings" | "calves" | "shins"
   | "adductors" | "abductors";
@@ -73,7 +73,7 @@ export const BODY_ROWS: RowDef[] = [
   { type: "split",
     left: null,
     midRows: [
-      [{ key: "abs", label: "Abs" }, { key: "forearms", label: "Forearms" }],
+      [{ key: "abs", label: "Abs" }, { key: "hands_grip", label: "Hands/Grip" }],
       [{ key: "abductors", label: "Abductors" }, { key: "adductors", label: "Adductors" }],
     ],
     right: { key: "glutes", label: "Glutes", flex: 1, rowSpan: 2 },
@@ -110,7 +110,7 @@ export const MUSCLE_MAP_GRID: GridCell[] = [
   { key: "lats",        label: "Lats",          row: 4, col: 2, lane: "rear_upper" },
   { key: "upper_back",  label: "Upper Back",    row: 4, col: 3, lane: "rear_upper" },
   { key: "abs",         label: "Abs",           row: 5, col: 0, lane: "front_lower" },
-  { key: "forearms",    label: "Forearms",      row: 5, col: 1, lane: "front_upper" },
+  { key: "hands_grip",  label: "Hands/Grip",    row: 5, col: 1, lane: "front_upper" },
   { key: "glutes",      label: "Glutes",        row: 5, col: 2, rowSpan: 2, lane: "rear_lower" },
   { key: "middle_back", label: "Mid Back",      row: 5, col: 3, lane: "rear_lower" },
   { key: "abductors",   label: "Abductors",     row: 6, col: 0, lane: "front_lower" },
