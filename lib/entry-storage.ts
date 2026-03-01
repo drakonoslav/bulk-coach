@@ -360,7 +360,7 @@ export async function saveIntelReceipt(receipt: IntelReceipt): Promise<void> {
 }
 
 export async function loadIntelReceipt(date: string): Promise<IntelReceipt | null> {
-  const res = await apiRequest("GET", `/api/intel-receipts/${date}`);
+  const res = await apiRequest("GET", `/api/intel-receipts/${date}?_=${Date.now()}`);
   const data = await res.json();
   return data?.receipt ?? null;
 }

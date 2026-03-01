@@ -4435,7 +4435,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT * FROM intel_receipts WHERE user_id = $1 AND performed_at = $2`,
         [userId, date]
       );
-      return res.json({ receipt: result.rows[0] ?? null });
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.set("Content-Type", "application/json");
+      const receipt = result.rows[0] ?? null;
+      return res.status(200).send(JSON.stringify({ receipt }));
     } catch (err: any) {
       console.error("GET /api/intel-receipts/:date error:", err);
       return res.status(500).json({ error: "Failed to load intel receipt" });
