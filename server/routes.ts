@@ -4341,7 +4341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/intel/sets/batch", async (req: Request, res: Response) => {
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
     const upstreamUrl = `${INTEL_BASE}/lifts/sets/batch`;
-    console.log(`[intel/sets/batch] LIFTING_INTEL_BASE_URL=${INTEL_BASE} upstream=${upstreamUrl}`);
+    console.log(`[intel/sets/batch] LIFTING_INTEL_BASE_URL=${INTEL_BASE} upstream=${upstreamUrl} reqBody=${JSON.stringify(req.body).slice(0, 500)}`);
     try {
       const r = await fetch(upstreamUrl, {
         method: "POST",
