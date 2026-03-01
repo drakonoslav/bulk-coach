@@ -47,8 +47,8 @@ interface SetEntry {
 }
 
 interface SessionState {
-  planId: string | null;
-  sessionId: string | null;
+  planId: number | null;
+  sessionId: number | null;
   exercises: PlanExercise[];
   active: boolean;
 }
@@ -148,8 +148,10 @@ export default function TrainingScreen() {
       const res = await apiRequest("POST", "/api/intel/session/start", body);
       const raw = await res.json();
       const data = raw?.upstream_json ?? raw;
-      const planId = data?.plan_id || data?.planId || null;
-      const sessionId = data?.session_id || data?.sessionId || null;
+      const rawPlanId = data?.plan_id ?? data?.planId ?? null;
+      const rawSessionId = data?.session_id ?? data?.sessionId ?? null;
+      const planId = rawPlanId != null && Number.isFinite(Number(rawPlanId)) ? Number(rawPlanId) : null;
+      const sessionId = rawSessionId != null && Number.isFinite(Number(rawSessionId)) ? Number(rawSessionId) : null;
       const exercises: PlanExercise[] = Array.isArray(data?.exercises) ? data.exercises : [];
       setSession({ planId, sessionId, exercises, active: true });
       setSets([]);
@@ -243,8 +245,8 @@ export default function TrainingScreen() {
   }, [sets, todayDate]);
 
   const completeSession = useCallback(async () => {
-    if (!session.active || !session.planId) {
-      Alert.alert("No Active Plan", "Start a plan session first");
+    if (!session.active || session.planId == null || !Number.isFinite(session.planId)) {
+      Alert.alert("No Active Plan", "Start a plan session first (requires numeric plan_id)");
       return;
     }
 
@@ -256,18 +258,20 @@ export default function TrainingScreen() {
         return;
       }
 
-      const setIds: string[] = Array.isArray(batchData?.set_ids)
-        ? batchData.set_ids
-        : Array.isArray(batchData?.rows)
-          ? batchData.rows.map((r: any) => String(r.id))
-          : Array.isArray(batchData?.sets)
-            ? batchData.sets.map((s: any) => String(s.id || s.set_id))
-            : [];
+      const setIds: number[] = (
+        Array.isArray(batchData?.set_ids)
+          ? batchData.set_ids
+          : Array.isArray(batchData?.rows)
+            ? batchData.rows.map((r: any) => r.id)
+            : Array.isArray(batchData?.sets)
+              ? batchData.sets.map((s: any) => s.id || s.set_id)
+              : []
+      ).map(Number).filter(Number.isFinite);
 
       const completePayload: any = {
         plan_id: session.planId,
       };
-      if (session.sessionId) completePayload.session_id = session.sessionId;
+      if (session.sessionId != null) completePayload.session_id = session.sessionId;
       if (setIds.length > 0) completePayload.set_ids = setIds;
 
       const res = await apiRequest("POST", "/api/intel/session/complete", completePayload);
@@ -386,7 +390,7 @@ export default function TrainingScreen() {
             <Ionicons name="flash" size={16} color={Colors.primary} />
             <Text style={styles.sessionText}>
               Plan active — {session.exercises.length} exercises
-              {session.planId ? ` (plan: ${session.planId.slice(0, 8)}…)` : ""}
+              {session.planId != null ? ` (plan: ${session.planId})` : ""}
             </Text>
           </View>
         )}
