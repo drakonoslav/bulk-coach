@@ -126,10 +126,29 @@ export default function TrainingScreen() {
     return allExercises;
   }, [allExercises]);
 
-  const todayDate = useMemo(() => {
+  const todayStr = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
+
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  const shiftDate = useCallback((dir: -1 | 1) => {
+    setSelectedDate((prev) => {
+      const d = new Date(prev + "T12:00:00");
+      d.setDate(d.getDate() + dir);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    });
+  }, []);
+
+  const dateLabel = useMemo(() => {
+    if (selectedDate === todayStr) return "Today";
+    const d = new Date(selectedDate + "T12:00:00");
+    const yesterday = new Date(todayStr + "T12:00:00");
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  }, [selectedDate, todayStr]);
 
   const [sessionFallback, setSessionFallback] = useState(false);
 
@@ -138,7 +157,7 @@ export default function TrainingScreen() {
     setSessionFallback(false);
     try {
       const body: any = {
-        planned_for: todayDate,
+        planned_for: selectedDate,
         mode: "compound",
         preset: "hypertrophy",
         context,
@@ -175,7 +194,7 @@ export default function TrainingScreen() {
     } finally {
       setStartingSession(false);
     }
-  }, [context, todayDate]);
+  }, [context, selectedDate]);
 
   useEffect(() => {
     setSelectedExercise(null);
@@ -228,7 +247,7 @@ export default function TrainingScreen() {
           weight: parseFloat(s.weightLb),
           reps: parseInt(s.reps, 10),
           rir: parseInt(s.rir, 10) || 0,
-          performed_at: todayDate,
+          performed_at: selectedDate,
         })),
       };
       const res = await apiRequest("POST", "/api/intel/sets/batch", payload);
@@ -242,7 +261,7 @@ export default function TrainingScreen() {
         const intelSetIds = data.rows.map((r: any) => Number(r.id)).filter(Number.isFinite);
         try {
           await saveIntelReceipt({
-            performed_at: todayDate,
+            performed_at: selectedDate,
             source: "intel",
             exercise_names: exerciseNames,
             set_count: data.inserted,
@@ -263,7 +282,7 @@ export default function TrainingScreen() {
     } finally {
       setSaving(false);
     }
-  }, [sets, todayDate]);
+  }, [sets, selectedDate]);
 
   const completeSession = useCallback(async () => {
     if (!session.active || session.planId == null || !Number.isFinite(session.planId)) {
@@ -331,6 +350,19 @@ export default function TrainingScreen() {
         </Pressable>
         <Text style={styles.title}>Training Log</Text>
         <View style={{ width: 24 }} />
+      </View>
+
+      <View style={styles.datePicker}>
+        <Pressable onPress={() => shiftDate(-1)} hitSlop={12} style={styles.dateArrow}>
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
+        </Pressable>
+        <Pressable onPress={() => setSelectedDate(todayStr)} style={styles.dateLabelWrap}>
+          <Text style={styles.dateLabel}>{dateLabel}</Text>
+          <Text style={styles.dateSubLabel}>{selectedDate}</Text>
+        </Pressable>
+        <Pressable onPress={() => shiftDate(1)} hitSlop={12} style={styles.dateArrow}>
+          <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -621,6 +653,20 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
   },
+  datePicker: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  dateArrow: { padding: 4 },
+  dateLabelWrap: { alignItems: "center", minWidth: 120 },
+  dateLabel: { fontSize: 15, fontFamily: "Rubik_600SemiBold", color: Colors.text },
+  dateSubLabel: { fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 1 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 12 },
   toggleRow: {
