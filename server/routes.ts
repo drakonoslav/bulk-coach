@@ -4278,17 +4278,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const INTEL_BASE = process.env.LIFTING_INTEL_BASE_URL || "";
   console.log(`[intel] LIFTING_INTEL_BASE_URL = ${INTEL_BASE || "(not set)"}`);
 
+  async function intelProxy(upstreamResp: globalThis.Response, res: Response) {
+    const contentType = upstreamResp.headers.get("content-type") || "";
+    const text = await upstreamResp.text();
+    let json: unknown = null;
+    if (contentType.includes("application/json")) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    return res.status(upstreamResp.status).json({
+      upstream_status: upstreamResp.status,
+      upstream_content_type: contentType,
+      upstream_json: json,
+      upstream_text: json ? null : text,
+    });
+  }
+
   app.get("/api/intel/exercises", async (_req: Request, res: Response) => {
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
     try {
       const r = await fetch(`${INTEL_BASE}/matrix/v2`);
-      if (!r.ok) return res.status(r.status).json({ error: `intel upstream ${r.status}` });
-      const data = await r.json() as any;
+      if (!r.ok) return intelProxy(r, res);
+      const contentType = r.headers.get("content-type") || "";
+      const text = await r.text();
+      let data: any = null;
+      if (contentType.includes("application/json")) {
+        try { data = JSON.parse(text); } catch {}
+      }
       const exercises: any[] = Array.isArray(data?.exercises) ? data.exercises : [];
       return res.json({ exercises });
     } catch (err: any) {
       console.error("GET /api/intel/exercises error:", err);
-      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });
 
@@ -4311,11 +4331,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await r.json();
-      return res.status(r.status).json(data);
+      return intelProxy(r, res);
     } catch (err: any) {
       console.error("POST /api/intel/session/start error:", err);
-      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });
 
@@ -4327,11 +4346,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body || {}),
       });
-      const data = await r.json();
-      return res.status(r.status).json(data);
+      return intelProxy(r, res);
     } catch (err: any) {
       console.error("POST /api/intel/sets/batch error:", err);
-      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });
 
@@ -4343,11 +4361,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body || {}),
       });
-      const data = await r.json();
-      return res.status(r.status).json(data);
+      return intelProxy(r, res);
     } catch (err: any) {
       console.error("POST /api/intel/session/complete error:", err);
-      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });
 

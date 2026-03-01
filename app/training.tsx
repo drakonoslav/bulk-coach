@@ -146,7 +146,8 @@ export default function TrainingScreen() {
         body.available = "rack,barbell,plates,bench,landmine,dumbbell,kettlebell,pullup_bar";
       }
       const res = await apiRequest("POST", "/api/intel/session/start", body);
-      const data = await res.json();
+      const raw = await res.json();
+      const data = raw?.upstream_json ?? raw;
       const planId = data?.plan_id || data?.planId || null;
       const sessionId = data?.session_id || data?.sessionId || null;
       const exercises: PlanExercise[] = Array.isArray(data?.exercises) ? data.exercises : [];
@@ -228,7 +229,8 @@ export default function TrainingScreen() {
         })),
       };
       const res = await apiRequest("POST", "/api/intel/sets/batch", payload);
-      const data = await res.json();
+      const raw = await res.json();
+      const data = raw?.upstream_json ?? raw;
       setBatchResult(data);
       return data;
     } catch (err: any) {
@@ -269,7 +271,8 @@ export default function TrainingScreen() {
       if (setIds.length > 0) completePayload.set_ids = setIds;
 
       const res = await apiRequest("POST", "/api/intel/session/complete", completePayload);
-      const data = await res.json();
+      const raw = await res.json();
+      const data = raw?.upstream_json ?? raw;
       setComplianceResult(data);
       setSession((prev) => ({ ...prev, active: false }));
     } catch (err: any) {
