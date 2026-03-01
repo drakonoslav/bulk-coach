@@ -252,6 +252,13 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
             {selected && (
               <>
                 <Text style={styles.modalTitle}>{selected.key.replace(/_/g, " ").toUpperCase()}</Text>
+                {selected.derived_from && (
+                  <View style={styles.modalDerived}>
+                    <Text style={styles.modalDerivedText}>
+                      Derived from {selected.derived_from} {selected.derived_scale != null ? `×${selected.derived_scale}` : ""}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Total Dose</Text>
                   <Text style={styles.modalValue}>{selected.total_dose.toFixed(2)}</Text>
@@ -439,6 +446,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
+  },
+  modalDerived: {
+    backgroundColor: "#8B5CF620",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 12,
+    alignItems: "center",
+  },
+  modalDerivedText: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: "#8B5CF6",
   },
   modalClose: {
     marginTop: 16,

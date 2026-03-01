@@ -17,7 +17,7 @@ import { authFetch, getApiUrl } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
 import MuscleMapCard from "@/components/MuscleMapCard";
-import { MuscleState, transformIntelResponse } from "@/lib/muscle_map_layout";
+import { MuscleState, transformIntelResponse, validateIntelSchema } from "@/lib/muscle_map_layout";
 import {
   DailyEntry,
   rollingAvg,
@@ -193,8 +193,15 @@ export default function DashboardScreen() {
         const raw = await res.json();
         const data = raw?.upstream_json ?? raw;
         if (data?.regions && Array.isArray(data.regions)) {
-          setMuscleMapRaw(data);
-          setMuscleMapData(transformIntelResponse(data, muscleDoseMode));
+          const sv = validateIntelSchema(data);
+          if (!sv.ok) {
+            setMuscleMapError(sv.message ?? "Schema mismatch");
+            setMuscleMapData([]);
+            setMuscleMapRaw(null);
+          } else {
+            setMuscleMapRaw(data);
+            setMuscleMapData(transformIntelResponse(data, muscleDoseMode));
+          }
         } else {
           setMuscleMapData([]);
           setMuscleMapRaw(null);

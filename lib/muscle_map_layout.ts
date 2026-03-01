@@ -15,6 +15,8 @@ export type MuscleState = {
   fatigue: number;
   readiness: number;
   last_hit?: string;
+  derived_from?: string;
+  derived_scale?: number;
 };
 
 export type IntelMuscleMap = {
@@ -147,6 +149,7 @@ const INTEL_NAME_TO_KEY: Record<string, MuscleKey> = {
   "Hamstrings": "hamstrings",
   "Shins": "shins",
   "Calves": "calves",
+  "Hands/Grip": "hands_grip",
 };
 
 const INTEL_ID_TO_KEY: Record<number, MuscleKey> = {
@@ -156,7 +159,7 @@ const INTEL_ID_TO_KEY: Record<number, MuscleKey> = {
   13: "upper_back", 14: "middle_back", 15: "lower_back", 16: "lats",
   17: "pecs", 18: "obliques", 19: "abs", 20: "glutes",
   21: "adductors", 22: "abductors", 23: "quads", 24: "hamstrings",
-  25: "shins", 26: "calves",
+  25: "shins", 26: "calves", 27: "hands_grip",
 };
 
 export interface IntelRegion {
@@ -164,6 +167,34 @@ export interface IntelRegion {
   muscle_id: number;
   total_dose: number;
   direct_dose: number;
+  derived_from?: string;
+  scale?: number;
+}
+
+export const EXPECTED_SCHEMA_VERSION = 27;
+export const EXPECTED_REGION_COUNT = 27;
+
+export interface SchemaValidation {
+  ok: boolean;
+  message?: string;
+}
+
+export function validateIntelSchema(
+  data: { muscle_schema_version?: number; regions?: IntelRegion[] }
+): SchemaValidation {
+  const v = data.muscle_schema_version;
+  const regions = data.regions ?? [];
+  if (v !== EXPECTED_SCHEMA_VERSION) {
+    return { ok: false, message: `out of sync (expected v${EXPECTED_SCHEMA_VERSION}, got v${v ?? "none"})` };
+  }
+  if (regions.length !== EXPECTED_REGION_COUNT) {
+    return { ok: false, message: `out of sync (expected v${EXPECTED_SCHEMA_VERSION}, ${EXPECTED_REGION_COUNT} regions — got ${regions.length})` };
+  }
+  const has27 = regions.some(r => r.muscle_id === 27 && r.muscle === "Hands/Grip");
+  if (!has27) {
+    return { ok: false, message: `out of sync (expected v${EXPECTED_SCHEMA_VERSION} — missing muscle_id 27 Hands/Grip)` };
+  }
+  return { ok: true };
 }
 
 export function transformIntelResponse(
@@ -179,7 +210,7 @@ export function transformIntelResponse(
       if (!key) return null;
       const dose = mode === "total" ? r.total_dose : r.direct_dose;
       const score = Math.min(100, (dose / maxDose) * 100);
-      return {
+      const state: MuscleState = {
         key,
         total_dose: r.total_dose,
         direct_dose: r.direct_dose,
@@ -187,7 +218,12 @@ export function transformIntelResponse(
         fatigue: 0,
         readiness: score,
         last_hit: dose > 0 ? intelData.date : undefined,
-      } as MuscleState;
+      };
+      if (r.derived_from) {
+        state.derived_from = r.derived_from;
+        state.derived_scale = r.scale;
+      }
+      return state;
     })
     .filter((m): m is MuscleState => m != null);
 }
