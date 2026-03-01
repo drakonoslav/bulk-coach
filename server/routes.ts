@@ -4463,6 +4463,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/admin/purge-intel-receipts", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    const { from, to } = req.body || {};
+    if (!from || !to) return res.status(400).json({ error: "from and to (YYYY-MM-DD) required" });
+    try {
+      const uid = (req as any).userId || "local_default";
+      const result = await pool.query(
+        `DELETE FROM intel_receipts WHERE user_id = $1 AND performed_at >= $2::date AND performed_at <= $3::date`,
+        [uid, from, to]
+      );
+      console.log(`[admin/purge-intel-receipts] deleted ${result.rowCount} rows from=${from} to=${to}`);
+      return res.json({ ok: true, deleted: result.rowCount, from, to });
+    } catch (err: any) {
+      console.error("POST /api/admin/purge-intel-receipts error:", err);
+      return res.status(500).json({ error: "Purge failed", details: String(err) });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
