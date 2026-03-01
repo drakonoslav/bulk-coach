@@ -4351,7 +4351,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const text = await r.text();
       let json: any = null;
       try { json = JSON.parse(text); } catch {}
-      console.log(`[intel/sets/batch] upstream_status=${r.status} first_row_id=${json?.rows?.[0]?.id ?? "none"}`);
+      const setIds = (json?.rows ?? []).map((r: any) => r.id);
+      console.log(`[intel/sets/batch] ts=${new Date().toISOString()} upstream_status=${r.status} set_ids=[${setIds}] body=${text.slice(0, 500)}`);
       const ct = r.headers.get("content-type") || "";
       return res.status(r.status).json({
         upstream_status: r.status,
