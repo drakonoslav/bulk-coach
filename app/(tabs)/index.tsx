@@ -323,6 +323,42 @@ export default function DashboardScreen() {
           onDoseModeChange={handleDoseModeChange}
         />
 
+        {(() => {
+          const bal = muscleDoseMode === "total"
+            ? muscleMapRaw?.balances?.push_pull_total
+            : muscleMapRaw?.balances?.push_pull_direct;
+          if (!bal) return null;
+          const fmt = (v: number | null | undefined) => v != null ? v.toFixed(1) : "—";
+          const fmtR = (v: number | null | undefined) => v != null ? v.toFixed(2) : "—";
+          return (
+            <View style={styles.balanceStrip}>
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Push</Text>
+                <Text style={styles.balanceValue}>{fmt(bal.push_sum)}</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Pull</Text>
+                <Text style={styles.balanceValue}>{fmt(bal.pull_sum)}</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Ratio</Text>
+                <Text style={styles.balanceValue}>{fmtR(bal.ratio)}</Text>
+              </View>
+              {bal.log_ratio != null && (
+                <>
+                  <View style={styles.balanceDivider} />
+                  <View style={styles.balanceCell}>
+                    <Text style={styles.balanceLabel}>Log</Text>
+                    <Text style={styles.balanceValue}>{fmtR(bal.log_ratio)}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        })()}
+
         <View style={styles.heroCard}>
           <View style={styles.heroLeft}>
             <Text style={styles.heroLabel}>7-Day Average</Text>
@@ -625,5 +661,38 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  balanceStrip: {
+    flexDirection: "row" as const,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: "center" as const,
+  },
+  balanceCell: {
+    flex: 1,
+    alignItems: "center" as const,
+  },
+  balanceLabel: {
+    fontSize: 9,
+    fontFamily: "Rubik_500Medium",
+    color: Colors.textTertiary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  balanceValue: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
+    color: Colors.text,
+  },
+  balanceDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: Colors.border,
   },
 });
