@@ -12,7 +12,7 @@ import {
   Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
@@ -221,6 +221,7 @@ function SleepQualitySelector({ value, onChange }: { value: number | undefined; 
 export default function LogScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === "web" ? 67 : insets.top;
+  const router = useRouter();
 
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [loading, setLoading] = useState(false);
@@ -1428,6 +1429,20 @@ export default function LogScreen() {
             </View>
           </View>
         </View>
+
+        <Pressable
+          style={[styles.sectionCard, { borderColor: Colors.primary + "30", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+          onPress={() => router.push("/training")}
+          testID="training-log-btn"
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="barbell-outline" size={16} color={Colors.primary} />
+            <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.primary }}>
+              Training Log (Intel)
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+        </Pressable>
 
         <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>

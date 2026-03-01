@@ -79,3 +79,4 @@ ensurePreviewReachable = "/status"
 [userenv.shared]
 FITBIT_REDIRECT_URI = "https://bulkcoach-drakonoslav.replit.app/api/auth/fitbit/callback"
 EXPO_PUBLIC_API_KEY = "68351486835148"
+LIFTING_INTEL_BASE_URL = "https://intel-bulkcoach-drakonoslav.replit.app"

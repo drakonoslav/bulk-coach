@@ -200,6 +200,20 @@ export async function loadStrengthSets(start: string, end: string): Promise<Stre
   }
 }
 
+export async function getStrengthSource(): Promise<"legacy" | "intel"> {
+  try {
+    const res = await apiRequest("GET", "/api/settings/strength-source");
+    const data = await res.json();
+    return data?.strengthSource === "intel" ? "intel" : "legacy";
+  } catch {
+    return "legacy";
+  }
+}
+
+export async function setStrengthSource(value: "legacy" | "intel"): Promise<void> {
+  await apiRequest("PUT", "/api/settings/strength-source", { value });
+}
+
 export async function saveStrengthSets(
   day: string,
   sets: Array<{
@@ -211,6 +225,11 @@ export async function saveStrengthSets(
     seconds?: number;
   }>
 ): Promise<StrengthSet[]> {
+  const src = await getStrengthSource();
+  if (src === "intel") {
+    console.log("[strength] strength_source=intel — skipping local strength_sets write");
+    return [];
+  }
   const payload = { day, sets };
   const res = await apiRequest("POST", "/api/strength-sets/upsert", payload);
   const raw = await res.json();

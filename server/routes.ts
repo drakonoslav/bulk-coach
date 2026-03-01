@@ -4275,6 +4275,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  const INTEL_BASE = process.env.LIFTING_INTEL_BASE_URL || "";
+  console.log(`[intel] LIFTING_INTEL_BASE_URL = ${INTEL_BASE || "(not set)"}`);
+
+  app.get("/api/intel/exercises", async (_req: Request, res: Response) => {
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/matrix/v2`);
+      if (!r.ok) return res.status(r.status).json({ error: `intel upstream ${r.status}` });
+      const data = await r.json() as any;
+      const exercises: any[] = Array.isArray(data?.exercises) ? data.exercises : [];
+      return res.json({ exercises });
+    } catch (err: any) {
+      console.error("GET /api/intel/exercises error:", err);
+      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+    }
+  });
+
+  app.post("/api/intel/session/start", async (req: Request, res: Response) => {
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/coach/session/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
+      });
+      const data = await r.json();
+      return res.status(r.status).json(data);
+    } catch (err: any) {
+      console.error("POST /api/intel/session/start error:", err);
+      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+    }
+  });
+
+  app.post("/api/intel/sets/batch", async (req: Request, res: Response) => {
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/lifts/sets/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
+      });
+      const data = await r.json();
+      return res.status(r.status).json(data);
+    } catch (err: any) {
+      console.error("POST /api/intel/sets/batch error:", err);
+      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+    }
+  });
+
+  app.post("/api/intel/session/complete", async (req: Request, res: Response) => {
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/coach/session/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
+      });
+      const data = await r.json();
+      return res.status(r.status).json(data);
+    } catch (err: any) {
+      console.error("POST /api/intel/session/complete error:", err);
+      return res.status(502).json({ error: "Failed to reach lifting-intel" });
+    }
+  });
+
+  app.get("/api/settings/strength-source", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    try {
+      const r = await pool.query(
+        `SELECT value FROM app_settings WHERE user_id = $1 AND key = 'strength_source'`,
+        [userId]
+      );
+      return res.json({ strengthSource: r.rows[0]?.value || "legacy" });
+    } catch (err: any) {
+      console.error("GET /api/settings/strength-source error:", err);
+      return res.status(500).json({ error: "Failed to load strength source" });
+    }
+  });
+
+  app.put("/api/settings/strength-source", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    const value = String(req.body?.value || "legacy");
+    if (value !== "legacy" && value !== "intel") {
+      return res.status(400).json({ error: "value must be 'legacy' or 'intel'" });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO app_settings (user_id, key, value) VALUES ($1, 'strength_source', $2)
+         ON CONFLICT (user_id, key) DO UPDATE SET value = $2`,
+        [userId, value]
+      );
+      return res.json({ strengthSource: value });
+    } catch (err: any) {
+      console.error("PUT /api/settings/strength-source error:", err);
+      return res.status(500).json({ error: "Failed to save strength source" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

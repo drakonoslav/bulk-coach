@@ -26,6 +26,7 @@ function RootLayoutNav() {
         <Stack.Screen name="healthkit" options={{ headerShown: true }} />
         <Stack.Screen name="polar" options={{ headerShown: true }} />
         <Stack.Screen name="workout" options={{ headerShown: true }} />
+        <Stack.Screen name="training" options={{ headerShown: false }} />
       </Stack>
     </>
   );
