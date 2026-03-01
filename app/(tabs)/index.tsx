@@ -359,6 +359,42 @@ export default function DashboardScreen() {
           );
         })()}
 
+        {(() => {
+          const bal = muscleDoseMode === "total"
+            ? muscleMapRaw?.balances?.ant_post_total
+            : muscleMapRaw?.balances?.ant_post_direct;
+          if (!bal) return null;
+          const fmt = (v: number | null | undefined) => v != null ? v.toFixed(1) : "—";
+          const fmtR = (v: number | null | undefined) => v != null ? v.toFixed(2) : "—";
+          return (
+            <View style={styles.balanceStrip}>
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Anterior</Text>
+                <Text style={styles.balanceValue}>{fmt(bal.anterior_sum)}</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Posterior</Text>
+                <Text style={styles.balanceValue}>{fmt(bal.posterior_sum)}</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCell}>
+                <Text style={styles.balanceLabel}>Ratio</Text>
+                <Text style={styles.balanceValue}>{fmtR(bal.ratio)}</Text>
+              </View>
+              {bal.log_ratio != null && (
+                <>
+                  <View style={styles.balanceDivider} />
+                  <View style={styles.balanceCell}>
+                    <Text style={styles.balanceLabel}>Log</Text>
+                    <Text style={styles.balanceValue}>{fmtR(bal.log_ratio)}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        })()}
+
         <View style={styles.heroCard}>
           <View style={styles.heroLeft}>
             <Text style={styles.heroLabel}>7-Day Average</Text>
