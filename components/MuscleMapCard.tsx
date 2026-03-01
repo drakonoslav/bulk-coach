@@ -270,7 +270,10 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
                 <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>Load (7d)</Text>
                   <Text style={[styles.modalValue, { color: Colors.textSecondary }]}>
-                    {selected.load_7d > 0 ? selected.load_7d.toFixed(1) : "—"}
+                    {(() => {
+                      const v = doseMode === "total" ? selected.load_7d_total : selected.load_7d_direct;
+                      return v != null && v > 0 ? v.toFixed(1) : "—";
+                    })()}
                   </Text>
                 </View>
                 {selected.last_hit && (

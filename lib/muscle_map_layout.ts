@@ -12,6 +12,8 @@ export type MuscleState = {
   total_dose: number;
   direct_dose: number;
   load_7d: number;
+  load_7d_total?: number;
+  load_7d_direct?: number;
   fatigue: number;
   readiness: number;
   last_hit?: string;
@@ -167,6 +169,8 @@ export interface IntelRegion {
   muscle_id: number;
   total_dose: number;
   direct_dose: number;
+  load_7d_total?: number;
+  load_7d_direct?: number;
   derived_from?: string;
   scale?: number;
 }
@@ -215,6 +219,8 @@ export function transformIntelResponse(
         total_dose: r.total_dose,
         direct_dose: r.direct_dose,
         load_7d: 0,
+        load_7d_total: r.load_7d_total,
+        load_7d_direct: r.load_7d_direct,
         fatigue: 0,
         readiness: score,
         last_hit: dose > 0 ? intelData.date : undefined,
