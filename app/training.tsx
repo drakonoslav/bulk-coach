@@ -130,11 +130,21 @@ export default function TrainingScreen() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
 
+  const [sessionFallback, setSessionFallback] = useState(false);
+
   const startSession = useCallback(async () => {
     setStartingSession(true);
+    setSessionFallback(false);
     try {
-      const body: any = { planned_for: todayDate };
-      if (context === "home") body.available = "home";
+      const body: any = {
+        planned_for: todayDate,
+        mode: "compound",
+        preset: "hypertrophy",
+        context,
+      };
+      if (context === "home") {
+        body.available = "rack,barbell,plates,bench,landmine,dumbbell,kettlebell,pullup_bar";
+      }
       const res = await apiRequest("POST", "/api/intel/session/start", body);
       const data = await res.json();
       const planId = data?.plan_id || data?.planId || null;
@@ -152,7 +162,12 @@ export default function TrainingScreen() {
       }
     } catch (err: any) {
       console.error("session/start error:", err);
-      Alert.alert("Error", `Could not start session: ${err.message}`);
+      setSessionFallback(true);
+      setSource("archive");
+      Alert.alert(
+        "Plan Unavailable",
+        "Intel session/start failed. Falling back to Archive mode — sets will still batch to Intel, but session/complete will be skipped."
+      );
     } finally {
       setStartingSession(false);
     }
@@ -369,6 +384,15 @@ export default function TrainingScreen() {
             <Text style={styles.sessionText}>
               Plan active — {session.exercises.length} exercises
               {session.planId ? ` (plan: ${session.planId.slice(0, 8)}…)` : ""}
+            </Text>
+          </View>
+        )}
+
+        {sessionFallback && (
+          <View style={[styles.sessionBanner, { borderColor: "rgba(251, 191, 36, 0.3)", backgroundColor: "rgba(251, 191, 36, 0.1)" }]}>
+            <Ionicons name="warning" size={16} color="#FBBF24" />
+            <Text style={[styles.sessionText, { color: "#FBBF24" }]}>
+              Plan unavailable — logging in Archive mode. Sets batch to Intel; session/complete skipped.
             </Text>
           </View>
         )}

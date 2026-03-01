@@ -4295,10 +4295,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/intel/session/start", async (req: Request, res: Response) => {
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
     try {
+      const b = req.body || {};
+      const ctx = b.context || "gym";
+      const payload: Record<string, unknown> = {
+        planned_for: b.planned_for || new Date().toISOString().slice(0, 10),
+        mode: b.mode || "compound",
+        preset: b.preset || "hypertrophy",
+        context: ctx,
+        available: ctx === "home"
+          ? (b.available || "rack,barbell,plates,bench,landmine,dumbbell,kettlebell,pullup_bar")
+          : null,
+      };
       const r = await fetch(`${INTEL_BASE}/coach/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req.body || {}),
+        body: JSON.stringify(payload),
       });
       const data = await r.json();
       return res.status(r.status).json(data);
