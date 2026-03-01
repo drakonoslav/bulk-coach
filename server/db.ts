@@ -969,6 +969,23 @@ async function runMigrations(): Promise<void> {
       ('cable_crunch_or_abwheel','lower_back',0.10,'stabilizer')
     ON CONFLICT DO NOTHING;
   `);
+
+  await runMigration('025_intel_receipts', `
+    CREATE TABLE IF NOT EXISTS intel_receipts (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      performed_at DATE NOT NULL,
+      source TEXT NOT NULL DEFAULT 'intel',
+      exercise_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+      set_count INTEGER NOT NULL DEFAULT 0,
+      total_tonnage REAL NOT NULL DEFAULT 0,
+      intel_set_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      plan_id INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_intel_receipts_user_date
+      ON intel_receipts(user_id, performed_at);
+  `);
 }
 
 export { pool };

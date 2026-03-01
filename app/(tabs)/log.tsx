@@ -25,8 +25,10 @@ import {
   loadStrengthExercises,
   loadStrengthSets,
   saveStrengthSets,
+  loadIntelReceipt,
   type StrengthExercise,
   type StrengthSet,
+  type IntelReceipt,
 } from "@/lib/entry-storage";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
 import { getApiUrl, authFetch } from "@/lib/query-client";
@@ -318,6 +320,8 @@ export default function LogScreen() {
   const [firmnessAvg, setFirmnessAvg] = useState("");
   const [pain010, setPain010] = useState<number | null>(null);
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
+
+  const [intelReceipt, setIntelReceipt] = useState<IntelReceipt | null>(null);
 
   const [strengthExercises, setStrengthExercises] = useState<StrengthExercise[]>([]);
   const [strengthSetsDay, setStrengthSetsDay] = useState<StrengthSet[]>([]);
@@ -698,6 +702,12 @@ export default function LogScreen() {
     } catch {
       setStrengthSetsDay([]);
       setStrengthSetsDirty(false);
+    }
+    try {
+      const receipt = await loadIntelReceipt(day);
+      setIntelReceipt(receipt);
+    } catch {
+      setIntelReceipt(null);
     }
   }, []);
 
@@ -1443,6 +1453,40 @@ export default function LogScreen() {
           </View>
           <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
         </Pressable>
+
+        {intelReceipt && (
+          <View style={[styles.sectionCard, { borderColor: Colors.primary + "30" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <Ionicons name="receipt-outline" size={14} color={Colors.primary} />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.primary }}>
+                Strength (Intel)
+              </Text>
+              {intelReceipt.plan_id != null && (
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>
+                  plan #{intelReceipt.plan_id}
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.text }}>
+                {intelReceipt.set_count} sets
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.text }}>
+                {Math.round(intelReceipt.total_tonnage).toLocaleString()} lb tonnage
+              </Text>
+            </View>
+            <View style={{ gap: 3 }}>
+              {intelReceipt.exercise_names.map((name, i) => (
+                <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary }} />
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
+                    {name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>

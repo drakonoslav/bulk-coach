@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { saveIntelReceipt } from "@/lib/entry-storage";
 
 type Mode = "compound" | "isolation";
 type Source = "archive" | "plan";
@@ -234,6 +235,26 @@ export default function TrainingScreen() {
       const raw = await res.json();
       const data = raw?.upstream_json ?? raw;
       setBatchResult(data);
+
+      if (data?.inserted && Array.isArray(data?.rows)) {
+        const exerciseNames = [...new Set(sets.map((s) => s.exerciseId))];
+        const totalTonnage = data.rows.reduce((sum: number, r: any) => sum + (r.tonnage ?? 0), 0);
+        const intelSetIds = data.rows.map((r: any) => Number(r.id)).filter(Number.isFinite);
+        try {
+          await saveIntelReceipt({
+            performed_at: todayDate,
+            source: "intel",
+            exercise_names: exerciseNames,
+            set_count: data.inserted,
+            total_tonnage: totalTonnage,
+            intel_set_ids: intelSetIds,
+            plan_id: session.planId,
+          });
+        } catch (e) {
+          console.warn("Failed to save intel receipt:", e);
+        }
+      }
+
       return data;
     } catch (err: any) {
       console.error("sets/batch error:", err);

@@ -4401,6 +4401,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/intel-receipts", async (req: Request, res: Response) => {
+    try {
+      const userId = "local_default";
+      const { performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id } = req.body;
+      if (!performed_at) return res.status(400).json({ error: "performed_at required" });
+      const result = await pool.query(
+        `INSERT INTO intel_receipts (user_id, performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (user_id, performed_at) DO UPDATE SET
+           source = EXCLUDED.source,
+           exercise_names = EXCLUDED.exercise_names,
+           set_count = EXCLUDED.set_count,
+           total_tonnage = EXCLUDED.total_tonnage,
+           intel_set_ids = EXCLUDED.intel_set_ids,
+           plan_id = EXCLUDED.plan_id,
+           created_at = NOW()
+         RETURNING *`,
+        [userId, performed_at, source ?? "intel", JSON.stringify(exercise_names ?? []), set_count ?? 0, total_tonnage ?? 0, JSON.stringify(intel_set_ids ?? []), plan_id ?? null]
+      );
+      return res.json(result.rows[0]);
+    } catch (err: any) {
+      console.error("POST /api/intel-receipts error:", err);
+      return res.status(500).json({ error: "Failed to save intel receipt" });
+    }
+  });
+
+  app.get("/api/intel-receipts/:date", async (req: Request, res: Response) => {
+    try {
+      const userId = "local_default";
+      const { date } = req.params;
+      const result = await pool.query(
+        `SELECT * FROM intel_receipts WHERE user_id = $1 AND performed_at = $2`,
+        [userId, date]
+      );
+      return res.json({ receipt: result.rows[0] ?? null });
+    } catch (err: any) {
+      console.error("GET /api/intel-receipts/:date error:", err);
+      return res.status(500).json({ error: "Failed to load intel receipt" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

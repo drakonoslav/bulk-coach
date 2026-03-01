@@ -344,3 +344,23 @@ function rowToEntry(row: any): DailyEntry {
     liftSkipped: row.liftSkipped ?? undefined,
   };
 }
+
+export interface IntelReceipt {
+  performed_at: string;
+  source: string;
+  exercise_names: string[];
+  set_count: number;
+  total_tonnage: number;
+  intel_set_ids: number[];
+  plan_id: number | null;
+}
+
+export async function saveIntelReceipt(receipt: IntelReceipt): Promise<void> {
+  await apiRequest("POST", "/api/intel-receipts", receipt);
+}
+
+export async function loadIntelReceipt(date: string): Promise<IntelReceipt | null> {
+  const res = await apiRequest("GET", `/api/intel-receipts/${date}`);
+  const data = await res.json();
+  return data?.receipt ?? null;
+}
