@@ -4340,13 +4340,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/intel/sets/batch", async (req: Request, res: Response) => {
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const upstreamUrl = `${INTEL_BASE}/lifts/sets/batch`;
+    console.log(`[intel/sets/batch] LIFTING_INTEL_BASE_URL=${INTEL_BASE} upstream=${upstreamUrl}`);
     try {
-      const r = await fetch(`${INTEL_BASE}/lifts/sets/batch`, {
+      const r = await fetch(upstreamUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body || {}),
       });
-      return intelProxy(r, res);
+      const text = await r.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch {}
+      console.log(`[intel/sets/batch] upstream_status=${r.status} first_row_id=${json?.rows?.[0]?.id ?? "none"}`);
+      const ct = r.headers.get("content-type") || "";
+      return res.status(r.status).json({
+        upstream_status: r.status,
+        upstream_content_type: ct,
+        upstream_json: json,
+        upstream_text: json ? null : text,
+      });
     } catch (err: any) {
       console.error("POST /api/intel/sets/batch error:", err);
       return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
