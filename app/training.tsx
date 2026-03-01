@@ -243,20 +243,21 @@ export default function TrainingScreen() {
     try {
       const payload = {
         sets: sets.map((s) => ({
-          exercise: s.exerciseId,
+          exercise: s.exerciseName,
           weight: parseFloat(s.weightLb),
           reps: parseInt(s.reps, 10),
           rir: parseInt(s.rir, 10) || 0,
           performed_at: selectedDate,
         })),
       };
+      console.log("[intel/sets/batch] first set:", JSON.stringify(payload.sets[0]));
       const res = await apiRequest("POST", "/api/intel/sets/batch", payload);
       const raw = await res.json();
       const data = raw?.upstream_json ?? raw;
       setBatchResult(data);
 
       if (data?.inserted && Array.isArray(data?.rows)) {
-        const exerciseNames = [...new Set(sets.map((s) => s.exerciseId))];
+        const exerciseNames = [...new Set(sets.map((s) => s.exerciseName))];
         const totalTonnage = data.rows.reduce((sum: number, r: any) => sum + (r.tonnage ?? 0), 0);
         const intelSetIds = data.rows.map((r: any) => Number(r.id)).filter(Number.isFinite);
         try {
