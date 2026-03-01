@@ -39,7 +39,8 @@ export type RowDef =
       midRows: { key: MuscleKey; label: string }[][];
       right: { key: MuscleKey; label: string; flex: number; rowSpan: number } | null;
       farRight: { key: MuscleKey; label: string }[];
-    };
+    }
+  | { type: "quad"; subRows: { key: MuscleKey; label: string }[][]; tall: { col: number; key: MuscleKey; label: string } | null };
 
 export const BODY_ROWS: RowDef[] = [
   { type: "flat", cells: [
@@ -70,17 +71,12 @@ export const BODY_ROWS: RowDef[] = [
     { key: "lats",       label: "Lats",        flex: 1 },
     { key: "upper_back", label: "Upper Back",  flex: 1 },
   ]},
-  { type: "split",
-    left: null,
-    midRows: [
-      [{ key: "abs", label: "Abs" }, { key: "hands_grip", label: "Hands/Grip" }],
-      [{ key: "abductors", label: "Abductors" }, { key: "adductors", label: "Adductors" }],
+  { type: "quad",
+    subRows: [
+      [{ key: "abs", label: "Abs" }, { key: "hands_grip", label: "Hands/Grip" }, { key: "glutes", label: "Glutes" }, { key: "middle_back", label: "Mid Back" }],
+      [{ key: "abductors", label: "Abductors" }, { key: "adductors", label: "Adductors" }, { key: "glutes", label: "Glutes" }, { key: "lower_back", label: "Low Back" }],
     ],
-    right: { key: "glutes", label: "Glutes", flex: 1, rowSpan: 2 },
-    farRight: [
-      { key: "middle_back", label: "Mid Back" },
-      { key: "lower_back",  label: "Low Back" },
-    ],
+    tall: { col: 2, key: "glutes", label: "Glutes" },
   },
   { type: "flat", cells: [
     { key: "quads",      label: "Quads",      flex: 1 },

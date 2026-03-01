@@ -83,7 +83,6 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
   );
 
   const renderSplitRow = (row: Extract<RowDef, { type: "split" }>, idx: number) => {
-    const subRowCount = row.midRows.length;
     return (
       <View key={idx} style={styles.gridRow}>
         {row.left && (
@@ -138,6 +137,55 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
     );
   };
 
+  const renderQuadRow = (row: Extract<RowDef, { type: "quad" }>, idx: number) => {
+    const tallCol = row.tall?.col ?? -1;
+    const tallKey = row.tall?.key;
+    const tallLabel = row.tall?.label ?? "";
+    const tallDose = tallKey ? getDose(stateMap.get(tallKey), doseMode) : 0;
+
+    return (
+      <View key={idx} style={styles.gridRow}>
+        {[0, 1, 2, 3].map((col) => {
+          if (col === tallCol && tallKey) {
+            return (
+              <View key={`tall-${col}`} style={{ flex: 1 }}>
+                <Pressable
+                  onPress={() => selectMuscle(tallKey)}
+                  style={[styles.cell, {
+                    flex: 1,
+                    backgroundColor: intensityColor(tallDose, maxDose),
+                    opacity: intensityOpacity(tallDose, maxDose),
+                  }]}
+                >
+                  <Text style={styles.cellLabel} numberOfLines={1}>{tallLabel}</Text>
+                  {tallDose > 0 && <Text style={styles.cellValue}>{tallDose.toFixed(0)}</Text>}
+                </Pressable>
+              </View>
+            );
+          }
+          return (
+            <View key={`col-${col}`} style={{ flex: 1, gap: 3 }}>
+              {row.subRows.map((sr, si) => {
+                const c = sr[col];
+                if (!c || (col === tallCol)) return null;
+                return (
+                  <Cell
+                    key={c.key + si}
+                    label={c.label}
+                    dose={getDose(stateMap.get(c.key), doseMode)}
+                    maxDose={maxDose}
+                    flex={1}
+                    onPress={() => selectMuscle(c.key)}
+                  />
+                );
+              })}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -169,7 +217,7 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
       {!loading && muscles.length > 0 && (
         <View style={styles.grid}>
           {BODY_ROWS.map((row, idx) =>
-            row.type === "flat" ? renderFlatRow(row, idx) : renderSplitRow(row, idx)
+            row.type === "flat" ? renderFlatRow(row, idx) : row.type === "split" ? renderSplitRow(row, idx) : renderQuadRow(row, idx)
           )}
         </View>
       )}
