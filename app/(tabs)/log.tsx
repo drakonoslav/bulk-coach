@@ -1442,7 +1442,7 @@ export default function LogScreen() {
 
         <Pressable
           style={[styles.sectionCard, { borderColor: Colors.primary + "30", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
-          onPress={() => router.push("/training")}
+          onPress={() => router.push({ pathname: "/training", params: { date: selectedDate } })}
           testID="training-log-btn"
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>

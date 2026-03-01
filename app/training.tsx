@@ -13,7 +13,7 @@ import {
   FlatList,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
@@ -69,6 +69,7 @@ const MUSCLES_26 = [
 export default function TrainingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ date?: string }>();
 
   const [mode, setMode] = useState<Mode>("compound");
   const [source, setSource] = useState<Source>("archive");
@@ -131,7 +132,11 @@ export default function TrainingScreen() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
 
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [selectedDate, setSelectedDate] = useState(params.date ?? todayStr);
+
+  useEffect(() => {
+    if (params.date) setSelectedDate(params.date);
+  }, [params.date]);
 
   const shiftDate = useCallback((dir: -1 | 1) => {
     setSelectedDate((prev) => {
