@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal } from "react-native";
 import Colors from "@/constants/colors";
-import { MUSCLE_MAP_GRID, GridCell, MuscleState, MuscleKey } from "@/lib/muscle_map_layout";
+import { BODY_ROWS, RowDef, MuscleState, MuscleKey } from "@/lib/muscle_map_layout";
 
 interface Props {
   muscles: MuscleState[];
@@ -12,7 +12,10 @@ interface Props {
   onDoseModeChange: (mode: "total" | "direct") => void;
 }
 
-const ROWS = 10;
+function getDose(ms: MuscleState | undefined, mode: "total" | "direct"): number {
+  if (!ms) return 0;
+  return mode === "total" ? ms.total_dose : ms.direct_dose;
+}
 
 function intensityColor(dose: number, maxDose: number): string {
   if (dose <= 0) return Colors.surface;
@@ -30,6 +33,24 @@ function intensityOpacity(dose: number, maxDose: number): number {
   return 0.35 + 0.65 * pct;
 }
 
+function Cell({ label, dose, maxDose, flex, onPress }: {
+  label: string; dose: number; maxDose: number; flex: number; onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.cell, {
+        flex,
+        backgroundColor: intensityColor(dose, maxDose),
+        opacity: intensityOpacity(dose, maxDose),
+      }]}
+    >
+      <Text style={styles.cellLabel} numberOfLines={1}>{label}</Text>
+      {dose > 0 && <Text style={styles.cellValue}>{dose.toFixed(0)}</Text>}
+    </Pressable>
+  );
+}
+
 export default function MuscleMapCard({ muscles, date, loading, error, doseMode, onDoseModeChange }: Props) {
   const [selected, setSelected] = useState<MuscleState | null>(null);
 
@@ -41,11 +62,81 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
     1
   );
 
-  const rows: GridCell[][] = [];
-  for (const cell of MUSCLE_MAP_GRID) {
-    if (!rows[cell.row]) rows[cell.row] = [];
-    rows[cell.row].push(cell);
-  }
+  const selectMuscle = (key: MuscleKey) => {
+    const ms = stateMap.get(key);
+    if (ms) setSelected(ms);
+  };
+
+  const renderFlatRow = (row: Extract<RowDef, { type: "flat" }>, idx: number) => (
+    <View key={idx} style={styles.gridRow}>
+      {row.cells.map((c) => (
+        <Cell
+          key={c.key + idx}
+          label={c.label}
+          dose={getDose(stateMap.get(c.key), doseMode)}
+          maxDose={maxDose}
+          flex={c.flex}
+          onPress={() => selectMuscle(c.key)}
+        />
+      ))}
+    </View>
+  );
+
+  const renderSplitRow = (row: Extract<RowDef, { type: "split" }>, idx: number) => {
+    const subRowCount = row.midRows.length;
+    return (
+      <View key={idx} style={styles.gridRow}>
+        {row.left && (
+          <Cell
+            key={row.left.key}
+            label={row.left.label}
+            dose={getDose(stateMap.get(row.left.key), doseMode)}
+            maxDose={maxDose}
+            flex={row.left.flex}
+            onPress={() => selectMuscle(row.left!.key)}
+          />
+        )}
+        <View style={{ flex: 1, gap: 3 }}>
+          {row.midRows.map((subRow, si) => (
+            <View key={si} style={styles.gridRow}>
+              {subRow.map((c) => (
+                <Cell
+                  key={c.key + si}
+                  label={c.label}
+                  dose={getDose(stateMap.get(c.key), doseMode)}
+                  maxDose={maxDose}
+                  flex={1}
+                  onPress={() => selectMuscle(c.key)}
+                />
+              ))}
+            </View>
+          ))}
+        </View>
+        {row.right && (
+          <Cell
+            key={row.right.key}
+            label={row.right.label}
+            dose={getDose(stateMap.get(row.right.key), doseMode)}
+            maxDose={maxDose}
+            flex={row.right.flex}
+            onPress={() => selectMuscle(row.right!.key)}
+          />
+        )}
+        <View style={{ flex: 1, gap: 3 }}>
+          {row.farRight.map((c, fi) => (
+            <Cell
+              key={c.key + fi}
+              label={c.label}
+              dose={getDose(stateMap.get(c.key), doseMode)}
+              maxDose={maxDose}
+              flex={1}
+              onPress={() => selectMuscle(c.key)}
+            />
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.card}>
@@ -77,38 +168,9 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
 
       {!loading && muscles.length > 0 && (
         <View style={styles.grid}>
-          {Array.from({ length: ROWS }, (_, rowIdx) => {
-            const cellsInRow = rows[rowIdx] || [];
-            if (cellsInRow.length === 0) return null;
-            return (
-              <View key={rowIdx} style={styles.gridRow}>
-                {cellsInRow.map((cell) => {
-                  const ms = stateMap.get(cell.key);
-                  const dose = ms ? (doseMode === "total" ? ms.total_dose : ms.direct_dose) : 0;
-                  const color = intensityColor(dose, maxDose);
-                  const opacity = intensityOpacity(dose, maxDose);
-                  const span = cell.colSpan || 1;
-                  return (
-                    <Pressable
-                      key={cell.key}
-                      onPress={() => ms && setSelected(ms)}
-                      style={[
-                        styles.cell,
-                        {
-                          flex: span,
-                          backgroundColor: color,
-                          opacity,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.cellLabel} numberOfLines={1}>{cell.label}</Text>
-                      {dose > 0 && <Text style={styles.cellValue}>{dose.toFixed(1)}</Text>}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            );
-          })}
+          {BODY_ROWS.map((row, idx) =>
+            row.type === "flat" ? renderFlatRow(row, idx) : renderSplitRow(row, idx)
+          )}
         </View>
       )}
 
@@ -254,19 +316,19 @@ const styles = StyleSheet.create({
   cell: {
     borderRadius: 6,
     paddingVertical: 6,
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 38,
+    minHeight: 36,
   },
   cellLabel: {
-    fontSize: 9,
+    fontSize: 8,
     fontFamily: "Rubik_500Medium",
     color: Colors.text,
     textAlign: "center",
   },
   cellValue: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: "Rubik_600SemiBold",
     color: Colors.text,
     marginTop: 1,

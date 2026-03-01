@@ -33,33 +33,93 @@ export interface GridCell {
   lane: "front_upper" | "front_lower" | "rear_upper" | "rear_lower";
 }
 
+export type RowDef =
+  | { type: "flat"; cells: { key: MuscleKey; label: string; flex: number }[] }
+  | { type: "split"; left: { key: MuscleKey; label: string; flex: number; rowSpan: number };
+      midRows: { key: MuscleKey; label: string }[][];
+      right: { key: MuscleKey; label: string; flex: number; rowSpan: number } | null;
+      farRight: { key: MuscleKey; label: string }[];
+    };
+
+export const BODY_ROWS: RowDef[] = [
+  { type: "flat", cells: [
+    { key: "delts",       label: "Deltoids",   flex: 3 },
+    { key: "neck",        label: "Neck",        flex: 1 },
+  ]},
+  { type: "flat", cells: [
+    { key: "delts_front", label: "Front Delt",  flex: 1 },
+    { key: "delts_side",  label: "Side Delt",   flex: 1 },
+    { key: "delts_rear",  label: "Rear Delt",   flex: 1 },
+    { key: "traps_upper", label: "Upper Traps", flex: 1 },
+  ]},
+  { type: "split",
+    left:  { key: "pecs",  label: "Pectorals", flex: 1, rowSpan: 2 },
+    midRows: [
+      [{ key: "triceps", label: "Triceps" }],
+      [{ key: "biceps",  label: "Biceps" }],
+    ],
+    right: { key: "traps", label: "Traps", flex: 1, rowSpan: 2 },
+    farRight: [
+      { key: "traps_mid",   label: "Mid Traps" },
+      { key: "traps_lower", label: "Lower Traps" },
+    ],
+  },
+  { type: "flat", cells: [
+    { key: "obliques",   label: "Obliques",    flex: 1 },
+    { key: "forearms",   label: "Forearms",    flex: 1 },
+    { key: "lats",       label: "Lats",        flex: 1 },
+    { key: "upper_back", label: "Upper Back",  flex: 1 },
+  ]},
+  { type: "split",
+    left: null,
+    midRows: [
+      [{ key: "abs", label: "Abs" }, { key: "forearms", label: "Forearms" }],
+      [{ key: "abductors", label: "Abductors" }, { key: "adductors", label: "Adductors" }],
+    ],
+    right: { key: "glutes", label: "Glutes", flex: 1, rowSpan: 2 },
+    farRight: [
+      { key: "middle_back", label: "Mid Back" },
+      { key: "lower_back",  label: "Low Back" },
+    ],
+  },
+  { type: "flat", cells: [
+    { key: "quads",      label: "Quads",      flex: 1 },
+    { key: "hamstrings", label: "Hamstrings",  flex: 1 },
+  ]},
+  { type: "flat", cells: [
+    { key: "shins",  label: "Shins",  flex: 1 },
+    { key: "calves", label: "Calves", flex: 1 },
+  ]},
+];
+
 export const MUSCLE_MAP_GRID: GridCell[] = [
-  { key: "neck",        label: "Neck",        row: 0, col: 0, lane: "front_upper" },
-  { key: "traps_upper", label: "Upper Traps", row: 0, col: 1, lane: "rear_upper" },
-  { key: "delts_front", label: "Front Delts", row: 1, col: 0, lane: "front_upper" },
-  { key: "delts_side",  label: "Side Delts",  row: 1, col: 1, lane: "front_upper" },
-  { key: "delts_rear",  label: "Rear Delts",  row: 1, col: 2, lane: "rear_upper" },
-  { key: "pecs",        label: "Pecs",        row: 2, col: 0, colSpan: 2, lane: "front_upper" },
-  { key: "traps_mid",   label: "Mid Traps",   row: 2, col: 2, lane: "rear_upper" },
-  { key: "biceps",      label: "Biceps",      row: 3, col: 0, lane: "front_upper" },
-  { key: "triceps",     label: "Triceps",     row: 3, col: 1, lane: "rear_upper" },
-  { key: "forearms",    label: "Forearms",    row: 3, col: 2, lane: "front_upper" },
-  { key: "lats",        label: "Lats",        row: 4, col: 0, lane: "rear_upper" },
-  { key: "upper_back",  label: "Upper Back",  row: 4, col: 1, lane: "rear_upper" },
-  { key: "traps_lower", label: "Lower Traps", row: 4, col: 2, lane: "rear_upper" },
-  { key: "abs",         label: "Abs",         row: 5, col: 0, colSpan: 2, lane: "front_lower" },
-  { key: "obliques",    label: "Obliques",    row: 5, col: 2, lane: "front_lower" },
-  { key: "middle_back", label: "Mid Back",    row: 6, col: 0, lane: "rear_lower" },
-  { key: "lower_back",  label: "Low Back",    row: 6, col: 1, lane: "rear_lower" },
-  { key: "glutes",      label: "Glutes",      row: 6, col: 2, lane: "rear_lower" },
-  { key: "quads",       label: "Quads",       row: 7, col: 0, lane: "front_lower" },
-  { key: "hamstrings",  label: "Hamstrings",  row: 7, col: 1, lane: "rear_lower" },
-  { key: "adductors",   label: "Adductors",   row: 7, col: 2, lane: "front_lower" },
-  { key: "abductors",   label: "Abductors",   row: 8, col: 0, lane: "front_lower" },
-  { key: "calves",      label: "Calves",      row: 8, col: 1, lane: "rear_lower" },
-  { key: "shins",       label: "Shins",       row: 8, col: 2, lane: "front_lower" },
-  { key: "delts",       label: "Delts (all)", row: 9, col: 0, colSpan: 2, lane: "front_upper" },
-  { key: "traps",       label: "Traps (all)", row: 9, col: 2, lane: "rear_upper" },
+  { key: "delts",       label: "Deltoids",     row: 0, col: 0, colSpan: 3, lane: "front_upper" },
+  { key: "neck",        label: "Neck",          row: 0, col: 3, lane: "rear_upper" },
+  { key: "delts_front", label: "Front Delt",    row: 1, col: 0, lane: "front_upper" },
+  { key: "delts_side",  label: "Side Delt",     row: 1, col: 1, lane: "front_upper" },
+  { key: "delts_rear",  label: "Rear Delt",     row: 1, col: 2, lane: "rear_upper" },
+  { key: "traps_upper", label: "Upper Traps",   row: 1, col: 3, lane: "rear_upper" },
+  { key: "pecs",        label: "Pectorals",     row: 2, col: 0, rowSpan: 2, lane: "front_upper" },
+  { key: "triceps",     label: "Triceps",       row: 2, col: 1, lane: "front_upper" },
+  { key: "traps",       label: "Traps",         row: 2, col: 2, rowSpan: 2, lane: "rear_upper" },
+  { key: "traps_mid",   label: "Mid Traps",     row: 2, col: 3, lane: "rear_upper" },
+  { key: "biceps",      label: "Biceps",        row: 3, col: 1, lane: "front_upper" },
+  { key: "traps_lower", label: "Lower Traps",   row: 3, col: 3, lane: "rear_upper" },
+  { key: "obliques",    label: "Obliques",      row: 4, col: 0, lane: "front_lower" },
+  { key: "forearms",    label: "Forearms",      row: 4, col: 1, lane: "front_upper" },
+  { key: "lats",        label: "Lats",          row: 4, col: 2, lane: "rear_upper" },
+  { key: "upper_back",  label: "Upper Back",    row: 4, col: 3, lane: "rear_upper" },
+  { key: "abs",         label: "Abs",           row: 5, col: 0, lane: "front_lower" },
+  { key: "forearms",    label: "Forearms",      row: 5, col: 1, lane: "front_upper" },
+  { key: "glutes",      label: "Glutes",        row: 5, col: 2, rowSpan: 2, lane: "rear_lower" },
+  { key: "middle_back", label: "Mid Back",      row: 5, col: 3, lane: "rear_lower" },
+  { key: "abductors",   label: "Abductors",     row: 6, col: 0, lane: "front_lower" },
+  { key: "adductors",   label: "Adductors",     row: 6, col: 1, lane: "front_lower" },
+  { key: "lower_back",  label: "Low Back",      row: 6, col: 3, lane: "rear_lower" },
+  { key: "quads",       label: "Quads",         row: 7, col: 0, colSpan: 2, lane: "front_lower" },
+  { key: "hamstrings",  label: "Hamstrings",    row: 7, col: 2, colSpan: 2, lane: "rear_lower" },
+  { key: "shins",       label: "Shins",         row: 8, col: 0, colSpan: 2, lane: "front_lower" },
+  { key: "calves",      label: "Calves",        row: 8, col: 2, colSpan: 2, lane: "rear_lower" },
 ];
 
 export const ALL_MUSCLE_KEYS: MuscleKey[] = MUSCLE_MAP_GRID.map(c => c.key);
