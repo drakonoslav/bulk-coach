@@ -185,32 +185,47 @@ export default function DashboardScreen() {
     try {
       const baseUrl = getApiUrl();
       const today = new Date().toISOString().slice(0, 10);
-      setMuscleMapDate(today);
-      const url = new URL("/api/intel/muscle-map", baseUrl);
-      url.searchParams.set("date", today);
-      const res = await authFetch(url.toString());
-      if (res.ok) {
+
+      const tryDate = async (dateStr: string) => {
+        const url = new URL("/api/intel/muscle-map", baseUrl);
+        url.searchParams.set("date", dateStr);
+        const res = await authFetch(url.toString());
+        if (!res.ok) return null;
         const raw = await res.json();
         const data = raw?.upstream_json ?? raw;
-        if (data?.regions && Array.isArray(data.regions)) {
-          const sv = validateIntelSchema(data);
-          if (!sv.ok) {
-            setMuscleMapError(sv.message ?? "Schema mismatch");
-            setMuscleMapData([]);
-            setMuscleMapRaw(null);
-          } else {
-            setMuscleMapRaw(data);
-            setMuscleMapData(transformIntelResponse(data, muscleDoseMode));
-          }
-        } else {
+        if (!data?.regions || !Array.isArray(data.regions)) return null;
+        return data;
+      };
+
+      let data = await tryDate(today);
+      let chosenDate = today;
+
+      if (data && (data.total_sets === 0 || data.regions.every((r: any) => r.total_dose === 0 && r.direct_dose === 0))) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = yesterday.toISOString().slice(0, 10);
+        const yData = await tryDate(yStr);
+        if (yData && (yData.total_sets > 0 || yData.regions.some((r: any) => r.total_dose > 0 || r.direct_dose > 0))) {
+          data = yData;
+          chosenDate = yStr;
+        }
+      }
+
+      setMuscleMapDate(chosenDate);
+
+      if (data) {
+        const sv = validateIntelSchema(data);
+        if (!sv.ok) {
+          setMuscleMapError(sv.message ?? "Schema mismatch");
           setMuscleMapData([]);
           setMuscleMapRaw(null);
-          if (data?.detail === "Not Found") {
-            setMuscleMapError("Intel muscle-map endpoint not available yet");
-          }
+        } else {
+          setMuscleMapRaw(data);
+          setMuscleMapData(transformIntelResponse(data, muscleDoseMode));
         }
       } else {
-        setMuscleMapError("Failed to load muscle map");
+        setMuscleMapData([]);
+        setMuscleMapRaw(null);
       }
     } catch {
       setMuscleMapError("Network error loading muscle map");
