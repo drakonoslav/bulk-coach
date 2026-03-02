@@ -18,7 +18,7 @@ import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import WheelPickerField from "@/components/WheelNumberInput";
+import WheelPickerField, { DurationPickerField } from "@/components/WheelNumberInput";
 import Colors from "@/constants/colors";
 import {
   saveEntry,
@@ -321,6 +321,7 @@ export default function LogScreen() {
   const [nocturnalCount, setNocturnalCount] = useState("");
   const [nocturnalDuration, setNocturnalDuration] = useState("");
   const [firmnessAvg, setFirmnessAvg] = useState("");
+  const [yesterdayAndrogenDuration, setYesterdayAndrogenDuration] = useState<number | null>(null);
   const [pain010, setPain010] = useState<number | null>(null);
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
 
@@ -596,8 +597,21 @@ export default function LogScreen() {
       const prevDay = d.toISOString().slice(0, 10);
       const prev = await loadEntry(prevDay);
       setYesterdayEntry(prev);
+      try {
+        const baseUrl = getApiUrl();
+        const res = await authFetch(new URL(`/api/androgen/manual/${prevDay}`, baseUrl).toString());
+        if (res.ok) {
+          const ad = await res.json();
+          setYesterdayAndrogenDuration(ad?.duration_min != null ? Number(ad.duration_min) : null);
+        } else {
+          setYesterdayAndrogenDuration(null);
+        }
+      } catch {
+        setYesterdayAndrogenDuration(null);
+      }
     } catch {
       setYesterdayEntry(null);
+      setYesterdayAndrogenDuration(null);
     }
   }, []);
 
@@ -3010,57 +3024,45 @@ export default function LogScreen() {
             <Text style={{ fontSize: 12, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6", marginBottom: 10 }}>
               Manual Entry (Androgen Proxy)
             </Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="trending-up-outline" size={14} color="#8B5CF6" />
-                  <Text style={styles.inputLabelText}>Count</Text>
-                </View>
-                <TextInput
-                  style={styles.input}
-                  value={nocturnalCount}
-                  onChangeText={setNocturnalCount}
-                  placeholder="0"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardType="number-pad"
-                  keyboardAppearance="dark"
-                />
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="time-outline" size={14} color="#8B5CF6" />
-                  <Text style={styles.inputLabelText}>Duration</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={nocturnalDuration}
-                    onChangeText={handleMinuteSetter(setNocturnalDuration)}
-                    placeholder="0 or 0:15"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                  <Text style={styles.inputSuffix}>min</Text>
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="speedometer-outline" size={14} color="#8B5CF6" />
-                  <Text style={styles.inputLabelText}>Firmness</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    value={firmnessAvg}
-                    onChangeText={setFirmnessAvg}
-                    placeholder="0-10"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    keyboardAppearance="dark"
-                  />
-                </View>
-              </View>
-            </View>
+            <WheelPickerField
+              label="Count"
+              value={nocturnalCount}
+              icon="trending-up-outline"
+              iconColor="#8B5CF6"
+              suffix=""
+              placeholder="0"
+              min={0}
+              max={20}
+              step={1}
+              defaultValue={0}
+              onSelect={(v) => setNocturnalCount(v.toFixed(0))}
+              onClear={() => setNocturnalCount("")}
+            />
+            <DurationPickerField
+              label="Duration"
+              value={nocturnalDuration}
+              icon="time-outline"
+              iconColor="#8B5CF6"
+              placeholder="02:00"
+              defaultMinutes={yesterdayAndrogenDuration ?? 120}
+              maxHours={8}
+              onSelect={(totalMin) => setNocturnalDuration(String(totalMin))}
+              onClear={() => setNocturnalDuration("")}
+            />
+            <WheelPickerField
+              label="Firmness"
+              value={firmnessAvg}
+              icon="speedometer-outline"
+              iconColor="#8B5CF6"
+              suffix="/10"
+              placeholder="5"
+              min={0}
+              max={10}
+              step={1}
+              defaultValue={5}
+              onSelect={(v) => setFirmnessAvg(v.toFixed(0))}
+              onClear={() => setFirmnessAvg("")}
+            />
           </View>
         </View>
 

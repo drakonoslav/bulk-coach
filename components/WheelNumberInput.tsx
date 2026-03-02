@@ -333,6 +333,254 @@ export default function WheelPickerField({
   );
 }
 
+interface DurationPickerFieldProps {
+  label: string;
+  value: string;
+  icon: string;
+  iconColor: string;
+  placeholder?: string;
+  defaultMinutes?: number | null;
+  maxHours?: number;
+  onSelect: (totalMinutes: number) => void;
+  onClear?: () => void;
+  testID?: string;
+}
+
+function DurationWheelColumn({
+  items,
+  selectedIndex,
+  onIndexChange,
+  labelFn,
+}: {
+  items: number[];
+  selectedIndex: number;
+  onIndexChange: (idx: number) => void;
+  labelFn: (v: number) => string;
+}) {
+  const flatListRef = useRef<FlatList>(null);
+  const lastHapticIndex = useRef(-1);
+  const isUserScrolling = useRef(false);
+  const programmaticScroll = useRef(false);
+
+  useEffect(() => {
+    if (programmaticScroll.current) return;
+    if (!isUserScrolling.current && flatListRef.current && items.length > 0) {
+      programmaticScroll.current = true;
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({
+          offset: selectedIndex * ITEM_HEIGHT,
+          animated: true,
+        });
+        setTimeout(() => { programmaticScroll.current = false; }, 300);
+      }, 50);
+    }
+  }, [selectedIndex]);
+
+  const onScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = e.nativeEvent.contentOffset.y;
+      const idx = Math.round(offsetY / ITEM_HEIGHT);
+      const clamped = Math.max(0, Math.min(idx, items.length - 1));
+      isUserScrolling.current = false;
+      if (clamped !== selectedIndex) onIndexChange(clamped);
+    },
+    [items.length, onIndexChange, selectedIndex]
+  );
+
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = e.nativeEvent.contentOffset.y;
+      const idx = Math.round(offsetY / ITEM_HEIGHT);
+      const clamped = Math.max(0, Math.min(idx, items.length - 1));
+      if (clamped !== lastHapticIndex.current) {
+        lastHapticIndex.current = clamped;
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+      }
+      if (isUserScrolling.current && clamped !== selectedIndex) onIndexChange(clamped);
+    },
+    [items.length, onIndexChange, selectedIndex]
+  );
+
+  const onBeginDrag = useCallback(() => {
+    isUserScrolling.current = true;
+    programmaticScroll.current = false;
+  }, []);
+
+  const visibleIndex = useRef(selectedIndex);
+  visibleIndex.current = selectedIndex;
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: number; index: number }) => {
+      const distance = Math.abs(index - visibleIndex.current);
+      const isCenter = distance === 0;
+      const opacity = isCenter ? 1 : distance === 1 ? 0.55 : 0.25;
+      return (
+        <Pressable
+          onPress={() => {
+            onIndexChange(index);
+            flatListRef.current?.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: true });
+          }}
+          style={[ws.item, { opacity }]}
+        >
+          <Text style={[ws.itemText, isCenter && ws.itemTextSelected]}>
+            {labelFn(item)}
+          </Text>
+        </Pressable>
+      );
+    },
+    [labelFn, onIndexChange]
+  );
+
+  const getItemLayout = useCallback(
+    (_: any, index: number) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index }),
+    []
+  );
+
+  return (
+    <View style={[ws.wheelContainer, { width: 70 }]}>
+      <View style={ws.selectionHighlight} pointerEvents="none" />
+      <FlatList
+        ref={flatListRef}
+        data={items}
+        keyExtractor={(_, i) => i.toString()}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_HEIGHT}
+        decelerationRate="fast"
+        onScrollBeginDrag={onBeginDrag}
+        onMomentumScrollEnd={onScrollEnd}
+        onScrollEndDrag={onScrollEnd}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingTop: ITEM_HEIGHT * 2, paddingBottom: ITEM_HEIGHT * 2 }}
+        initialScrollIndex={selectedIndex}
+        initialNumToRender={30}
+        maxToRenderPerBatch={30}
+        windowSize={9}
+        extraData={selectedIndex}
+      />
+    </View>
+  );
+}
+
+const HOURS_LIST = Array.from({ length: 9 }, (_, i) => i);
+const MINUTES_LIST = Array.from({ length: 60 }, (_, i) => i);
+const pad2 = (n: number) => n.toString().padStart(2, "0");
+
+export function DurationPickerField({
+  label,
+  value,
+  icon,
+  iconColor,
+  placeholder,
+  defaultMinutes,
+  maxHours = 8,
+  onSelect,
+  onClear,
+  testID,
+}: DurationPickerFieldProps) {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [hourIdx, setHourIdx] = useState(0);
+  const [minIdx, setMinIdx] = useState(0);
+
+  const hours = React.useMemo(() => HOURS_LIST.filter((h) => h <= maxHours), [maxHours]);
+
+  const totalFromState = () => hours[hourIdx] * 60 + MINUTES_LIST[minIdx];
+
+  const displayHHMM = (totalMin: number) => {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${pad2(h)}:${pad2(m)}`;
+  };
+
+  const openModal = useCallback(() => {
+    const currentMin = value ? parseFloat(value) : null;
+    const startMin = currentMin ?? defaultMinutes ?? 120;
+    const h = Math.floor(startMin / 60);
+    const m = Math.round(startMin % 60);
+    setHourIdx(Math.max(0, Math.min(hours.indexOf(h) >= 0 ? hours.indexOf(h) : 0, hours.length - 1)));
+    setMinIdx(Math.max(0, Math.min(m, 59)));
+    setModalVisible(true);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [value, defaultMinutes, hours]);
+
+  const confirm = useCallback(() => {
+    onSelect(totalFromState());
+    setModalVisible(false);
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [hours, hourIdx, minIdx, onSelect]);
+
+  const hasValue = value !== "" && value != null;
+  const displayVal = hasValue ? displayHHMM(parseFloat(value)) : null;
+
+  return (
+    <>
+      <Pressable onPress={openModal} style={ws.fieldRow} testID={testID}>
+        <View style={ws.fieldLabel}>
+          <Ionicons name={icon as any} size={16} color={iconColor} />
+          <Text style={ws.fieldLabelText}>{label}</Text>
+        </View>
+        <View style={ws.fieldValueRow}>
+          {displayVal ? (
+            <Text style={ws.fieldValue}>{displayVal}</Text>
+          ) : (
+            <Text style={ws.fieldPlaceholder}>{placeholder || "Tap to set"}</Text>
+          )}
+          <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
+        </View>
+      </Pressable>
+
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <Pressable style={ws.modalOverlay} onPress={() => setModalVisible(false)}>
+          <Pressable style={ws.modalCard} onPress={() => {}}>
+            <View style={ws.modalHeader}>
+              <Text style={ws.modalTitle}>{label}</Text>
+              <Pressable onPress={() => setModalVisible(false)} hitSlop={12}>
+                <Ionicons name="close" size={22} color={Colors.textTertiary} />
+              </Pressable>
+            </View>
+
+            <View style={[ws.modalBody, { gap: 4 }]}>
+              <DurationWheelColumn
+                items={hours}
+                selectedIndex={hourIdx}
+                onIndexChange={setHourIdx}
+                labelFn={pad2}
+              />
+              <Text style={{ fontSize: 24, fontFamily: "Rubik_700Bold", color: Colors.text }}>:</Text>
+              <DurationWheelColumn
+                items={MINUTES_LIST}
+                selectedIndex={minIdx}
+                onIndexChange={setMinIdx}
+                labelFn={pad2}
+              />
+            </View>
+
+            <Text style={ws.modalPreview}>
+              {displayHHMM(totalFromState())} ({totalFromState()} min)
+            </Text>
+
+            <View style={ws.modalActions}>
+              {onClear && hasValue && (
+                <Pressable
+                  onPress={() => { onClear(); setModalVisible(false); }}
+                  style={ws.clearBtn}
+                >
+                  <Text style={ws.clearBtnText}>Clear</Text>
+                </Pressable>
+              )}
+              <Pressable onPress={confirm} style={ws.confirmBtn}>
+                <Text style={ws.confirmBtnText}>Set Value</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 const ws = StyleSheet.create({
   fieldRow: {
     flexDirection: "row",
