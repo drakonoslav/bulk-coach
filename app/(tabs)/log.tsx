@@ -18,6 +18,7 @@ import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import WheelPickerField from "@/components/WheelNumberInput";
 import Colors from "@/constants/colors";
 import {
   saveEntry,
@@ -229,6 +230,7 @@ export default function LogScreen() {
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [loading, setLoading] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
+  const [yesterdayEntry, setYesterdayEntry] = useState<DailyEntry | null>(null);
   const [morningWeight, setMorningWeight] = useState("");
   const [eveningWeight, setEveningWeight] = useState("");
   const [waist, setWaist] = useState("");
@@ -587,6 +589,15 @@ export default function LogScreen() {
       setHasExisting(false);
     } finally {
       setLoading(false);
+    }
+    try {
+      const d = new Date(day + "T00:00:00");
+      d.setDate(d.getDate() - 1);
+      const prevDay = d.toISOString().slice(0, 10);
+      const prev = await loadEntry(prevDay);
+      setYesterdayEntry(prev);
+    } catch {
+      setYesterdayEntry(null);
     }
   }, []);
 
@@ -1175,35 +1186,49 @@ export default function LogScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Weight</Text>
-          <InputField
+          <WheelPickerField
             label="Morning Weight"
             value={morningWeight}
-            onChangeText={setMorningWeight}
-            placeholder="e.g. 175.5"
-            keyboardType="decimal-pad"
             icon="scale-outline"
             iconColor={Colors.primary}
             suffix="lb"
+            placeholder="Tap to set"
+            min={80}
+            max={350}
+            step={0.1}
+            defaultValue={yesterdayEntry?.morningWeightLb ?? null}
+            onSelect={(v) => setMorningWeight(v.toFixed(1))}
+            testID="morning-weight-picker"
           />
-          <InputField
+          <WheelPickerField
             label="Evening Weight"
             value={eveningWeight}
-            onChangeText={setEveningWeight}
-            placeholder="Optional"
-            keyboardType="decimal-pad"
             icon="scale-outline"
             iconColor={Colors.textTertiary}
             suffix="lb"
+            placeholder="Optional"
+            min={80}
+            max={350}
+            step={0.1}
+            defaultValue={yesterdayEntry?.eveningWeightLb ?? yesterdayEntry?.morningWeightLb ?? null}
+            onSelect={(v) => setEveningWeight(v.toFixed(1))}
+            onClear={() => setEveningWeight("")}
+            testID="evening-weight-picker"
           />
-          <InputField
+          <WheelPickerField
             label="Waist at Navel"
             value={waist}
-            onChangeText={setWaist}
-            placeholder="Optional"
-            keyboardType="decimal-pad"
             icon="resize-outline"
             iconColor={Colors.secondary}
             suffix="in"
+            placeholder="Optional"
+            min={20}
+            max={60}
+            step={0.01}
+            defaultValue={yesterdayEntry?.waistIn ?? null}
+            onSelect={(v) => setWaist(v.toFixed(2))}
+            onClear={() => setWaist("")}
+            testID="waist-picker"
           />
         </View>
 
@@ -1876,7 +1901,7 @@ export default function LogScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1, alignItems: "center" }}>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TIB</Text>
-                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.textPrimary }}>{Math.floor(sleepDerived.tib / 60)}h {sleepDerived.tib % 60}m</Text>
+                  <Text style={{ fontSize: 16, fontFamily: "Rubik_600SemiBold", color: Colors.text }}>{Math.floor(sleepDerived.tib / 60)}h {sleepDerived.tib % 60}m</Text>
                 </View>
                 <View style={{ flex: 1, alignItems: "center" }}>
                   <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>TST</Text>
