@@ -1384,7 +1384,7 @@ export default function LogScreen() {
             min={50}
             max={300}
             step={0.1}
-            defaultValue={yesterdayEntry?.fatFreeMassLb ?? null}
+            defaultValue={yesterdayEntry?.fatFreeMassLb ?? 130.5}
             onSelect={(v) => setFatFreeMass(v.toFixed(1))}
             onClear={() => setFatFreeMass("")}
           />
