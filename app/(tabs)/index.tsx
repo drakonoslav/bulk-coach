@@ -339,75 +339,71 @@ export default function DashboardScreen() {
         />
 
         {(() => {
-          const bal = muscleDoseMode === "total"
-            ? muscleMapRaw?.balances?.push_pull_total
-            : muscleMapRaw?.balances?.push_pull_direct;
-          if (!bal) return null;
+          const balances = muscleMapRaw?.balances;
+          const defs = muscleMapRaw?.balances_definitions;
+          if (!balances) return null;
           const fmt = (v: number | null | undefined) => v != null ? v.toFixed(1) : "—";
           const fmtR = (v: number | null | undefined) => v != null ? v.toFixed(2) : "—";
-          return (
-            <View style={styles.balanceStrip}>
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Push</Text>
-                <Text style={styles.balanceValue}>{fmt(bal.push_sum)}</Text>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Pull</Text>
-                <Text style={styles.balanceValue}>{fmt(bal.pull_sum)}</Text>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Ratio</Text>
-                <Text style={styles.balanceValue}>{fmtR(bal.ratio)}</Text>
-              </View>
-              {bal.log_ratio != null && (
-                <>
-                  <View style={styles.balanceDivider} />
-                  <View style={styles.balanceCell}>
-                    <Text style={styles.balanceLabel}>Log</Text>
-                    <Text style={styles.balanceValue}>{fmtR(bal.log_ratio)}</Text>
-                  </View>
-                </>
-              )}
-            </View>
-          );
-        })()}
 
-        {(() => {
-          const bal = muscleDoseMode === "total"
-            ? muscleMapRaw?.balances?.ant_post_total
-            : muscleMapRaw?.balances?.ant_post_direct;
-          if (!bal) return null;
-          const fmt = (v: number | null | undefined) => v != null ? v.toFixed(1) : "—";
-          const fmtR = (v: number | null | undefined) => v != null ? v.toFixed(2) : "—";
-          return (
-            <View style={styles.balanceStrip}>
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Anterior</Text>
-                <Text style={styles.balanceValue}>{fmt(bal.anterior_sum)}</Text>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Posterior</Text>
-                <Text style={styles.balanceValue}>{fmt(bal.posterior_sum)}</Text>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceCell}>
-                <Text style={styles.balanceLabel}>Ratio</Text>
-                <Text style={styles.balanceValue}>{fmtR(bal.ratio)}</Text>
-              </View>
-              {bal.log_ratio != null && (
-                <>
+          const families: Array<{
+            key: string;
+            labelA: string;
+            labelB: string;
+            sumKeyA: string;
+            sumKeyB: string;
+            defKey: string;
+            defFieldA: string;
+            defFieldB: string;
+          }> = [
+            { key: "push_pull", labelA: "Push", labelB: "Pull", sumKeyA: "push_sum", sumKeyB: "pull_sum", defKey: "push_pull", defFieldA: "push_muscles", defFieldB: "pull_muscles" },
+            { key: "ant_post", labelA: "Anterior", labelB: "Posterior", sumKeyA: "anterior_sum", sumKeyB: "posterior_sum", defKey: "ant_post", defFieldA: "anterior_muscles", defFieldB: "posterior_muscles" },
+            { key: "upper_lower", labelA: "Upper", labelB: "Lower", sumKeyA: "upper_sum", sumKeyB: "lower_sum", defKey: "upper_lower", defFieldA: "upper_muscles", defFieldB: "lower_muscles" },
+            { key: "axial_appendicular", labelA: "Axial", labelB: "Append.", sumKeyA: "axial_sum", sumKeyB: "appendicular_sum", defKey: "axial_appendicular", defFieldA: "axial_muscles", defFieldB: "appendicular_muscles" },
+          ];
+
+          return families.map((f) => {
+            const balKey = `${f.key}_${muscleDoseMode}` as string;
+            const bal = (balances as any)[balKey];
+            if (!bal) return null;
+            const def = defs ? (defs as any)[f.defKey] : null;
+            const membA = def ? (def[f.defFieldA] as string[] | undefined) : null;
+            const membB = def ? (def[f.defFieldB] as string[] | undefined) : null;
+
+            return (
+              <View key={f.key}>
+                <View style={styles.balanceStrip}>
+                  <View style={styles.balanceCell}>
+                    <Text style={styles.balanceLabel}>{f.labelA}</Text>
+                    <Text style={styles.balanceValue}>{fmt(bal[f.sumKeyA])}</Text>
+                  </View>
                   <View style={styles.balanceDivider} />
                   <View style={styles.balanceCell}>
-                    <Text style={styles.balanceLabel}>Log</Text>
-                    <Text style={styles.balanceValue}>{fmtR(bal.log_ratio)}</Text>
+                    <Text style={styles.balanceLabel}>{f.labelB}</Text>
+                    <Text style={styles.balanceValue}>{fmt(bal[f.sumKeyB])}</Text>
                   </View>
-                </>
-              )}
-            </View>
-          );
+                  <View style={styles.balanceDivider} />
+                  <View style={styles.balanceCell}>
+                    <Text style={styles.balanceLabel}>Ratio</Text>
+                    <Text style={styles.balanceValue}>{fmtR(bal.ratio)}</Text>
+                  </View>
+                  {bal.log_ratio != null && (
+                    <>
+                      <View style={styles.balanceDivider} />
+                      <View style={styles.balanceCell}>
+                        <Text style={styles.balanceLabel}>Log</Text>
+                        <Text style={styles.balanceValue}>{fmtR(bal.log_ratio)}</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+                {membA && membB && (
+                  <Text style={{ fontSize: 8, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2, marginBottom: 4, paddingHorizontal: 4 }}>
+                    {f.labelA}: {membA.join(", ")} · {f.labelB}: {membB.join(", ")}
+                  </Text>
+                )}
+              </View>
+            );
+          });
         })()}
 
         <View style={styles.heroCard}>
