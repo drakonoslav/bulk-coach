@@ -7,6 +7,8 @@ import {
   Pressable,
   Platform,
   Modal,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -78,48 +80,67 @@ function WheelColumn({
 }) {
   const flatListRef = useRef<FlatList>(null);
   const lastHapticIndex = useRef(-1);
-  const scrolledOnMount = useRef(false);
+  const isUserScrolling = useRef(false);
+  const programmaticScroll = useRef(false);
 
   useEffect(() => {
-    if (flatListRef.current && items.length > 0) {
-      const offset = selectedIndex * ITEM_HEIGHT;
-      const delay = scrolledOnMount.current ? 0 : 80;
+    if (programmaticScroll.current) return;
+    if (!isUserScrolling.current && flatListRef.current && items.length > 0) {
+      programmaticScroll.current = true;
       setTimeout(() => {
-        flatListRef.current?.scrollToOffset({ offset, animated: scrolledOnMount.current });
-        scrolledOnMount.current = true;
-      }, delay);
+        flatListRef.current?.scrollToOffset({
+          offset: selectedIndex * ITEM_HEIGHT,
+          animated: true,
+        });
+        setTimeout(() => { programmaticScroll.current = false; }, 300);
+      }, 50);
     }
   }, [selectedIndex]);
 
-  const onMomentumEnd = useCallback(
-    (e: any) => {
+  const onScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = e.nativeEvent.contentOffset.y;
       const idx = Math.round(offsetY / ITEM_HEIGHT);
       const clamped = Math.max(0, Math.min(idx, items.length - 1));
-      onIndexChange(clamped);
+      isUserScrolling.current = false;
+      if (clamped !== selectedIndex) {
+        onIndexChange(clamped);
+      }
     },
-    [items, onIndexChange]
+    [items.length, onIndexChange, selectedIndex]
   );
 
   const onScroll = useCallback(
-    (e: any) => {
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = e.nativeEvent.contentOffset.y;
       const idx = Math.round(offsetY / ITEM_HEIGHT);
-      if (idx !== lastHapticIndex.current && idx >= 0 && idx < items.length) {
-        lastHapticIndex.current = idx;
+      const clamped = Math.max(0, Math.min(idx, items.length - 1));
+      if (clamped !== lastHapticIndex.current) {
+        lastHapticIndex.current = clamped;
         if (Platform.OS !== "web") {
           Haptics.selectionAsync();
         }
       }
+      if (isUserScrolling.current && clamped !== selectedIndex) {
+        onIndexChange(clamped);
+      }
     },
-    [items.length]
+    [items.length, onIndexChange, selectedIndex]
   );
+
+  const onBeginDrag = useCallback(() => {
+    isUserScrolling.current = true;
+    programmaticScroll.current = false;
+  }, []);
+
+  const visibleIndex = useRef(selectedIndex);
+  visibleIndex.current = selectedIndex;
 
   const renderItem = useCallback(
     ({ item, index }: { item: number; index: number }) => {
-      const distance = Math.abs(index - selectedIndex);
-      const isSelected = distance === 0;
-      const opacity = isSelected ? 1 : distance === 1 ? 0.55 : 0.25;
+      const distance = Math.abs(index - visibleIndex.current);
+      const isCenter = distance === 0;
+      const opacity = isCenter ? 1 : distance === 1 ? 0.55 : 0.25;
 
       return (
         <Pressable
@@ -129,13 +150,13 @@ function WheelColumn({
           }}
           style={[ws.item, { opacity }]}
         >
-          <Text style={[ws.itemText, isSelected && ws.itemTextSelected]}>
+          <Text style={[ws.itemText, isCenter && ws.itemTextSelected]}>
             {formatVal(item, step)}
           </Text>
         </Pressable>
       );
     },
-    [selectedIndex, step, onIndexChange]
+    [step, onIndexChange]
   );
 
   const getItemLayout = useCallback(
@@ -159,16 +180,20 @@ function WheelColumn({
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
-        onMomentumScrollEnd={onMomentumEnd}
+        onScrollBeginDrag={onBeginDrag}
+        onMomentumScrollEnd={onScrollEnd}
+        onScrollEndDrag={onScrollEnd}
         onScroll={onScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{
           paddingTop: ITEM_HEIGHT * 2,
           paddingBottom: ITEM_HEIGHT * 2,
         }}
+        initialScrollIndex={selectedIndex}
         initialNumToRender={30}
         maxToRenderPerBatch={30}
         windowSize={9}
+        extraData={selectedIndex}
       />
     </View>
   );
