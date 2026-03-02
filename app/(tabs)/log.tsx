@@ -2388,41 +2388,37 @@ export default function LogScreen() {
                 <Text style={styles.inputSuffix}>m</Text>
               </View>
             </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="pulse-outline" size={14} color="#8B5CF6" />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>HRV</Text>
-              </View>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.inputCompact}
-                  value={hrvManual}
-                  onChangeText={setHrvManual}
-                  placeholder="45"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardType="decimal-pad"
-                  keyboardAppearance="dark"
-                />
-                <Text style={styles.inputSuffix}>ms</Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="HRV"
+                value={hrvManual}
+                icon="pulse-outline"
+                iconColor="#8B5CF6"
+                suffix="ms"
+                placeholder="45"
+                min={10}
+                max={200}
+                step={1}
+                defaultValue={yesterdayEntry?.hrv ?? 45}
+                onSelect={(v) => setHrvManual(v.toFixed(0))}
+                onClear={() => setHrvManual("")}
+              />
             </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="heart-outline" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>RHR</Text>
-              </View>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.inputCompact}
-                  value={restingHrManual}
-                  onChangeText={setRestingHrManual}
-                  placeholder="62"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardType="number-pad"
-                  keyboardAppearance="dark"
-                />
-                <Text style={styles.inputSuffix}>bpm</Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="RHR"
+                value={restingHrManual}
+                icon="heart-outline"
+                iconColor="#EF4444"
+                suffix="bpm"
+                placeholder="62"
+                min={30}
+                max={120}
+                step={1}
+                defaultValue={yesterdayEntry?.restingHr ?? 62}
+                onSelect={(v) => setRestingHrManual(v.toFixed(0))}
+                onClear={() => setRestingHrManual("")}
+              />
             </View>
           </View>
         </View>
