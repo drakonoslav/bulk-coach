@@ -586,6 +586,7 @@ export default function ReportScreen() {
   const [debugLiftSchedExpanded, setDebugLiftSchedExpanded] = useState(false);
   const [debugLiftOutcomeExpanded, setDebugLiftOutcomeExpanded] = useState(false);
   const [debugAdaptationExpanded, setDebugAdaptationExpanded] = useState(false);
+  const [debugParityExpanded, setDebugParityExpanded] = useState(false);
   const [readiness, setReadiness] = useState<{
     readinessScore: number;
     readinessTier: string;
@@ -819,6 +820,17 @@ export default function ReportScreen() {
     entries, strengthBaselines, sV?.pctPerWeek ?? null,
     intelInput, intelSummary?.phase ?? null,
   );
+
+  const legacySV = hasV2 && globalV2
+    ? strengthVelocity14dV2(globalV2)
+    : strengthVelocity14d(entries, strengthBaselines);
+  const legacyModeClass = intelInput
+    ? classifyMode(entries, strengthBaselines, legacySV?.pctPerWeek ?? null, null, null)
+    : null;
+  const modeDiverges = legacyModeClass != null && legacyModeClass.mode !== modeClass.mode;
+  if (modeDiverges) {
+    console.log(`[PARITY] Mode divergence: Intel→${modeClass.mode} Legacy→${legacyModeClass!.mode}  strengthPct Intel=${sV?.pctPerWeek?.toFixed(4)} Legacy=${legacySV?.pctPerWeek?.toFixed(4)}  phase Intel=${intelSummary?.phase} Legacy=${modeClass.trainingPhase}`);
+  }
 
   const isLocalFallback = appliedCalorieDelta == null;
   const finalKcal =
@@ -1112,6 +1124,66 @@ export default function ReportScreen() {
                     {`trainingAgeDays: ${modeClass.adaptation.debug.trainingAgeDays ?? "—"}\nconsistency4w: ${modeClass.adaptation.debug.consistency4w != null ? modeClass.adaptation.debug.consistency4w.toFixed(2) : "—"}\npctPerWeek: ${modeClass.adaptation.debug.pctPerWeek != null ? modeClass.adaptation.debug.pctPerWeek.toFixed(4) : "—"}\nsPhase: ${modeClass.adaptation.debug.sPhasePhase ?? "—"}\nplateauCondition: ${modeClass.adaptation.debug.plateauCondition ?? "none"}\nsiDelta14d: ${modeClass.adaptation.debug.siDelta14d != null ? modeClass.adaptation.debug.siDelta14d.toFixed(6) : "—"}\nprRecent14d: ${modeClass.adaptation.debug.prRecent14d != null ? modeClass.adaptation.debug.prRecent14d.toFixed(4) : "—"}\nprPrior14d: ${modeClass.adaptation.debug.prPrior14d != null ? modeClass.adaptation.debug.prPrior14d.toFixed(4) : "—"}`}
                   </Text>
                 </View>
+              )}
+              {intelSummary && (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                    <View style={{ backgroundColor: "#22C55E20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#22C55E" }}>SRC: INTEL</Text>
+                    </View>
+                    <View style={{ backgroundColor: modeClass.color + "30", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: modeClass.color }}>
+                        Strength trend mode (Intel): {modeClass.mode}
+                      </Text>
+                    </View>
+                    {legacyModeClass && (
+                      <View style={{ backgroundColor: modeDiverges ? "#F8717130" : "#6B728020", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                        <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: modeDiverges ? "#F87171" : "#9CA3AF" }}>
+                          Legacy: {legacyModeClass.mode}{modeDiverges ? " ⚠" : " ✓"}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Pressable onPress={() => setDebugParityExpanded(p => !p)} style={{ marginBottom: 4 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#22C55E" }}>Parity: Intel vs Legacy</Text>
+                      <Ionicons name={debugParityExpanded ? "chevron-up" : "chevron-down"} size={12} color="#22C55E" />
+                    </View>
+                  </Pressable>
+                  {debugParityExpanded && (
+                    <View style={{ backgroundColor: "#22C55E10", borderRadius: 6, padding: 8, marginBottom: 6, borderWidth: 1, borderColor: "#22C55E20" }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#22C55E", marginBottom: 4 }}>Intel latest</Text>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#9CA3AF" }}>
+                        {`phase: ${intelSummary.phase}\nphase_transition: ${intelTrend?.latest?.phase_transition ?? "none"}\navg_reps: ${intelTrend?.latest?.avg_reps ?? "—"}\ntonnage: ${intelTrend?.latest?.tonnage ?? "—"}\nsets: ${intelTrend?.latest?.sets ?? "—"}\nsessions_in_14d: ${intelSummary.sessions_in_14d}\nswap_penalty_14d: ${intelSummary.swap_penalty_14d}\nvelocity_14d_unit: ${intelSummary.velocity_14d_unit}\nvelocity_pct_per_week: ${intelSummary.velocity_pct_per_week.toFixed(4)}\nvelocity_index_per_week: ${intelSummary.velocity_index_per_week.toFixed(6)}\nrolling_avg_7d: ${intelSummary.rolling_avg_7d}\nday_strength_index: ${intelSummary.day_strength_index}`}
+                      </Text>
+                      {legacyModeClass && (
+                        <>
+                          <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#60A5FA", marginTop: 6, marginBottom: 2 }}>Mode comparison</Text>
+                          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#9CA3AF" }}>
+                            {`Intel mode: ${modeClass.mode} (${modeClass.label})\nLegacy mode: ${legacyModeClass.mode} (${legacyModeClass.label})\nIntel strengthPct: ${sV?.pctPerWeek?.toFixed(4) ?? "—"}\nLegacy strengthPct: ${legacySV?.pctPerWeek?.toFixed(4) ?? "—"}\nIntel phase: ${intelSummary.phase}\nLegacy phase: ${legacyModeClass.trainingPhase}\nIntel SCS: ${scs.total}\nLegacy SCS: ${computeSCS(entries, strengthBaselines, null).total}\nDiverges: ${modeDiverges ? "YES — check component causing difference" : "NO"}`}
+                          </Text>
+                          {modeDiverges && (
+                            <View style={{ marginTop: 4, backgroundColor: "#F8717118", borderRadius: 4, padding: 4 }}>
+                              <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#F87171" }}>
+                                Divergence cause: {
+                                  modeClass.strengthVelocityPct !== legacyModeClass.strengthVelocityPct
+                                    ? `strengthPct (Intel=${modeClass.strengthVelocityPct?.toFixed(4)} vs Legacy=${legacyModeClass.strengthVelocityPct?.toFixed(4)})`
+                                    : modeClass.trainingPhase !== legacyModeClass.trainingPhase
+                                      ? `trainingPhase (Intel=${modeClass.trainingPhase} vs Legacy=${legacyModeClass.trainingPhase})`
+                                      : "SCS or FFM/waist difference"
+                                }
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#FBBF24", marginTop: 6, marginBottom: 2 }}>Phase transitions in window</Text>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "#9CA3AF" }}>
+                        {intelTrend?.days?.filter(d => d.phase_transition != null).map(d => `${d.date}: ${d.phase_transition} (avg_reps=${d.avg_reps}, sets=${d.sets})`).join("\n") || "none"}
+                      </Text>
+                    </View>
+                  )}
+                </>
               )}
               {modeClass.waistWarning.active && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, backgroundColor: "#FBBF2418", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
