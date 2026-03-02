@@ -1234,42 +1234,54 @@ export default function LogScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Body Fat (BIA)</Text>
-          <Text style={styles.bfHint}>Enter 3 handheld readings (AM). Script averages them.</Text>
+          <Text style={styles.bfHint}>3 handheld readings (AM). Script averages them.</Text>
           <View style={styles.bfRow}>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>AM 1</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="AM 1"
                 value={bfAmR1}
-                onChangeText={setBfAmR1}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.primary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfMorningR1 ?? null}
+                onSelect={(v) => setBfAmR1(v.toFixed(1))}
+                onClear={() => setBfAmR1("")}
               />
             </View>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>AM 2</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="AM 2"
                 value={bfAmR2}
-                onChangeText={setBfAmR2}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.primary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfMorningR2 ?? (bfAmR1 ? parseFloat(bfAmR1) : null)}
+                onSelect={(v) => setBfAmR2(v.toFixed(1))}
+                onClear={() => setBfAmR2("")}
               />
             </View>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>AM 3</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="AM 3"
                 value={bfAmR3}
-                onChangeText={setBfAmR3}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.primary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfMorningR3 ?? (bfAmR2 ? parseFloat(bfAmR2) : null)}
+                onSelect={(v) => setBfAmR3(v.toFixed(1))}
+                onClear={() => setBfAmR3("")}
               />
             </View>
             {(() => {
@@ -1290,40 +1302,52 @@ export default function LogScreen() {
           </View>
           <Text style={[styles.bfHint, { marginTop: 10 }]}>PM readings (optional)</Text>
           <View style={styles.bfRow}>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>PM 1</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="PM 1"
                 value={bfPmR1}
-                onChangeText={setBfPmR1}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.secondary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfEveningR1 ?? null}
+                onSelect={(v) => setBfPmR1(v.toFixed(1))}
+                onClear={() => setBfPmR1("")}
               />
             </View>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>PM 2</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="PM 2"
                 value={bfPmR2}
-                onChangeText={setBfPmR2}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.secondary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfEveningR2 ?? (bfPmR1 ? parseFloat(bfPmR1) : null)}
+                onSelect={(v) => setBfPmR2(v.toFixed(1))}
+                onClear={() => setBfPmR2("")}
               />
             </View>
-            <View style={styles.bfField}>
-              <Text style={styles.bfFieldLabel}>PM 3</Text>
-              <TextInput
-                style={styles.bfInput}
+            <View style={{ flex: 1 }}>
+              <WheelPickerField
+                label="PM 3"
                 value={bfPmR3}
-                onChangeText={setBfPmR3}
-                placeholder="%"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                keyboardAppearance="dark"
+                icon="fitness-outline"
+                iconColor={Colors.secondary}
+                suffix="%"
+                placeholder="—"
+                min={0}
+                max={60}
+                step={0.1}
+                defaultValue={yesterdayEntry?.bfEveningR3 ?? (bfPmR2 ? parseFloat(bfPmR2) : null)}
+                onSelect={(v) => setBfPmR3(v.toFixed(1))}
+                onClear={() => setBfPmR3("")}
               />
             </View>
             {(() => {
@@ -1350,22 +1374,20 @@ export default function LogScreen() {
             <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#A78BFA" }}>Fat-Free Mass</Text>
             <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>measured only</Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.input}
-                  value={fatFreeMass}
-                  onChangeText={setFatFreeMass}
-                  placeholder="e.g. 145.2"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardType="decimal-pad"
-                  keyboardAppearance="dark"
-                />
-                <Text style={styles.inputSuffix}>lb</Text>
-              </View>
-            </View>
-          </View>
+          <WheelPickerField
+            label="Fat-Free Mass"
+            value={fatFreeMass}
+            icon="body-outline"
+            iconColor="#A78BFA"
+            suffix="lb"
+            placeholder="Tap to set"
+            min={50}
+            max={300}
+            step={0.1}
+            defaultValue={yesterdayEntry?.fatFreeMassLb ?? null}
+            onSelect={(v) => setFatFreeMass(v.toFixed(1))}
+            onClear={() => setFatFreeMass("")}
+          />
         </View>
 
         <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>
