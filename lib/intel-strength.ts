@@ -14,6 +14,9 @@ export interface IntelStrengthDay {
   sets: number;
   avg_weight: number;
   avg_reps: number;
+  sessions_in_14d?: number;
+  swap_penalty_14d?: number;
+  velocity_14d_unit?: string;
 }
 
 export interface IntelStrengthTrend {
@@ -24,9 +27,6 @@ export interface IntelStrengthTrend {
   to: string;
   baseline_tonnage: number;
   training_days_in_baseline: number;
-  sessions_in_14d: number;
-  swap_penalty_14d: number;
-  velocity_14d_unit: string;
   days: IntelStrengthDay[];
   latest: IntelStrengthDay;
 }
@@ -36,6 +36,7 @@ export interface IntelStrengthSummary {
   velocity_pct_per_week: number;
   velocity_index_per_week: number;
   swap_penalty_14d: number;
+  velocity_14d_unit: string;
   day_strength_index: number;
   rolling_avg_7d: number;
   phase: string;
@@ -65,12 +66,13 @@ export async function fetchIntelStrengthTrend(
 export function deriveStrengthSummary(
   trend: IntelStrengthTrend
 ): IntelStrengthSummary {
-  const sessions_in_14d = trend.sessions_in_14d ?? trend.days.slice(-14).filter((d) => d.sets > 0).length;
-  const swap_penalty_14d = trend.swap_penalty_14d ?? 0;
-
   const latest = trend.latest ?? trend.days[trend.days.length - 1];
-  const rawVelocity = latest?.velocity_14d ?? 0;
 
+  const sessions_in_14d = latest?.sessions_in_14d ?? trend.days.slice(-14).filter((d) => d.sets > 0).length;
+  const swap_penalty_14d = latest?.swap_penalty_14d ?? 0;
+  const velocity_14d_unit = latest?.velocity_14d_unit ?? "index_delta_per_day";
+
+  const rawVelocity = latest?.velocity_14d ?? 0;
   const velocityPerWeek = rawVelocity * 7;
 
   const avg7d = latest?.rolling_avg_7d ?? 0;
@@ -81,6 +83,7 @@ export function deriveStrengthSummary(
     velocity_pct_per_week: velocityPctPerWeek,
     velocity_index_per_week: velocityPerWeek,
     swap_penalty_14d,
+    velocity_14d_unit,
     day_strength_index: latest?.day_strength_index ?? 0,
     rolling_avg_7d: avg7d,
     phase: latest?.phase ?? "rest",

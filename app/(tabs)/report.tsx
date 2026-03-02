@@ -1568,13 +1568,13 @@ export default function ReportScreen() {
                     {svChartData.length >= 2 && (
                       <View style={{ marginTop: 16 }}>
                         <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>
-                          {intelTrend ? "Strength Velocity (index/wk)" : "StrengthVelocity (%/wk over time)"}
+                          {intelSummary ? `Strength Velocity (${intelSummary.velocity_14d_unit === "index_delta_per_day" ? "index/wk" : "%/wk"})` : "StrengthVelocity (%/wk over time)"}
                         </Text>
                         <StrengthLineChart
                           data={svChartData}
                           lineColor="#34D399"
                           markers={phaseMarkers}
-                          yFormat={intelTrend ? (v) => fmtDelta(v, 3, "") : (v) => fmtDelta(v, 1, "%")}
+                          yFormat={intelSummary ? (v) => fmtDelta(v, 3, "") : (v) => fmtDelta(v, 1, "%")}
                           zeroLine
                         />
                       </View>
