@@ -512,7 +512,7 @@ export function DurationPickerField({
   }, [hours, hourIdx, minIdx, onSelect]);
 
   const hasValue = value !== "" && value != null;
-  const displayVal = hasValue ? displayHHMM(parseFloat(value)) : null;
+  const totalMin = hasValue ? parseFloat(value) : null;
 
   return (
     <>
@@ -522,8 +522,10 @@ export function DurationPickerField({
           <Text style={ws.fieldLabelText}>{label}</Text>
         </View>
         <View style={ws.fieldValueRow}>
-          {displayVal ? (
-            <Text style={ws.fieldValue}>{displayVal}</Text>
+          {totalMin != null ? (
+            <Text style={ws.fieldValue}>
+              {totalMin} <Text style={ws.fieldSuffix}>min</Text>
+            </Text>
           ) : (
             <Text style={ws.fieldPlaceholder}>{placeholder || "Tap to set"}</Text>
           )}
