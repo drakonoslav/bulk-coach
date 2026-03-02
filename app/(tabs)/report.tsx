@@ -208,7 +208,9 @@ function StrengthLineChart({
             }}
           />
         )}
-        {markerPositions.map((m, idx) => (
+        {markerPositions.map((m, idx) => {
+          const nearRightEdge = m.x > width * 0.65;
+          return (
           <View key={`marker-${idx}`}>
             <View
               style={{
@@ -221,11 +223,12 @@ function StrengthLineChart({
               }}
             />
             <View style={{ position: "absolute", left: m.x - 3, top: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: m.color }} />
-            <Text style={{ position: "absolute", left: m.x + 4, top: -4, fontSize: 8, fontFamily: "Rubik_500Medium", color: m.color }}>
+            <Text style={{ position: "absolute", ...(nearRightEdge ? { right: width - m.x + 4 } : { left: m.x + 4 }), top: -4, fontSize: 8, fontFamily: "Rubik_500Medium", color: m.color }}>
               {m.label}
             </Text>
           </View>
-        ))}
+        );
+        })}
         {points.map((p, i) => {
           if (i === 0) return null;
           const prev = points[i - 1];
@@ -1745,34 +1748,36 @@ export default function ReportScreen() {
                     )}
                     {regionalRows.length > 0 && (
                       <View style={{ marginTop: 16 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                          <Text style={styles.lgrLabel}>
-                            {USE_INTEL_STRENGTH && intelMuscleToday ? "Regional Load (Intel Muscles) — 14D Change" : "Regional Strength (leaf muscles) — ~14d change"}
-                          </Text>
+                        <View style={{ marginBottom: 8 }}>
                           {USE_INTEL_STRENGTH && intelMuscleToday && (
-                            <Pressable
-                              onPress={() => setIntelRegionalMode(m => m === "total" ? "direct" : "total")}
-                              style={{ backgroundColor: Colors.cardBgElevated, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Colors.border }}
-                            >
-                              <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: intelRegionalMode === "total" ? "#22C55E" : "#60A5FA" }}>
-                                {intelRegionalMode === "total" ? "Total" : "Direct"}
-                              </Text>
-                            </Pressable>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                              <Pressable
+                                onPress={() => setIntelRegionalMode(m => m === "total" ? "direct" : "total")}
+                                style={{ backgroundColor: Colors.cardBgElevated, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Colors.border }}
+                              >
+                                <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: intelRegionalMode === "total" ? "#22C55E" : "#60A5FA" }}>
+                                  {intelRegionalMode === "total" ? "Total" : "Direct"}
+                                </Text>
+                              </Pressable>
+                            </View>
                           )}
+                          <Text style={styles.lgrLabel}>
+                            {USE_INTEL_STRENGTH && intelMuscleToday ? "Regional Load (Intel) — 14D Change" : "Regional Strength — ~14d change"}
+                          </Text>
                         </View>
 
                         <View style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: "hidden" }}>
-                          <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 10, backgroundColor: Colors.cardBgElevated }}>
-                            <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
+                          <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 8, backgroundColor: Colors.cardBgElevated }}>
+                            <Text style={{ flex: 1.2, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
                               Muscle
                             </Text>
-                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                            <Text style={{ width: 52, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
                               Load
                             </Text>
-                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                            <Text style={{ width: 52, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
                               Δ
                             </Text>
-                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                            <Text style={{ width: 56, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
                               14d%
                             </Text>
                           </View>
@@ -1791,25 +1796,26 @@ export default function ReportScreen() {
                                 key={r.muscleId}
                                 style={{
                                   flexDirection: "row",
-                                  paddingVertical: 8,
-                                  paddingHorizontal: 10,
+                                  alignItems: "center",
+                                  paddingVertical: 7,
+                                  paddingHorizontal: 8,
                                   borderTopWidth: 1,
                                   borderTopColor: Colors.border,
                                 }}
                               >
-                                <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.text }}>
+                                <Text style={{ flex: 1.2, fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.text }} numberOfLines={1}>
                                   {r.muscleName}
                                 </Text>
 
-                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                                <Text style={{ width: 52, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
                                   {r.todayLoad > 0 ? r.todayLoad.toFixed(0) : "—"}
                                 </Text>
 
-                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: r.delta > 0 ? "#34D399" : r.delta < 0 ? "#F87171" : "#9CA3AF", textAlign: "right" }}>
+                                <Text style={{ width: 52, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: r.delta > 0 ? "#34D399" : r.delta < 0 ? "#F87171" : "#9CA3AF", textAlign: "right" }}>
                                   {r.delta !== 0 ? fmtDelta(r.delta, 0, "") : "—"}
                                 </Text>
 
-                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: pctColor, textAlign: "right" }}>
+                                <Text style={{ width: 56, fontSize: 10, fontFamily: "Rubik_600SemiBold", color: pctColor, textAlign: "right" }}>
                                   {pct == null ? "--" : fmtDelta(pct, 1, "%")}
                                 </Text>
                               </View>
