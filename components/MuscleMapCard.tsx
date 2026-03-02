@@ -282,6 +282,36 @@ export default function MuscleMapCard({ muscles, date, loading, error, doseMode,
                     <Text style={styles.modalValue}>{selected.last_hit}</Text>
                   </View>
                 )}
+                {(() => {
+                  const rc = selected.recovery;
+                  if (!rc) return null;
+                  const freshness = doseMode === "total" ? rc.freshness_total : rc.freshness_direct;
+                  const fatigue = doseMode === "total" ? rc.fatigue_total : rc.fatigue_direct;
+                  return (
+                    <>
+                      <View style={styles.modalRow}>
+                        <Text style={styles.modalLabel}>Freshness</Text>
+                        <Text style={styles.modalValue}>
+                          {freshness != null ? `${(freshness * 100).toFixed(1)}%` : "—"}
+                        </Text>
+                      </View>
+                      <View style={styles.modalRow}>
+                        <Text style={styles.modalLabel}>Fatigue</Text>
+                        <Text style={styles.modalValue}>
+                          {fatigue != null ? fatigue.toFixed(1) : "—"}
+                        </Text>
+                      </View>
+                      {(rc.tau_days != null || rc.model) && (
+                        <View style={styles.modalRow}>
+                          <Text style={styles.modalLabel}>Model</Text>
+                          <Text style={styles.modalMeta}>
+                            {rc.model ?? "—"}{rc.tau_days != null ? ` · τ=${rc.tau_days}d` : ""}
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  );
+                })()}
                 <Pressable style={styles.modalClose} onPress={() => setSelected(null)}>
                   <Text style={styles.modalCloseText}>Close</Text>
                 </Pressable>
@@ -462,6 +492,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "Rubik_500Medium",
     color: "#8B5CF6",
+  },
+  modalMeta: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: Colors.textTertiary,
   },
   modalClose: {
     marginTop: 16,

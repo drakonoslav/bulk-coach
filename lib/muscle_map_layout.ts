@@ -19,6 +19,7 @@ export type MuscleState = {
   last_hit?: string;
   derived_from?: string;
   derived_scale?: number;
+  recovery?: IntelRecovery;
 };
 
 export type IntelMuscleMap = {
@@ -164,6 +165,16 @@ const INTEL_ID_TO_KEY: Record<number, MuscleKey> = {
   25: "shins", 26: "calves", 27: "hands_grip",
 };
 
+export interface IntelRecovery {
+  model?: string;
+  tau_days?: number;
+  fatigue_total?: number;
+  fatigue_direct?: number;
+  freshness_total?: number;
+  freshness_direct?: number;
+  last_hit?: string;
+}
+
 export interface IntelRegion {
   muscle: string;
   muscle_id: number;
@@ -173,6 +184,7 @@ export interface IntelRegion {
   load_7d_direct?: number;
   derived_from?: string;
   scale?: number;
+  recovery?: IntelRecovery;
 }
 
 export const EXPECTED_SCHEMA_VERSION = 27;
@@ -228,6 +240,10 @@ export function transformIntelResponse(
       if (r.derived_from) {
         state.derived_from = r.derived_from;
         state.derived_scale = r.scale;
+      }
+      if (r.recovery) {
+        state.recovery = r.recovery;
+        if (r.recovery.last_hit) state.last_hit = r.recovery.last_hit;
       }
       return state;
     })
