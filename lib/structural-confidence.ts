@@ -4,6 +4,13 @@ import type { StrengthBaselines, StrengthVelocityResult } from "./strength-index
 import { strengthVelocity14d, swapPenaltyMultiplier } from "./strength-index";
 import type { AdaptationResult } from "./adaptation-stage";
 import { classifyAdaptationStage } from "./adaptation-stage";
+import type { IntelStrengthSummary } from "./intel-strength";
+
+export interface IntelStrengthInput {
+  sessions_in_14d: number;
+  velocity_14d_pct: number;
+  swap_penalty_14d: number;
+}
 
 export interface FfmSignalQuality {
   score: number;
@@ -181,7 +188,32 @@ export function computeWaistSignalQuality(entries: DailyEntry[]): WaistSignalQua
 export function computeStrengthSignalQuality(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
+  intel?: IntelStrengthInput | null,
 ): StrengthSignalQuality {
+  if (intel) {
+    let score = 0;
+
+    if (intel.sessions_in_14d >= 3) score += 14;
+    else if (intel.sessions_in_14d >= 2) score += 8;
+    else if (intel.sessions_in_14d >= 1) score += 4;
+
+    const velocityAboveNoise = Math.abs(intel.velocity_14d_pct) >= 0.25;
+    if (velocityAboveNoise) score += 13;
+    else if (Math.abs(intel.velocity_14d_pct) >= 0.10) score += 6;
+
+    const penalty = 1 - intel.swap_penalty_14d;
+    if (penalty >= 0.9) score += 13;
+    else if (penalty >= 0.8) score += 6;
+    else score += 2;
+
+    return {
+      score: Math.min(40, score),
+      sessionsIn14d: intel.sessions_in_14d,
+      velocityAboveNoise,
+      swapPenalty: penalty,
+    };
+  }
+
   let score = 0;
 
   const hasStrengthData = (e: DailyEntry) =>
@@ -228,10 +260,11 @@ export function computeStrengthSignalQuality(
 export function computeSCS(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
+  intel?: IntelStrengthInput | null,
 ): SCSResult {
   const ffm = computeFfmSignalQuality(entries);
   const waist = computeWaistSignalQuality(entries);
-  const strength = computeStrengthSignalQuality(entries, baselines);
+  const strength = computeStrengthSignalQuality(entries, baselines, intel);
 
   return {
     total: ffm.score + waist.score + strength.score,
@@ -313,7 +346,13 @@ export function detectWaistWarning(waistVel: number | null): WaistWarning {
 export function detectTrainingPhase(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
+  intelPhase?: string | null,
 ): TrainingPhase {
+  if (intelPhase) {
+    if (intelPhase === "neural" || intelPhase === "rest") return "neural";
+    return "hypertrophy";
+  }
+
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
   if (sorted.length < 14) return "neural";
 
@@ -369,11 +408,13 @@ export function detectStrengthPlateau(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
   currentMode: TrainingMode,
+  intelVelocityPct?: number | null,
 ): StrengthPlateau {
   const sV = strengthVelocity14d(entries, baselines);
   const ffmV = ffmVelocity14d(entries);
 
-  const strengthStalled = sV != null && sV.pctPerWeek < 0.005;
+  const velocityPct = intelVelocityPct != null ? intelVelocityPct : (sV?.pctPerWeek ?? null);
+  const strengthStalled = velocityPct != null && velocityPct < 0.005;
   const ffmFlat = ffmV == null || ffmV.velocityLbPerWeek <= 0;
   const inSurplusContext = currentMode === "LEAN_BULK" || caloriesIncreasedRecently(entries);
 
@@ -409,8 +450,11 @@ export function classifyMode(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
   strengthPctOverride?: number | null,
+  intelSummary?: IntelStrengthInput | null,
+  intelPhase?: string | null,
 ): ModeClassification {
-  const scs = computeSCS(entries, baselines);
+  const intelInput = intelSummary ?? null;
+  const scs = computeSCS(entries, baselines, intelInput);
   const ffmV = ffmVelocity14d(entries);
   const waistV = waistVelocity14d(entries);
   const sV = strengthVelocity14d(entries, baselines);
@@ -418,17 +462,21 @@ export function classifyMode(
 
   const ffmVel = ffmV?.velocityLbPerWeek ?? null;
   const waistVel = waistV;
-  const strengthPct = strengthPctOverride != null ? strengthPctOverride : (sV?.pctPerWeek ?? null);
+  const strengthPct = strengthPctOverride != null
+    ? strengthPctOverride
+    : intelInput != null
+      ? intelInput.velocity_14d_pct
+      : (sV?.pctPerWeek ?? null);
   const weightVel = wV;
 
-  const trainingPhase = detectTrainingPhase(entries, baselines);
+  const trainingPhase = detectTrainingPhase(entries, baselines, intelPhase);
   const waistWarning = detectWaistWarning(waistVel);
-  const adaptation = classifyAdaptationStage(entries, baselines);
+  const adaptation = classifyAdaptationStage(entries, baselines, intelInput);
 
   const reasons: string[] = [];
 
   if (scs.total < 60) {
-    const plateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN");
+    const plateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN", intelInput?.velocity_14d_pct);
     return {
       mode: "UNCERTAIN",
       label: "Uncertain",
@@ -457,7 +505,7 @@ export function classifyMode(
     if (waistVel != null) reasons.push(`Waist ${waistVel >= 0 ? "stable/rising" : "slightly down"}`);
     if (strengthPct != null && strengthPct >= 0.25) reasons.push("Strength trending up");
 
-    const plateau = detectStrengthPlateau(entries, baselines, "LEAN_BULK");
+    const plateau = detectStrengthPlateau(entries, baselines, "LEAN_BULK", intelInput?.velocity_14d_pct);
     let calorieAction: CalorieAction;
 
     if (plateau.flagged && waistWarning.active) {
@@ -497,7 +545,7 @@ export function classifyMode(
     if (ffmVel != null) reasons.push(`FFM ${ffmVel >= 0 ? "stable/rising" : "slightly down"}`);
     if (strengthPct != null && strengthPct >= 0) reasons.push("Strength holding or rising");
 
-    const plateau = detectStrengthPlateau(entries, baselines, "RECOMP");
+    const plateau = detectStrengthPlateau(entries, baselines, "RECOMP", intelInput?.velocity_14d_pct);
     let calorieAction: CalorieAction;
 
     if (plateau.flagged && waistWarning.active) {
@@ -534,7 +582,7 @@ export function classifyMode(
     if (weightVel != null && weightVel <= -0.5) reasons.push(`Weight dropping ${Math.abs(weightVel).toFixed(2)} lb/wk`);
     if (strengthPct != null && strengthPct <= -0.25) reasons.push("Strength declining — may be too aggressive");
 
-    const plateau = detectStrengthPlateau(entries, baselines, "CUT");
+    const plateau = detectStrengthPlateau(entries, baselines, "CUT", intelInput?.velocity_14d_pct);
     let calorieAction: CalorieAction;
     if (plateau.flagged && waistWarning.active) {
       calorieAction = { delta: -100, reason: "Plateau + waist rising — reduce calories", priority: "high" };
@@ -560,7 +608,7 @@ export function classifyMode(
     };
   }
 
-  const fallbackPlateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN");
+  const fallbackPlateau = detectStrengthPlateau(entries, baselines, "UNCERTAIN", intelInput?.velocity_14d_pct);
   reasons.push("Signals don't clearly match any single mode");
   if (ffmVel != null) reasons.push(`FFM: ${ffmVel >= 0 ? "+" : ""}${ffmVel.toFixed(2)} lb/wk`);
   if (waistVel != null) reasons.push(`Waist: ${waistVel >= 0 ? "+" : ""}${waistVel.toFixed(2)} in/wk`);

@@ -4312,6 +4312,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/intel/strength/trend", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const from = req.query.from as string;
+    const to = req.query.to as string;
+    if (!from || !to) return res.status(400).json({ error: "from and to query params required" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/strength/trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      return intelProxy(r, res);
+    } catch (err: any) {
+      console.error("GET /api/intel/strength/trend error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/strength/day", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    try {
+      const r = await fetch(`${INTEL_BASE}/strength/day?date=${encodeURIComponent(date)}`);
+      return intelProxy(r, res);
+    } catch (err: any) {
+      console.error("GET /api/intel/strength/day error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
   app.get("/api/intel/muscle-map", async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });

@@ -1,6 +1,7 @@
 import type { DailyEntry } from "./coaching-engine";
 import type { StrengthBaselines } from "./strength-index";
 import { classifyStrengthPhase, strengthVelocity14d, computeDayStrengthIndex } from "./strength-index";
+import type { IntelStrengthInput } from "./structural-confidence";
 
 export type AdaptationStage =
   | "INSUFFICIENT_DATA"
@@ -137,14 +138,15 @@ function makeDebug(
 export function classifyAdaptationStage(
   entries: DailyEntry[],
   baselines: StrengthBaselines,
+  intel?: IntelStrengthInput | null,
 ): AdaptationResult {
   const reasons: string[] = [];
   const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
-  if (sorted.length === 0) {
+  if (sorted.length === 0 && !intel) {
     return { stage: "INSUFFICIENT_DATA", label: "Data-poor", trainingAgeDays: null, consistency4w: null, noveltyScore: null, reasons: ["No entries"], debug: makeDebug(null, null, null, null) };
   }
 
-  const sessions14d = sessionsInLastNDays(sorted, 14);
+  const sessions14d = intel ? intel.sessions_in_14d : sessionsInLastNDays(sorted, 14);
   const trainingAgeDays = computeTrainingAgeDays(sorted);
   const consistency4w = computeConsistency4w(sorted);
 
@@ -160,8 +162,8 @@ export function classifyAdaptationStage(
     };
   }
 
-  const sV = strengthVelocity14d(sorted, baselines);
-  const pctPerWeek = sV?.pctPerWeek ?? null;
+  const sV = intel ? null : strengthVelocity14d(sorted, baselines);
+  const pctPerWeek = intel ? intel.velocity_14d_pct : (sV?.pctPerWeek ?? null);
   const sPhase = classifyStrengthPhase(pctPerWeek);
 
   if (sPhase.phase === "INSUFFICIENT_DATA") {

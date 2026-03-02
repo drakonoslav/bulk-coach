@@ -42,7 +42,8 @@ import {
   type Diagnosis,
 } from "@/lib/coaching-engine";
 import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
-import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult } from "@/lib/structural-confidence";
+import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult, type IntelStrengthInput } from "@/lib/structural-confidence";
+import { fetchIntelStrengthTrend, deriveStrengthSummary, trendToChartData, trendPhaseMarkers, type IntelStrengthTrend, type IntelStrengthSummary } from "@/lib/intel-strength";
 import ContextLensCard from "@/components/ContextLensCard";
 
 type CalorieSource = "weight_only" | "mode_override";
@@ -660,6 +661,7 @@ export default function ReportScreen() {
   });
   const [strengthSets, setStrengthSets] = useState<StrengthSet[]>([]);
   const [strengthV2Mapping, setStrengthV2Mapping] = useState<StrengthV2Mapping | null>(null);
+  const [intelTrend, setIntelTrend] = useState<IntelStrengthTrend | null>(null);
   const [calorieHistory, setCalorieHistory] = useState<Array<{
     day: string; deltaKcal: number; source: string; priority: string; reason: string; wkGainLb: number | null; mode: string | null;
   }>>([]);
@@ -694,6 +696,17 @@ export default function ReportScreen() {
       setStrengthV2Mapping({ muscles: v2Map.muscles as any, weights: v2Map.weights as any });
     } catch (e) {
       console.warn("Strength V2 load failed:", e);
+    }
+
+    try {
+      const trend = await fetchIntelStrengthTrend(start, end);
+      if (trend && trend.days.length > 0 && trend.days.some(d => d.sets > 0)) {
+        setIntelTrend(trend);
+      } else {
+        setIntelTrend(null);
+      }
+    } catch {
+      setIntelTrend(null);
     }
   }, []);
 
@@ -775,17 +788,35 @@ export default function ReportScreen() {
   const ffmChartData = ffmRa.slice(-21);
   const ffmV = ffmVelocity14d(entries);
   const ffmLgr = ffmLeanGainRatio(entries);
-  const scs = computeSCS(entries, strengthBaselines);
+  const intelSummary: IntelStrengthSummary | null = intelTrend ? deriveStrengthSummary(intelTrend) : null;
+  const intelInput: IntelStrengthInput | null = intelSummary ? {
+    sessions_in_14d: intelSummary.sessions_in_14d,
+    velocity_14d_pct: intelSummary.velocity_14d_pct,
+    swap_penalty_14d: intelSummary.swap_penalty_14d,
+  } : null;
+
+  const scs = computeSCS(entries, strengthBaselines, intelInput);
   const waistV = waistVelocity14d(entries);
 
   const hasV2 = strengthSets.length >= 2 && strengthV2Mapping != null;
   const globalV2 = hasV2 ? computeGlobalStrengthIndexV2(strengthSets, strengthV2Mapping!) : null;
 
-  const sV = hasV2 && globalV2
-    ? strengthVelocity14dV2(globalV2)
-    : strengthVelocity14d(entries, strengthBaselines);
+  const intelSi7d14dAgo = (() => {
+    if (!intelTrend || intelTrend.days.length < 15) return intelSummary?.rolling_avg_7d ?? 0;
+    const d14 = intelTrend.days[intelTrend.days.length - 15];
+    return d14?.rolling_avg_7d ?? intelSummary?.rolling_avg_7d ?? 0;
+  })();
 
-  const modeClass = classifyMode(entries, strengthBaselines, sV?.pctPerWeek ?? null);
+  const sV = intelSummary
+    ? { pctPerWeek: intelSummary.velocity_14d_pct, si7dToday: intelSummary.rolling_avg_7d, si7d14dAgo: intelSi7d14dAgo, totalSpanDays: 14 }
+    : hasV2 && globalV2
+      ? strengthVelocity14dV2(globalV2)
+      : strengthVelocity14d(entries, strengthBaselines);
+
+  const modeClass = classifyMode(
+    entries, strengthBaselines, sV?.pctPerWeek ?? null,
+    intelInput, intelSummary?.phase ?? null,
+  );
 
   const isLocalFallback = appliedCalorieDelta == null;
   const finalKcal =
@@ -805,19 +836,29 @@ export default function ReportScreen() {
 
   const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
 
-  const siRa = hasV2 && globalV2
-    ? strengthIndexRollingAvgV2(globalV2, 7)
-    : strengthIndexRollingAvg(entries, strengthBaselines, 7);
-  const siChartData = siRa.slice(-28).map(d => ({ day: d.day, value: d.avg }));
-  const siFirst = siRa.length > 0 ? siRa[0].avg : null;
+  const intelCharts = intelTrend ? trendToChartData(intelTrend) : null;
+
+  const siRa = intelCharts
+    ? []
+    : hasV2 && globalV2
+      ? strengthIndexRollingAvgV2(globalV2, 7)
+      : strengthIndexRollingAvg(entries, strengthBaselines, 7);
+  const siChartData = intelCharts
+    ? intelCharts.indexData.slice(-28)
+    : siRa.slice(-28).map(d => ({ day: d.day, value: d.avg }));
+  const siFirst = siChartData.length > 0 ? siChartData[0].value : null;
   const siNormalized = siFirst != null && siFirst > 0
-    ? siRa.slice(-28).map(d => ({ day: d.day, value: ((d.avg - siFirst) / siFirst) * 100 }))
+    ? siChartData.map(d => ({ day: d.day, value: ((d.value - siFirst) / siFirst) * 100 }))
     : [];
 
-  const svOverTime = hasV2 && globalV2
-    ? strengthVelocityOverTimeV2(globalV2)
-    : strengthVelocityOverTime(entries, strengthBaselines);
-  const svChartData = svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
+  const svOverTime = intelCharts
+    ? []
+    : hasV2 && globalV2
+      ? strengthVelocityOverTimeV2(globalV2)
+      : strengthVelocityOverTime(entries, strengthBaselines);
+  const svChartData = intelCharts
+    ? intelCharts.velocityData.slice(-28)
+    : svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
 
   const regionalRows = React.useMemo(() => {
     const v2Active = strengthSets.length >= 2 && strengthV2Mapping != null;
@@ -897,13 +938,16 @@ export default function ReportScreen() {
     return out;
   }, [strengthSets, strengthV2Mapping]);
 
+  const intelMarkers = intelTrend ? trendPhaseMarkers(intelTrend) : null;
   const phaseTransitions = detectPhaseTransitions(entries, strengthBaselines);
 
-  const phaseMarkers = phaseTransitions.map(t => ({
-    day: t.day,
-    label: t.to === "hypertrophy" ? "H" : "N",
-    color: t.to === "hypertrophy" ? "#34D399" : "#FBBF24",
-  }));
+  const phaseMarkers = intelMarkers && intelMarkers.length > 0
+    ? intelMarkers
+    : phaseTransitions.map(t => ({
+        day: t.day,
+        label: t.to === "hypertrophy" ? "H" : "N",
+        color: t.to === "hypertrophy" ? "#34D399" : "#FBBF24",
+      }));
 
   const strengthDaysInWindow = (() => {
     const sorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
@@ -918,7 +962,7 @@ export default function ReportScreen() {
 
   const strengthEntriesSorted = [...entries].sort((a, b) => a.day.localeCompare(b.day));
   const strengthEntries28 = strengthEntriesSorted.slice(-28).filter(hasStrengthEntry);
-  const shouldShowStrengthSection = strengthEntries28.length >= 2 || siChartData.length >= 2 || svChartData.length >= 2;
+  const shouldShowStrengthSection = intelTrend != null || strengthEntries28.length >= 2 || siChartData.length >= 2 || svChartData.length >= 2;
 
   const rawStrengthTrend = (() => {
     const window = strengthEntriesSorted.slice(-28);
