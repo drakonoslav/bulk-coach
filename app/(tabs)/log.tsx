@@ -1907,28 +1907,29 @@ export default function LogScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Sleep — Self-Report</Text>
-          <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <Text style={styles.timeLabel}>Actual Bed</Text>
-              <TextInput
-                style={styles.timeInput}
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={{ flex: 1 }}>
+              <TimePickerField
+                label="Actual Bed"
                 value={actualBedTime}
-                onChangeText={setActualBedTime}
+                icon="bed-outline"
+                iconColor={Colors.secondary}
                 placeholder="21:45"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
+                defaultTime="21:45"
+                onSelect={setActualBedTime}
+                onClear={() => setActualBedTime("")}
               />
             </View>
-            <Ionicons name="arrow-forward" size={16} color={Colors.textTertiary} style={{ marginTop: 24 }} />
-            <View style={styles.timeField}>
-              <Text style={styles.timeLabel}>Actual Wake</Text>
-              <TextInput
-                style={styles.timeInput}
+            <View style={{ flex: 1 }}>
+              <TimePickerField
+                label="Actual Wake"
                 value={actualWakeTime}
-                onChangeText={setActualWakeTime}
+                icon="sunny-outline"
+                iconColor={Colors.secondary}
                 placeholder="05:30"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
+                defaultTime="05:30"
+                onSelect={setActualWakeTime}
+                onClear={() => setActualWakeTime("")}
               />
             </View>
           </View>
@@ -1967,85 +1968,76 @@ export default function LogScreen() {
               </Text>
             </View>
           )}
-          <View style={{ flexDirection: "row", gap: 6 }}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="eye-off-outline" size={14} color={Colors.secondary} />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Awake</Text>
-              </View>
-              <TextInput
-                style={styles.inputCompact}
-                value={sleepAwakeMin}
-                onChangeText={handleMinuteSetter(setSleepAwakeMin)}
-                placeholder="30"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="cloudy-night-outline" size={14} color={Colors.secondary} />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>REM</Text>
-              </View>
-              <TextInput
-                style={styles.inputCompact}
-                value={sleepRemMin}
-                onChangeText={handleMinuteSetter(setSleepRemMin)}
-                placeholder="94"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="moon-outline" size={14} color={Colors.secondary} />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Core</Text>
-              </View>
-              <TextInput
-                style={styles.inputCompact}
-                value={sleepCoreMin}
-                onChangeText={handleMinuteSetter(setSleepCoreMin)}
-                placeholder="210"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="bed-outline" size={14} color={Colors.secondary} />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Deep</Text>
-              </View>
-              <TextInput
-                style={styles.inputCompact}
-                value={sleepDeepMin}
-                onChangeText={handleMinuteSetter(setSleepDeepMin)}
-                placeholder="60"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
-              />
-            </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginBottom: 2 }}>
+            <Ionicons name="stats-chart-outline" size={10} color={Colors.textTertiary} />
+            <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Sleep Stages</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="sunny-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Nap (min)</Text>
-              </View>
-              <TextInput
-                style={styles.input}
+          <DurationPickerField
+            label="Awake"
+            value={sleepAwakeMin}
+            icon="eye-off-outline"
+            iconColor={Colors.secondary}
+            placeholder="00:30"
+            defaultMinutes={yesterdayEntry?.sleepAwakeMin ?? 30}
+            maxHours={4}
+            onSelect={(m) => setSleepAwakeMin(String(m))}
+            onClear={() => setSleepAwakeMin("")}
+          />
+          <DurationPickerField
+            label="REM"
+            value={sleepRemMin}
+            icon="cloudy-night-outline"
+            iconColor={Colors.secondary}
+            placeholder="01:34"
+            defaultMinutes={yesterdayEntry?.sleepRemMin ?? 94}
+            maxHours={4}
+            onSelect={(m) => setSleepRemMin(String(m))}
+            onClear={() => setSleepRemMin("")}
+          />
+          <DurationPickerField
+            label="Core"
+            value={sleepCoreMin}
+            icon="moon-outline"
+            iconColor={Colors.secondary}
+            placeholder="03:30"
+            defaultMinutes={yesterdayEntry?.sleepCoreMin ?? 210}
+            maxHours={6}
+            onSelect={(m) => setSleepCoreMin(String(m))}
+            onClear={() => setSleepCoreMin("")}
+          />
+          <DurationPickerField
+            label="Deep"
+            value={sleepDeepMin}
+            icon="bed-outline"
+            iconColor={Colors.secondary}
+            placeholder="01:00"
+            defaultMinutes={yesterdayEntry?.sleepDeepMin ?? 60}
+            maxHours={4}
+            onSelect={(m) => setSleepDeepMin(String(m))}
+            onClear={() => setSleepDeepMin("")}
+          />
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+            <View style={{ flex: 1 }}>
+              <DurationPickerField
+                label="Nap"
                 value={napMinutes}
-                onChangeText={handleMinuteSetter(setNapMinutes)}
-                placeholder="0 or 0:20"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardAppearance="dark"
+                icon="sunny-outline"
+                iconColor={Colors.secondary}
+                placeholder="00:00"
+                defaultMinutes={yesterdayEntry?.napMinutes ?? 0}
+                maxHours={3}
+                onSelect={(m) => setNapMinutes(String(m))}
+                onClear={() => setNapMinutes("")}
               />
             </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="star-outline" size={16} color={Colors.secondary} />
-                <Text style={styles.inputLabelText}>Quality</Text>
+            <View style={{ flex: 1 }}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="star-outline" size={16} color={Colors.secondary} />
+                  <Text style={styles.inputLabelText}>Quality</Text>
+                </View>
+                <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
               </View>
-              <SleepQualitySelector value={sleepQuality} onChange={setSleepQuality} />
             </View>
           </View>
           {(() => {
@@ -2075,20 +2067,17 @@ export default function LogScreen() {
               </View>
             );
           })()}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputLabel}>
-              <Ionicons name="refresh-outline" size={16} color={Colors.secondary} />
-              <Text style={styles.inputLabelText}>Toss & Turn (min)</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={tossedMinutes}
-              onChangeText={handleMinuteSetter(setTossedMinutes)}
-              placeholder="0 or 0:15"
-              placeholderTextColor={Colors.textTertiary}
-              keyboardAppearance="dark"
-            />
-          </View>
+          <DurationPickerField
+            label="Toss & Turn"
+            value={tossedMinutes}
+            icon="refresh-outline"
+            iconColor={Colors.secondary}
+            placeholder="00:00"
+            defaultMinutes={yesterdayEntry?.tossedMinutes ?? 0}
+            maxHours={4}
+            onSelect={(m) => setTossedMinutes(String(m))}
+            onClear={() => setTossedMinutes("")}
+          />
         </View>
 
         <View style={styles.sectionCard}>
