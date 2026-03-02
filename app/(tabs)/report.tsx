@@ -1568,7 +1568,7 @@ export default function ReportScreen() {
                     {svChartData.length >= 2 && (
                       <View style={{ marginTop: 16 }}>
                         <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>
-                          {intelSummary ? `Strength Velocity (${intelSummary.velocity_14d_unit === "index_delta_per_day" ? "index/wk" : "%/wk"})` : "StrengthVelocity (%/wk over time)"}
+                          {intelSummary ? `Strength Velocity (${intelSummary.velocity_14d_unit === "index_delta_per_day" ? "index/wk" : intelSummary.velocity_14d_unit ? "unknown unit" : "index/wk"})` : "Strength Velocity (%/wk over time)"}
                         </Text>
                         <StrengthLineChart
                           data={svChartData}
