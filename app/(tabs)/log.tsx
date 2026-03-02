@@ -18,7 +18,7 @@ import * as Haptics from "expo-haptics";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import WheelPickerField, { DurationPickerField } from "@/components/WheelNumberInput";
+import WheelPickerField, { DurationPickerField, TimePickerField } from "@/components/WheelNumberInput";
 import Colors from "@/constants/colors";
 import {
   saveEntry,
@@ -2125,15 +2125,15 @@ export default function LogScreen() {
               <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>06:00–06:40</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="play-outline" size={12} color="#60A5FA" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Start</Text>
-                </View>
-                <TextInput
-                  style={styles.inputCompact}
+              <View style={{ flex: 1 }}>
+                <TimePickerField
+                  label="Start"
                   value={cardioStartTime}
-                  onChangeText={(t) => {
+                  icon="play-outline"
+                  iconColor="#60A5FA"
+                  placeholder="06:00"
+                  defaultTime="06:00"
+                  onSelect={(t) => {
                     setCardioStartTime(t);
                     if (t && cardioEndTime) {
                       const [sh, sm] = t.split(":").map(Number);
@@ -2145,20 +2145,18 @@ export default function LogScreen() {
                       }
                     }
                   }}
-                  placeholder="06:00"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardAppearance="dark"
+                  onClear={() => setCardioStartTime("")}
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="stop-outline" size={12} color="#EF4444" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>End</Text>
-                </View>
-                <TextInput
-                  style={styles.inputCompact}
+              <View style={{ flex: 1 }}>
+                <TimePickerField
+                  label="End"
                   value={cardioEndTime}
-                  onChangeText={(t) => {
+                  icon="stop-outline"
+                  iconColor="#EF4444"
+                  placeholder="06:40"
+                  defaultTime="06:40"
+                  onSelect={(t) => {
                     setCardioEndTime(t);
                     if (cardioStartTime && t) {
                       const [sh, sm] = cardioStartTime.split(":").map(Number);
@@ -2170,65 +2168,43 @@ export default function LogScreen() {
                       }
                     }
                   }}
-                  placeholder="06:40"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardAppearance="dark"
+                  onClear={() => setCardioEndTime("")}
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="time-outline" size={12} color={Colors.primary} />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Dur</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.inputCompact}
-                    value={cardio}
-                    onChangeText={handleMinuteSetter(setCardio)}
-                    placeholder="40"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                  <Text style={styles.inputSuffix}>m</Text>
-                </View>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, paddingHorizontal: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="time-outline" size={14} color={Colors.primary} />
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Duration</Text>
               </View>
+              <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: cardio ? Colors.text : Colors.textTertiary }}>
+                {cardio ? `${cardio} min` : "—"}
+              </Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginBottom: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2, marginBottom: 4 }}>
               <Ionicons name="speedometer-outline" size={10} color={Colors.textTertiary} />
-              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones (min or H:MM)</Text>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>HR Zones</Text>
             </View>
-            <View style={{ flexDirection: "row", gap: 4 }}>
-              {([
-                { label: "Z1", color: "#9CA3AF", val: zone1, set: setZone1 },
-                { label: "Z2", color: "#34D399", val: zone2, set: setZone2 },
-                { label: "Z3", color: "#FBBF24", val: zone3, set: setZone3 },
-                { label: "Z4", color: "#F97316", val: zone4, set: setZone4 },
-                { label: "Z5", color: "#EF4444", val: zone5, set: setZone5 },
-              ] as const).map((z) => (
-                <View key={z.label} style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: z.color, textAlign: "center", marginBottom: 3 }}>{z.label}</Text>
-                  <TextInput
-                    style={{
-                      backgroundColor: Colors.inputBg,
-                      borderRadius: 8,
-                      paddingHorizontal: 4,
-                      paddingVertical: 8,
-                      fontSize: 13,
-                      fontFamily: "Rubik_400Regular",
-                      color: Colors.text,
-                      borderWidth: 1,
-                      borderColor: Colors.border,
-                      textAlign: "center",
-                    }}
-                    value={z.val}
-                    onChangeText={handleMinuteSetter(z.set)}
-                    placeholder="—"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="numeric"
-                    keyboardAppearance="dark"
-                  />
-                </View>
-              ))}</View>
+            {([
+              { label: "Z1", color: "#9CA3AF", val: zone1, set: setZone1 },
+              { label: "Z2", color: "#34D399", val: zone2, set: setZone2 },
+              { label: "Z3", color: "#FBBF24", val: zone3, set: setZone3 },
+              { label: "Z4", color: "#F97316", val: zone4, set: setZone4 },
+              { label: "Z5", color: "#EF4444", val: zone5, set: setZone5 },
+            ] as const).map((z) => (
+              <DurationPickerField
+                key={z.label}
+                label={z.label}
+                value={z.val}
+                icon="speedometer-outline"
+                iconColor={z.color}
+                placeholder="00:00"
+                defaultMinutes={0}
+                maxHours={3}
+                onSelect={(totalMin) => z.set(String(totalMin))}
+                onClear={() => z.set("")}
+              />
+            ))}
           </View>
           <View style={[styles.sectionCard, { borderColor: liftSkipped ? "#6B728020" : "#FBBF2420", marginHorizontal: 0, paddingHorizontal: 10, paddingVertical: 10, marginTop: 8 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -2254,15 +2230,15 @@ export default function LogScreen() {
               <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>17:00–18:15</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="play-outline" size={12} color="#60A5FA" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Start</Text>
-                </View>
-                <TextInput
-                  style={styles.inputCompact}
+              <View style={{ flex: 1 }}>
+                <TimePickerField
+                  label="Start"
                   value={liftStartTime}
-                  onChangeText={(t) => {
+                  icon="play-outline"
+                  iconColor="#60A5FA"
+                  placeholder="17:00"
+                  defaultTime="17:00"
+                  onSelect={(t) => {
                     setLiftStartTime(t);
                     if (t && liftEndTime) {
                       const [sh, sm] = t.split(":").map(Number);
@@ -2274,20 +2250,18 @@ export default function LogScreen() {
                       }
                     }
                   }}
-                  placeholder="17:00"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardAppearance="dark"
+                  onClear={() => setLiftStartTime("")}
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="stop-outline" size={12} color="#EF4444" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>End</Text>
-                </View>
-                <TextInput
-                  style={styles.inputCompact}
+              <View style={{ flex: 1 }}>
+                <TimePickerField
+                  label="End"
                   value={liftEndTime}
-                  onChangeText={(t) => {
+                  icon="stop-outline"
+                  iconColor="#EF4444"
+                  placeholder="18:15"
+                  defaultTime="18:15"
+                  onSelect={(t) => {
                     setLiftEndTime(t);
                     if (liftStartTime && t) {
                       const [sh, sm] = liftStartTime.split(":").map(Number);
@@ -2299,70 +2273,52 @@ export default function LogScreen() {
                       }
                     }
                   }}
-                  placeholder="18:15"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardAppearance="dark"
+                  onClear={() => setLiftEndTime("")}
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="time-outline" size={12} color="#FBBF24" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Dur</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.inputCompact}
-                    value={liftMin}
-                    onChangeText={handleMinuteSetter(setLiftMin)}
-                    placeholder="75"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                  <Text style={styles.inputSuffix}>m</Text>
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <View style={styles.inputLabel}>
-                  <Ionicons name="fitness-outline" size={12} color="#FBBF24" />
-                  <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Work</Text>
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.inputCompact}
-                    value={liftWorkingMin}
-                    onChangeText={handleMinuteSetter(setLiftWorkingMin)}
-                    placeholder="50"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardAppearance="dark"
-                  />
-                  <Text style={styles.inputSuffix}>m</Text>
-                </View>
-              </View>
             </View>
-            <View style={{ marginTop: 6 }}>
-              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Lift HR Zones (min)</Text>
-              <View style={{ flexDirection: "row", gap: 4, marginTop: 4 }}>
-                {[
-                  { label: "Z1", color: "#9CA3AF", val: liftZ1, set: setLiftZ1 },
-                  { label: "Z2", color: "#34D399", val: liftZ2, set: setLiftZ2 },
-                  { label: "Z3", color: "#FBBF24", val: liftZ3, set: setLiftZ3 },
-                  { label: "Z4", color: "#F97316", val: liftZ4, set: setLiftZ4 },
-                  { label: "Z5", color: "#EF4444", val: liftZ5, set: setLiftZ5 },
-                ].map((z) => (
-                  <View key={z.label} style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: z.color, textAlign: "center", marginBottom: 2 }}>{z.label}</Text>
-                    <TextInput
-                      style={[styles.inputCompact, { textAlign: "center" }]}
-                      value={z.val}
-                      onChangeText={handleMinuteSetter(z.set)}
-                      placeholder="0"
-                      placeholderTextColor={Colors.textTertiary}
-                      keyboardType="numeric"
-                      keyboardAppearance="dark"
-                    />
-                  </View>
-                ))}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, paddingHorizontal: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="time-outline" size={14} color="#FBBF24" />
+                <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>Duration</Text>
               </View>
+              <Text style={{ fontSize: 14, fontFamily: "Rubik_600SemiBold", color: liftMin ? Colors.text : Colors.textTertiary }}>
+                {liftMin ? `${liftMin} min` : "—"}
+              </Text>
+            </View>
+            <DurationPickerField
+              label="Working Time"
+              value={liftWorkingMin}
+              icon="fitness-outline"
+              iconColor="#FBBF24"
+              placeholder="00:50"
+              defaultMinutes={50}
+              maxHours={3}
+              onSelect={(totalMin) => setLiftWorkingMin(String(totalMin))}
+              onClear={() => setLiftWorkingMin("")}
+            />
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: Colors.textTertiary }}>Lift HR Zones</Text>
+              {[
+                { label: "Z1", color: "#9CA3AF", val: liftZ1, set: setLiftZ1 },
+                { label: "Z2", color: "#34D399", val: liftZ2, set: setLiftZ2 },
+                { label: "Z3", color: "#FBBF24", val: liftZ3, set: setLiftZ3 },
+                { label: "Z4", color: "#F97316", val: liftZ4, set: setLiftZ4 },
+                { label: "Z5", color: "#EF4444", val: liftZ5, set: setLiftZ5 },
+              ].map((z) => (
+                <DurationPickerField
+                  key={z.label}
+                  label={z.label}
+                  value={z.val}
+                  icon="speedometer-outline"
+                  iconColor={z.color}
+                  placeholder="00:00"
+                  defaultMinutes={0}
+                  maxHours={3}
+                  onSelect={(totalMin) => z.set(String(totalMin))}
+                  onClear={() => z.set("")}
+                />
+              ))}
             </View>
           </View>
           <InputField

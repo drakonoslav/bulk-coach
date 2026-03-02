@@ -583,6 +583,126 @@ export function DurationPickerField({
   );
 }
 
+interface TimePickerFieldProps {
+  label: string;
+  value: string;
+  icon: string;
+  iconColor: string;
+  placeholder?: string;
+  defaultTime?: string | null;
+  onSelect: (hhmm: string) => void;
+  onClear?: () => void;
+  testID?: string;
+}
+
+const HOURS_24 = Array.from({ length: 24 }, (_, i) => i);
+
+export function TimePickerField({
+  label,
+  value,
+  icon,
+  iconColor,
+  placeholder,
+  defaultTime,
+  onSelect,
+  onClear,
+  testID,
+}: TimePickerFieldProps) {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [hourIdx, setHourIdx] = useState(0);
+  const [minIdx, setMinIdx] = useState(0);
+
+  const parseHHMM = (s: string): [number, number] | null => {
+    const m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    return [parseInt(m[1], 10), parseInt(m[2], 10)];
+  };
+
+  const openModal = useCallback(() => {
+    const parsed = value ? parseHHMM(value) : null;
+    const defParsed = defaultTime ? parseHHMM(defaultTime) : null;
+    const [h, m] = parsed ?? defParsed ?? [12, 0];
+    setHourIdx(Math.max(0, Math.min(h, 23)));
+    setMinIdx(Math.max(0, Math.min(m, 59)));
+    setModalVisible(true);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [value, defaultTime]);
+
+  const confirm = useCallback(() => {
+    onSelect(`${pad2(HOURS_24[hourIdx])}:${pad2(MINUTES_LIST[minIdx])}`);
+    setModalVisible(false);
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [hourIdx, minIdx, onSelect]);
+
+  const hasValue = value !== "" && value != null;
+
+  return (
+    <>
+      <Pressable onPress={openModal} style={ws.fieldRow} testID={testID}>
+        <View style={ws.fieldLabel}>
+          <Ionicons name={icon as any} size={16} color={iconColor} />
+          <Text style={ws.fieldLabelText}>{label}</Text>
+        </View>
+        <View style={ws.fieldValueRow}>
+          {hasValue ? (
+            <Text style={ws.fieldValue}>{value}</Text>
+          ) : (
+            <Text style={ws.fieldPlaceholder}>{placeholder || "Tap to set"}</Text>
+          )}
+          <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
+        </View>
+      </Pressable>
+
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <Pressable style={ws.modalOverlay} onPress={() => setModalVisible(false)}>
+          <Pressable style={ws.modalCard} onPress={() => {}}>
+            <View style={ws.modalHeader}>
+              <Text style={ws.modalTitle}>{label}</Text>
+              <Pressable onPress={() => setModalVisible(false)} hitSlop={12}>
+                <Ionicons name="close" size={22} color={Colors.textTertiary} />
+              </Pressable>
+            </View>
+
+            <View style={[ws.modalBody, { gap: 4 }]}>
+              <DurationWheelColumn
+                items={HOURS_24}
+                selectedIndex={hourIdx}
+                onIndexChange={setHourIdx}
+                labelFn={pad2}
+              />
+              <Text style={{ fontSize: 24, fontFamily: "Rubik_700Bold", color: Colors.text }}>:</Text>
+              <DurationWheelColumn
+                items={MINUTES_LIST}
+                selectedIndex={minIdx}
+                onIndexChange={setMinIdx}
+                labelFn={pad2}
+              />
+            </View>
+
+            <Text style={ws.modalPreview}>
+              {pad2(HOURS_24[hourIdx])}:{pad2(MINUTES_LIST[minIdx])}
+            </Text>
+
+            <View style={ws.modalActions}>
+              {onClear && hasValue && (
+                <Pressable
+                  onPress={() => { onClear(); setModalVisible(false); }}
+                  style={ws.clearBtn}
+                >
+                  <Text style={ws.clearBtnText}>Clear</Text>
+                </Pressable>
+              )}
+              <Pressable onPress={confirm} style={ws.confirmBtn}>
+                <Text style={ws.confirmBtnText}>Set Value</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 const ws = StyleSheet.create({
   fieldRow: {
     flexDirection: "row",
