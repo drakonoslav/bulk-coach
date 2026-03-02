@@ -4,7 +4,6 @@ import type { StrengthBaselines, StrengthVelocityResult } from "./strength-index
 import { strengthVelocity14d, swapPenaltyMultiplier } from "./strength-index";
 import type { AdaptationResult } from "./adaptation-stage";
 import { classifyAdaptationStage } from "./adaptation-stage";
-import type { IntelStrengthSummary } from "./intel-strength";
 
 export interface IntelStrengthInput {
   sessions_in_14d: number;

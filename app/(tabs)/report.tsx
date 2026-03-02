@@ -43,7 +43,7 @@ import {
 } from "@/lib/coaching-engine";
 import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult, type IntelStrengthInput } from "@/lib/structural-confidence";
-import { fetchIntelStrengthTrend, deriveStrengthSummary, trendToChartData, trendPhaseMarkers, type IntelStrengthTrend, type IntelStrengthSummary } from "@/lib/intel-strength";
+import { USE_INTEL_STRENGTH, fetchIntelStrengthTrend, deriveStrengthSummary, trendToChartData, trendPhaseMarkers, type IntelStrengthTrend, type IntelStrengthSummary } from "@/lib/intel-strength";
 import ContextLensCard from "@/components/ContextLensCard";
 
 type CalorieSource = "weight_only" | "mode_override";
@@ -698,15 +698,17 @@ export default function ReportScreen() {
       console.warn("Strength V2 load failed:", e);
     }
 
-    try {
-      const trend = await fetchIntelStrengthTrend(start, end);
-      if (trend && trend.days.length > 0 && trend.days.some(d => d.sets > 0)) {
-        setIntelTrend(trend);
-      } else {
+    if (USE_INTEL_STRENGTH) {
+      try {
+        const trend = await fetchIntelStrengthTrend(start, end);
+        if (trend && trend.days.length > 0 && trend.days.some(d => d.sets > 0)) {
+          setIntelTrend(trend);
+        } else {
+          setIntelTrend(null);
+        }
+      } catch {
         setIntelTrend(null);
       }
-    } catch {
-      setIntelTrend(null);
     }
   }, []);
 
@@ -791,7 +793,7 @@ export default function ReportScreen() {
   const intelSummary: IntelStrengthSummary | null = intelTrend ? deriveStrengthSummary(intelTrend) : null;
   const intelInput: IntelStrengthInput | null = intelSummary ? {
     sessions_in_14d: intelSummary.sessions_in_14d,
-    velocity_14d_pct: intelSummary.velocity_14d_pct,
+    velocity_14d_pct: intelSummary.velocity_pct_per_week,
     swap_penalty_14d: intelSummary.swap_penalty_14d,
   } : null;
 
@@ -808,7 +810,7 @@ export default function ReportScreen() {
   })();
 
   const sV = intelSummary
-    ? { pctPerWeek: intelSummary.velocity_14d_pct, si7dToday: intelSummary.rolling_avg_7d, si7d14dAgo: intelSi7d14dAgo, totalSpanDays: 14 }
+    ? { pctPerWeek: intelSummary.velocity_pct_per_week, si7dToday: intelSummary.rolling_avg_7d, si7d14dAgo: intelSi7d14dAgo, totalSpanDays: 14 }
     : hasV2 && globalV2
       ? strengthVelocity14dV2(globalV2)
       : strengthVelocity14d(entries, strengthBaselines);
@@ -1180,7 +1182,7 @@ export default function ReportScreen() {
                       today7dAvg: {fmtRaw(sV.si7dToday, 4)}  prior7dAvg: {fmtRaw(sV.si7d14dAgo, 4)}  delta: {fmtDelta(sV.si7dToday - sV.si7d14dAgo, 4)}
                     </Text>
                     <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                      pctPerWeek: {fmtDelta(sV.pctPerWeek, 2, "%")}  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.totalSpanDays}d
+                      {intelSummary ? `pctPerWeek: ${fmtDelta(sV.pctPerWeek, 2, "%")}  indexPerWeek: ${fmtDelta(intelSummary.velocity_index_per_week, 4, "")}  src: intel` : `pctPerWeek: ${fmtDelta(sV.pctPerWeek, 2, "%")}`}  strengthDaysInWindow: {strengthDaysInWindow}/7  span: {sV.totalSpanDays}d
                     </Text>
                   </View>
                 ) : (
@@ -1477,7 +1479,14 @@ export default function ReportScreen() {
             )}
             {shouldShowStrengthSection && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={styles.sectionTitle}>Strength Index Analysis</Text>
+                  {intelTrend && (
+                    <View style={{ backgroundColor: "#22C55E20", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#22C55E" }}>INTEL</Text>
+                    </View>
+                  )}
+                </View>
                 {strengthPhase.phase !== "INSUFFICIENT_DATA" && (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8, paddingHorizontal: 4 }}>
                     <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: strengthPhase.phase === "NEURAL_REBOUND" ? "#34D39920" : strengthPhase.phase === "LATE_NEURAL" ? "#F59E0B20" : strengthPhase.phase === "HYPERTROPHY_PROGRESS" ? "#A78BFA20" : "#6B728020" }}>
@@ -1558,12 +1567,14 @@ export default function ReportScreen() {
                     )}
                     {svChartData.length >= 2 && (
                       <View style={{ marginTop: 16 }}>
-                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>StrengthVelocity (%/wk over time)</Text>
+                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>
+                          {intelTrend ? "Strength Velocity (index/wk)" : "StrengthVelocity (%/wk over time)"}
+                        </Text>
                         <StrengthLineChart
                           data={svChartData}
                           lineColor="#34D399"
                           markers={phaseMarkers}
-                          yFormat={(v) => fmtDelta(v, 1, "%")}
+                          yFormat={intelTrend ? (v) => fmtDelta(v, 3, "") : (v) => fmtDelta(v, 1, "%")}
                           zeroLine
                         />
                       </View>

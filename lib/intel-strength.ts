@@ -1,5 +1,7 @@
 import { getApiUrl, authFetch } from "@/lib/query-client";
 
+export const USE_INTEL_STRENGTH = true;
+
 export interface IntelStrengthDay {
   date: string;
   day_strength_index: number;
@@ -22,13 +24,17 @@ export interface IntelStrengthTrend {
   to: string;
   baseline_tonnage: number;
   training_days_in_baseline: number;
+  sessions_in_14d: number;
+  swap_penalty_14d: number;
+  velocity_14d_unit: string;
   days: IntelStrengthDay[];
   latest: IntelStrengthDay;
 }
 
 export interface IntelStrengthSummary {
   sessions_in_14d: number;
-  velocity_14d_pct: number;
+  velocity_pct_per_week: number;
+  velocity_index_per_week: number;
   swap_penalty_14d: number;
   day_strength_index: number;
   rolling_avg_7d: number;
@@ -59,19 +65,24 @@ export async function fetchIntelStrengthTrend(
 export function deriveStrengthSummary(
   trend: IntelStrengthTrend
 ): IntelStrengthSummary {
-  const last14 = trend.days.slice(-14);
-  const sessions_in_14d = last14.filter((d) => d.sets > 0).length;
+  const sessions_in_14d = trend.sessions_in_14d ?? trend.days.slice(-14).filter((d) => d.sets > 0).length;
+  const swap_penalty_14d = trend.swap_penalty_14d ?? 0;
 
   const latest = trend.latest ?? trend.days[trend.days.length - 1];
   const rawVelocity = latest?.velocity_14d ?? 0;
-  const velocity_14d_pct = rawVelocity * 100;
+
+  const velocityPerWeek = rawVelocity * 7;
+
+  const avg7d = latest?.rolling_avg_7d ?? 0;
+  const velocityPctPerWeek = avg7d > 0 ? (velocityPerWeek / avg7d) * 100 : 0;
 
   return {
     sessions_in_14d,
-    velocity_14d_pct,
-    swap_penalty_14d: 0,
+    velocity_pct_per_week: velocityPctPerWeek,
+    velocity_index_per_week: velocityPerWeek,
+    swap_penalty_14d,
     day_strength_index: latest?.day_strength_index ?? 0,
-    rolling_avg_7d: latest?.rolling_avg_7d ?? 0,
+    rolling_avg_7d: avg7d,
     phase: latest?.phase ?? "rest",
     phase_transition: latest?.phase_transition ?? null,
   };
@@ -86,7 +97,7 @@ export function trendToChartData(
   }));
   const velocityData = trend.days.map((d) => ({
     day: d.date,
-    value: d.velocity_14d * 100,
+    value: d.velocity_14d * 7,
   }));
   return { indexData, velocityData };
 }
