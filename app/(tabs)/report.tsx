@@ -44,6 +44,7 @@ import {
 import { type StrengthBaselines, strengthVelocity14d, computeDayStrengthIndex, strengthIndexRollingAvg, strengthVelocityOverTime, detectPhaseTransitions, classifyStrengthPhase } from "@/lib/strength-index";
 import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, type SCSResult, type IntelStrengthInput } from "@/lib/structural-confidence";
 import { USE_INTEL_STRENGTH, fetchIntelStrengthTrend, deriveStrengthSummary, trendToChartData, trendPhaseMarkers, type IntelStrengthTrend, type IntelStrengthSummary } from "@/lib/intel-strength";
+import { EXPECTED_SCHEMA_VERSION, validateIntelSchema } from "@/lib/muscle_map_layout";
 import ContextLensCard from "@/components/ContextLensCard";
 
 type CalorieSource = "weight_only" | "mode_override";
@@ -663,6 +664,9 @@ export default function ReportScreen() {
   const [strengthSets, setStrengthSets] = useState<StrengthSet[]>([]);
   const [strengthV2Mapping, setStrengthV2Mapping] = useState<StrengthV2Mapping | null>(null);
   const [intelTrend, setIntelTrend] = useState<IntelStrengthTrend | null>(null);
+  const [intelMuscleToday, setIntelMuscleToday] = useState<any>(null);
+  const [intelMuscle14dAgo, setIntelMuscle14dAgo] = useState<any>(null);
+  const [intelRegionalMode, setIntelRegionalMode] = useState<"total" | "direct">("total");
   const [calorieHistory, setCalorieHistory] = useState<Array<{
     day: string; deltaKcal: number; source: string; priority: string; reason: string; wkGainLb: number | null; mode: string | null;
   }>>([]);
@@ -709,6 +713,50 @@ export default function ReportScreen() {
         }
       } catch {
         setIntelTrend(null);
+      }
+
+      try {
+        const baseUrl = getApiUrl();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const agoDate = new Date();
+        agoDate.setDate(agoDate.getDate() - 14);
+        const agoStr = agoDate.toISOString().slice(0, 10);
+
+        const fetchMuscleDay = async (dateStr: string) => {
+          const url = new URL("/api/intel/muscle-map", baseUrl);
+          url.searchParams.set("date", dateStr);
+          const res = await authFetch(url.toString());
+          if (!res.ok) return null;
+          const raw = await res.json();
+          const data = raw?.upstream_json ?? raw;
+          if (!data?.regions || !Array.isArray(data.regions)) return null;
+          return data;
+        };
+
+        const [mToday, mAgo] = await Promise.all([
+          fetchMuscleDay(todayStr),
+          fetchMuscleDay(agoStr),
+        ]);
+
+        const vToday = mToday ? validateIntelSchema(mToday) : { ok: false };
+        const vAgo = mAgo ? validateIntelSchema(mAgo) : { ok: false };
+
+        if (!vToday.ok) {
+          console.warn("[Intel] muscle-map today schema fail:", vToday.message);
+          setIntelMuscleToday(null);
+        } else {
+          setIntelMuscleToday(mToday);
+        }
+
+        if (!vAgo.ok) {
+          console.warn("[Intel] muscle-map 14d-ago schema fail:", vAgo.message);
+          setIntelMuscle14dAgo(null);
+        } else {
+          setIntelMuscle14dAgo(mAgo);
+        }
+      } catch {
+        setIntelMuscleToday(null);
+        setIntelMuscle14dAgo(null);
       }
     }
   }, []);
@@ -875,6 +923,51 @@ export default function ReportScreen() {
     : svOverTime.slice(-28).map(d => ({ day: d.day, value: d.pctPerWeek }));
 
   const regionalRows = React.useMemo(() => {
+    if (USE_INTEL_STRENGTH && intelMuscleToday?.regions) {
+      const todayRegions = intelMuscleToday.regions as any[];
+      const agoRegions = (intelMuscle14dAgo?.regions ?? []) as any[];
+      const agoMap = new Map<number, any>();
+      for (const r of agoRegions) agoMap.set(r.muscle_id, r);
+
+      const loadField = intelRegionalMode === "total" ? "load_7d_total" : "load_7d_direct";
+
+      const out: Array<{
+        muscleId: string;
+        muscleName: string;
+        pct14d: number | null;
+        todayLoad: number;
+        agoLoad: number;
+        delta: number;
+      }> = [];
+
+      for (const r of todayRegions) {
+        const todayLoad = r[loadField] ?? 0;
+        const ago = agoMap.get(r.muscle_id);
+        const agoLoad = ago ? (ago[loadField] ?? 0) : 0;
+        const delta = todayLoad - agoLoad;
+        const pct14d = agoLoad > 0
+          ? (delta / agoLoad) * 100
+          : (todayLoad > 0 ? 100 : 0);
+
+        out.push({
+          muscleId: String(r.muscle_id),
+          muscleName: r.muscle,
+          pct14d: Math.round(pct14d * 10) / 10,
+          todayLoad,
+          agoLoad,
+          delta,
+        });
+      }
+
+      out.sort((a, b) => {
+        const aa = Math.abs(a.pct14d ?? 0);
+        const bb = Math.abs(b.pct14d ?? 0);
+        return bb - aa;
+      });
+
+      return out;
+    }
+
     const v2Active = strengthSets.length >= 2 && strengthV2Mapping != null;
     if (!v2Active) return [];
 
@@ -894,9 +987,9 @@ export default function ReportScreen() {
       muscleId: string;
       muscleName: string;
       pct14d: number | null;
-      confidence: number;
-      quantCount: number;
-      todayIndex: number;
+      todayLoad: number;
+      agoLoad: number;
+      delta: number;
     }> = [];
 
     for (const m of leafMuscles) {
@@ -936,21 +1029,20 @@ export default function ReportScreen() {
         muscleId: m.id,
         muscleName: m.name,
         pct14d: pct14d != null ? Math.round(pct14d * 10) / 10 : null,
-        confidence: today.confidence,
-        quantCount: today.quantCount,
-        todayIndex: today.index,
+        todayLoad: today.index,
+        agoLoad: prior?.index ?? 0,
+        delta: prior ? today.index - prior.index : 0,
       });
     }
 
     out.sort((a, b) => {
-      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
       const aa = Math.abs(a.pct14d ?? 0);
       const bb = Math.abs(b.pct14d ?? 0);
       return bb - aa;
     });
 
     return out;
-  }, [strengthSets, strengthV2Mapping]);
+  }, [strengthSets, strengthV2Mapping, intelMuscleToday, intelMuscle14dAgo, intelRegionalMode]);
 
   const intelMarkers = intelTrend ? trendPhaseMarkers(intelTrend) : null;
   const phaseTransitions = detectPhaseTransitions(entries, strengthBaselines);
@@ -1653,39 +1745,46 @@ export default function ReportScreen() {
                     )}
                     {regionalRows.length > 0 && (
                       <View style={{ marginTop: 16 }}>
-                        <Text style={[styles.lgrLabel, { marginBottom: 8 }]}>
-                          Regional Strength (leaf muscles) — ~14d change
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                          <Text style={styles.lgrLabel}>
+                            {USE_INTEL_STRENGTH && intelMuscleToday ? "Regional Load (Intel Muscles) — 14D Change" : "Regional Strength (leaf muscles) — ~14d change"}
+                          </Text>
+                          {USE_INTEL_STRENGTH && intelMuscleToday && (
+                            <Pressable
+                              onPress={() => setIntelRegionalMode(m => m === "total" ? "direct" : "total")}
+                              style={{ backgroundColor: Colors.cardBgElevated, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Colors.border }}
+                            >
+                              <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: intelRegionalMode === "total" ? "#22C55E" : "#60A5FA" }}>
+                                {intelRegionalMode === "total" ? "Total" : "Direct"}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
 
                         <View style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: "hidden" }}>
                           <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 10, backgroundColor: Colors.cardBgElevated }}>
                             <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary }}>
                               Muscle
                             </Text>
-                            <Text style={{ flex: 0.8, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
-                              14d
+                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                              Load
                             </Text>
                             <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
-                              Conf
+                              Δ
                             </Text>
-                            <Text style={{ flex: 0.6, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
-                              Q
+                            <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                              14d%
                             </Text>
                           </View>
 
-                          {regionalRows.slice(0, 18).map((r) => {
+                          {regionalRows.map((r) => {
                             const pct = r.pct14d;
                             const pctColor =
                               pct == null ? Colors.textTertiary :
-                              pct >= 1.5 ? "#34D399" :
-                              pct >= 0.25 ? "#FBBF24" :
-                              pct > -0.25 ? "#9CA3AF" :
+                              pct >= 10 ? "#34D399" :
+                              pct >= 1 ? "#FBBF24" :
+                              pct > -1 ? "#9CA3AF" :
                               "#F87171";
-
-                            const confColor =
-                              r.confidence >= 0.75 ? "#34D399" :
-                              r.confidence >= 0.45 ? "#FBBF24" :
-                              "#9CA3AF";
 
                             return (
                               <View
@@ -1696,23 +1795,22 @@ export default function ReportScreen() {
                                   paddingHorizontal: 10,
                                   borderTopWidth: 1,
                                   borderTopColor: Colors.border,
-                                  backgroundColor: "#00000000",
                                 }}
                               >
                                 <Text style={{ flex: 1.3, fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.text }}>
                                   {r.muscleName}
                                 </Text>
 
-                                <Text style={{ flex: 0.8, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: pctColor, textAlign: "right" }}>
+                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary, textAlign: "right" }}>
+                                  {r.todayLoad > 0 ? r.todayLoad.toFixed(0) : "—"}
+                                </Text>
+
+                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: r.delta > 0 ? "#34D399" : r.delta < 0 ? "#F87171" : "#9CA3AF", textAlign: "right" }}>
+                                  {r.delta !== 0 ? fmtDelta(r.delta, 0, "") : "—"}
+                                </Text>
+
+                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: pctColor, textAlign: "right" }}>
                                   {pct == null ? "--" : fmtDelta(pct, 1, "%")}
-                                </Text>
-
-                                <Text style={{ flex: 0.7, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: confColor, textAlign: "right" }}>
-                                  {fmtVal(r.confidence, 2)}
-                                </Text>
-
-                                <Text style={{ flex: 0.6, fontSize: 11, fontFamily: "Rubik_600SemiBold", color: r.quantCount >= 2 ? "#34D399" : Colors.textTertiary, textAlign: "right" }}>
-                                  {r.quantCount}
                                 </Text>
                               </View>
                             );
@@ -1720,7 +1818,10 @@ export default function ReportScreen() {
                         </View>
 
                         <Text style={{ marginTop: 8, fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, lineHeight: 14 }}>
-                          Conf = confidence (coverage + attribution). Q = unique meaningful exercises in last 21d (goal ≥2–3).
+                          {USE_INTEL_STRENGTH && intelMuscleToday
+                            ? `${regionalRows.length} regions · ${intelRegionalMode === "total" ? "Total" : "Direct"} load_7d · Intel schema v${EXPECTED_SCHEMA_VERSION}`
+                            : "Conf = confidence (coverage + attribution). Q = unique meaningful exercises in last 21d (goal ≥2–3)."
+                          }
                         </Text>
                       </View>
                     )}
