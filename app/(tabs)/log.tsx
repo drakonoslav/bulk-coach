@@ -2369,25 +2369,25 @@ export default function LogScreen() {
           <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginBottom: 12 }}>
             Enter manually or auto-filled from device sync
           </Text>
-          <View style={{ flexDirection: "row", gap: 6 }}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <View style={styles.inputLabel}>
-                <Ionicons name="moon-outline" size={14} color="#60A5FA" />
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{hasStagesTST ? "TST" : "Sleep"}</Text>
-              </View>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={[styles.inputCompact, hasStagesTST ? { color: Colors.textTertiary } : undefined]}
-                  value={sleepMinutesManual}
-                  onChangeText={hasStagesTST ? undefined : handleMinuteSetter(setSleepMinutesManual)}
-                  editable={!hasStagesTST}
-                  placeholder="420"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardAppearance="dark"
-                />
-                <Text style={styles.inputSuffix}>m</Text>
-              </View>
+          <View style={[styles.inputGroup, { marginBottom: 10 }]}>
+            <View style={styles.inputLabel}>
+              <Ionicons name="moon-outline" size={14} color="#60A5FA" />
+              <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{hasStagesTST ? "TST" : "Sleep"}</Text>
             </View>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={[styles.inputCompact, hasStagesTST ? { color: Colors.textTertiary } : undefined]}
+                value={sleepMinutesManual}
+                onChangeText={hasStagesTST ? undefined : handleMinuteSetter(setSleepMinutesManual)}
+                editable={!hasStagesTST}
+                placeholder="420"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardAppearance="dark"
+              />
+              <Text style={styles.inputSuffix}>min</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
             <View style={{ flex: 1 }}>
               <WheelPickerField
                 label="HRV"
