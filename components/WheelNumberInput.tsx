@@ -32,6 +32,7 @@ interface WheelPickerFieldProps {
   onSelect: (v: number) => void;
   onClear?: () => void;
   testID?: string;
+  compact?: boolean;
 }
 
 function decimalsForStep(step: number): number {
@@ -213,6 +214,7 @@ export default function WheelPickerField({
   onSelect,
   onClear,
   testID,
+  compact,
 }: WheelPickerFieldProps) {
   const [modalVisible, setModalVisible] = useState(false);
   const [tempIndex, setTempIndex] = useState(0);
@@ -252,20 +254,20 @@ export default function WheelPickerField({
 
   return (
     <>
-      <Pressable onPress={openModal} style={ws.fieldRow} testID={testID}>
+      <Pressable onPress={openModal} style={[ws.fieldRow, compact && ws.fieldRowCompact]} testID={testID}>
         <View style={ws.fieldLabel}>
-          <Ionicons name={icon as any} size={16} color={iconColor} />
-          <Text style={ws.fieldLabelText}>{label}</Text>
+          <Ionicons name={icon as any} size={compact ? 12 : 16} color={iconColor} />
+          <Text style={[ws.fieldLabelText, compact && ws.fieldLabelTextCompact]}>{label}</Text>
         </View>
         <View style={ws.fieldValueRow}>
           {hasValue ? (
-            <Text style={ws.fieldValue}>
-              {value} <Text style={ws.fieldSuffix}>{suffix}</Text>
+            <Text style={[ws.fieldValue, compact && ws.fieldValueCompact]}>
+              {value} <Text style={[ws.fieldSuffix, compact && ws.fieldSuffixCompact]}>{suffix}</Text>
             </Text>
           ) : (
-            <Text style={ws.fieldPlaceholder}>{placeholder || "Tap to set"}</Text>
+            <Text style={[ws.fieldPlaceholder, compact && ws.fieldPlaceholderCompact]}>{placeholder || "Tap to set"}</Text>
           )}
-          <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
+          <Ionicons name="chevron-forward" size={compact ? 10 : 14} color={Colors.textTertiary} />
         </View>
       </Pressable>
 
@@ -742,6 +744,23 @@ const ws = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Rubik_400Regular",
     color: Colors.textTertiary,
+  },
+  fieldRowCompact: {
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    gap: 2,
+  },
+  fieldLabelTextCompact: {
+    fontSize: 10,
+  },
+  fieldValueCompact: {
+    fontSize: 13,
+  },
+  fieldSuffixCompact: {
+    fontSize: 9,
+  },
+  fieldPlaceholderCompact: {
+    fontSize: 11,
   },
   modalOverlay: {
     flex: 1,

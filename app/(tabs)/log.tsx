@@ -1238,7 +1238,7 @@ export default function LogScreen() {
             placeholder="Optional"
             min={20}
             max={60}
-            step={0.01}
+            step={0.25}
             defaultValue={yesterdayEntry?.waistIn ?? null}
             onSelect={(v) => setWaist(v.toFixed(2))}
             onClear={() => setWaist("")}
@@ -1264,6 +1264,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfMorningR1 ?? null}
                 onSelect={(v) => setBfAmR1(v.toFixed(1))}
                 onClear={() => setBfAmR1("")}
+                compact
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -1280,6 +1281,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfMorningR2 ?? (bfAmR1 ? parseFloat(bfAmR1) : null)}
                 onSelect={(v) => setBfAmR2(v.toFixed(1))}
                 onClear={() => setBfAmR2("")}
+                compact
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -1296,6 +1298,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfMorningR3 ?? (bfAmR2 ? parseFloat(bfAmR2) : null)}
                 onSelect={(v) => setBfAmR3(v.toFixed(1))}
                 onClear={() => setBfAmR3("")}
+                compact
               />
             </View>
             {(() => {
@@ -1330,6 +1333,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfEveningR1 ?? null}
                 onSelect={(v) => setBfPmR1(v.toFixed(1))}
                 onClear={() => setBfPmR1("")}
+                compact
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -1346,6 +1350,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfEveningR2 ?? (bfPmR1 ? parseFloat(bfPmR1) : null)}
                 onSelect={(v) => setBfPmR2(v.toFixed(1))}
                 onClear={() => setBfPmR2("")}
+                compact
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -1362,6 +1367,7 @@ export default function LogScreen() {
                 defaultValue={yesterdayEntry?.bfEveningR3 ?? (bfPmR2 ? parseFloat(bfPmR2) : null)}
                 onSelect={(v) => setBfPmR3(v.toFixed(1))}
                 onClear={() => setBfPmR3("")}
+                compact
               />
             </View>
             {(() => {
