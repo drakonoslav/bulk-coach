@@ -38,7 +38,9 @@ interface WheelPickerFieldProps {
 function decimalsForStep(step: number): number {
   if (step < 0.01) return 3;
   if (step < 0.1) return 2;
-  if (step < 1) return 1;
+  const s = step.toString();
+  const dot = s.indexOf(".");
+  if (dot >= 0) return s.length - dot - 1;
   return 0;
 }
 
