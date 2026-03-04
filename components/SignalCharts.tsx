@@ -481,28 +481,50 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
         </ChartPanel>
       </View>
 
-      {recoveryIndex.data.length > 0 && (
-        <View style={styles.recoveryStats}>
-          {[
-            { label: "System state", value: recoveryIndex.avgRatio },
-            { label: "Today", value: recoveryIndex.todayRatio },
-            { label: "7-day avg", value: recoveryIndex.avg7 },
-            { label: "14-day avg", value: recoveryIndex.avg14 },
-            { label: "28-day avg", value: recoveryIndex.avg28 },
-          ].map((row) => {
-            if (row.value == null) return null;
-            const dom = row.value >= 1.0 ? "parasympathetic" : "sympathetic";
-            const domColor = row.value >= 1.0 ? C_RECOVERY_REF : "#EF4444";
-            return (
-              <View key={row.label} style={styles.recoveryRow}>
-                <Text style={styles.recoveryLabel}>{row.label}</Text>
-                <Text style={[styles.recoveryVal, { color: domColor }]}>{row.value.toFixed(2)}</Text>
-                <Text style={[styles.recoveryDom, { color: domColor }]}>{dom}</Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
+      {recoveryIndex.data.length > 0 && (() => {
+        const avg = recoveryIndex.avgRatio;
+        const classifyZone = (v: number, isSystemState: boolean): { zone: string; zoneColor: string } => {
+          if (isSystemState) {
+            if (v > 1.0) return { zone: "Recovery Surge", zoneColor: C_RECOVERY_REF };
+            if (v >= 1.0) return { zone: "Hypertrophy Window", zoneColor: "#FBBF24" };
+            return { zone: "Stimulus Phase", zoneColor: "#EF4444" };
+          }
+          if (v > 1.0) return { zone: "Recovery Surge", zoneColor: C_RECOVERY_REF };
+          if (avg >= 1.0) {
+            if (v >= avg) return { zone: "Recovery Surge", zoneColor: C_RECOVERY_REF };
+            return { zone: "Hypertrophy Window", zoneColor: "#FBBF24" };
+          } else {
+            if (v >= 1.0) return { zone: "Recovery Surge", zoneColor: C_RECOVERY_REF };
+            if (v >= avg) return { zone: "Hypertrophy Window", zoneColor: "#FBBF24" };
+            return { zone: "Stimulus Phase", zoneColor: "#EF4444" };
+          }
+        };
+
+        return (
+          <View style={styles.recoveryStats}>
+            {[
+              { label: "System state", value: avg, isSystem: true },
+              { label: "Today", value: recoveryIndex.todayRatio, isSystem: false },
+              { label: "7-day avg", value: recoveryIndex.avg7, isSystem: false },
+              { label: "14-day avg", value: recoveryIndex.avg14, isSystem: false },
+              { label: "28-day avg", value: recoveryIndex.avg28, isSystem: false },
+            ].map((row) => {
+              if (row.value == null) return null;
+              const dom = row.value >= 1.0 ? "parasympathetic" : "sympathetic";
+              const domColor = row.value >= 1.0 ? C_RECOVERY_REF : "#EF4444";
+              const { zone, zoneColor } = classifyZone(row.value, row.isSystem);
+              return (
+                <View key={row.label} style={styles.recoveryRow}>
+                  <Text style={styles.recoveryLabel}>{row.label}</Text>
+                  <Text style={[styles.recoveryVal, { color: domColor }]}>{row.value.toFixed(4)}</Text>
+                  <Text style={[styles.recoveryDom, { color: domColor }]}>{dom}</Text>
+                  <Text style={[styles.recoveryZone, { color: zoneColor }]}>{zone}</Text>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })()}
 
       {selectedPoint && (
         <View style={[styles.tooltip, crosshairX != null && crosshairX > chartWidth * 0.6 ? { right: 12 } : { left: 12 }]}>
@@ -681,12 +703,18 @@ const styles = StyleSheet.create({
   recoveryVal: {
     fontSize: 11,
     fontFamily: "Rubik_600SemiBold",
-    width: 40,
+    width: 52,
     textAlign: "right" as const,
   },
   recoveryDom: {
     fontSize: 9,
     fontFamily: "Rubik_400Regular",
     marginLeft: 4,
+    width: 82,
+  },
+  recoveryZone: {
+    fontSize: 8,
+    fontFamily: "Rubik_500Medium",
+    marginLeft: 2,
   },
 });
