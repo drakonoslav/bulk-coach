@@ -381,6 +381,55 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
         <ChartPanel height={RECOVERY_H} label="RECOVERY INDEX" subtitle="HRV / RHR" chartWidth={chartWidth}>
           <Svg width={chartWidth} height={RECOVERY_H}>
             {(() => {
+              const { avgRatio, minR, maxR } = recoveryIndex;
+              const range = maxR - minR || 1;
+              const yFor = (v: number) => PAD_T + ((maxR - v) / range) * (RECOVERY_H - PAD_T - PAD_B);
+              const plotH = RECOVERY_H - PAD_T - PAD_B;
+
+              const greenY = (1.0 >= minR && 1.0 <= maxR) ? yFor(1.0) : null;
+              const magentaY = (avgRatio > 0 && avgRatio >= minR && avgRatio <= maxR) ? yFor(avgRatio) : null;
+
+              const topY = PAD_T;
+              const botY = PAD_T + plotH;
+
+              const upperLine = greenY != null && magentaY != null ? Math.min(greenY, magentaY) : (greenY ?? magentaY ?? topY);
+              const lowerLine = greenY != null && magentaY != null ? Math.max(greenY, magentaY) : (greenY ?? magentaY ?? botY);
+
+              const zones: { y: number; h: number; fill: string; label: string; labelY: number }[] = [];
+
+              if (avgRatio >= 1.0) {
+                zones.push({ y: topY, h: Math.max(0, (magentaY ?? topY) - topY), fill: "rgba(34,197,94,0.05)", label: "Recovery Surge", labelY: topY + ((magentaY ?? topY) - topY) / 2 });
+                zones.push({ y: magentaY ?? topY, h: Math.max(0, (greenY ?? botY) - (magentaY ?? topY)), fill: "rgba(251,191,36,0.04)", label: "Hypertrophy Window", labelY: (magentaY ?? topY) + ((greenY ?? botY) - (magentaY ?? topY)) / 2 });
+                zones.push({ y: greenY ?? botY, h: Math.max(0, botY - (greenY ?? botY)), fill: "rgba(220,38,38,0.04)", label: "Stimulus Phase", labelY: (greenY ?? botY) + (botY - (greenY ?? botY)) / 2 });
+              } else {
+                zones.push({ y: topY, h: Math.max(0, (greenY ?? topY) - topY), fill: "rgba(34,197,94,0.05)", label: "Recovery Surge", labelY: topY + ((greenY ?? topY) - topY) / 2 });
+                zones.push({ y: greenY ?? topY, h: Math.max(0, (magentaY ?? botY) - (greenY ?? topY)), fill: "rgba(251,191,36,0.04)", label: "Hypertrophy Window", labelY: (greenY ?? topY) + ((magentaY ?? botY) - (greenY ?? topY)) / 2 });
+                zones.push({ y: magentaY ?? botY, h: Math.max(0, botY - (magentaY ?? botY)), fill: "rgba(220,38,38,0.04)", label: "Stimulus Phase", labelY: (magentaY ?? botY) + (botY - (magentaY ?? botY)) / 2 });
+              }
+
+              return (
+                <>
+                  {zones.map((z, i) => (
+                    <React.Fragment key={`rz-${i}`}>
+                      <Rect x={PAD_L} y={z.y} width={plotW} height={z.h} fill={z.fill} />
+                      {z.h > 14 && (
+                        <SvgText
+                          x={chartWidth - PAD_R - 4}
+                          y={z.labelY + 3}
+                          fontSize={7}
+                          fill="rgba(255,255,255,0.2)"
+                          textAnchor="end"
+                          fontFamily="Rubik_400Regular"
+                        >
+                          {z.label}
+                        </SvgText>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </>
+              );
+            })()}
+            {(() => {
               const { minR, maxR } = recoveryIndex;
               const range = maxR - minR || 1;
               const gridVals = [minR, (minR + maxR) / 2, maxR].map(v => Math.round(v * 10) / 10);
