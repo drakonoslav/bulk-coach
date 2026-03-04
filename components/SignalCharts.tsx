@@ -18,6 +18,8 @@ interface SignalPoint {
   hrvDeltaPct: number | null;
   readiness: number | null;
   strengthVelocity: number | null;
+  hrv: number | null;
+  rhr: number | null;
 }
 
 interface SignalChartsProps {
@@ -37,6 +39,9 @@ const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#67E8F9";
 const C_READINESS = "#6B8ACD";
 const C_SV = "#6EBF8B";
+const C_RECOVERY = "#00E5FF";
+const C_RECOVERY_AVG = "#FF00FF";
+const C_RECOVERY_REF = "#22C55E";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.35)";
@@ -65,17 +70,22 @@ function formatDateShort(dateStr: string): string {
 function ChartPanel({
   height,
   label,
+  subtitle,
   children,
   chartWidth,
 }: {
   height: number;
   label: string;
+  subtitle?: string;
   children: React.ReactNode;
   chartWidth: number;
 }) {
   return (
-    <View style={[panelStyles.container, { height: height + 22 }]}>
-      <Text style={panelStyles.label}>{label}</Text>
+    <View style={[panelStyles.container, { height: height + (subtitle ? 32 : 22) }]}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 4, marginLeft: 2 }}>
+        <Text style={panelStyles.label}>{label}</Text>
+        {subtitle && <Text style={panelStyles.subtitle}>{subtitle}</Text>}
+      </View>
       <View style={{ height, overflow: "hidden" }}>
         {chartWidth > 0 && children}
       </View>
@@ -93,8 +103,13 @@ const panelStyles = StyleSheet.create({
     color: "rgba(255,255,255,0.3)",
     textTransform: "uppercase",
     letterSpacing: 1.5,
-    marginBottom: 4,
-    marginLeft: 2,
+    marginBottom: 0,
+  },
+  subtitle: {
+    fontSize: 8,
+    fontFamily: "Rubik_400Regular",
+    color: "rgba(255,255,255,0.18)",
+    letterSpacing: 0.3,
   },
 });
 
@@ -150,6 +165,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
   const STRESS_H = 90;
   const CAPACITY_H = 110;
   const OUTPUT_H = 110;
+  const RECOVERY_H = 110;
 
   const hpaData = useMemo(() => {
     const out: { x: number; y: number }[] = [];
@@ -205,6 +221,37 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
     return PAD_T + (svData.absMax / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
   }, [svData.absMax]);
 
+  const recoveryIndex = useMemo(() => {
+    const ratios: { idx: number; ratio: number }[] = [];
+    points.forEach((p, i) => {
+      if (p.hrv != null && p.rhr != null && p.rhr > 0) {
+        ratios.push({ idx: i, ratio: p.hrv / p.rhr });
+      }
+    });
+    if (ratios.length === 0) return { data: [], avgRatio: 0, minR: 0, maxR: 2, todayRatio: null as number | null, avg7: null as number | null, avg14: null as number | null, avg28: null as number | null };
+
+    const allR = ratios.map(r => r.ratio);
+    const avgRatio = allR.reduce((s, v) => s + v, 0) / allR.length;
+    const minR = Math.min(...allR, 0.5, 1.0);
+    const maxR = Math.max(...allR, 1.5, avgRatio + 0.3);
+    const range = maxR - minR || 1;
+
+    const data = ratios.map(r => ({
+      x: xForIdx(r.idx),
+      y: PAD_T + ((maxR - r.ratio) / range) * (RECOVERY_H - PAD_T - PAD_B),
+    }));
+
+    const todayRatio = ratios.length > 0 ? ratios[ratios.length - 1].ratio : null;
+
+    const windowAvg = (n: number): number | null => {
+      const recent = ratios.filter(r => r.idx >= N - n);
+      if (recent.length === 0) return null;
+      return recent.reduce((s, r) => s + r.ratio, 0) / recent.length;
+    };
+
+    return { data, avgRatio, minR, maxR, todayRatio, avg7: windowAvg(7), avg14: windowAvg(14), avg28: windowAvg(28) };
+  }, [points, xForIdx, N]);
+
   const crosshairX = selectedIdx != null ? xForIdx(selectedIdx) : null;
   const selectedPoint = selectedIdx != null ? points[selectedIdx] : null;
 
@@ -249,7 +296,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
       </View>
 
       <View onLayout={onLayout} style={styles.chartArea} {...panResponder.panHandlers}>
-        <ChartPanel height={STRESS_H} label="STRESS AXIS" chartWidth={chartWidth}>
+        <ChartPanel height={STRESS_H} label="STRESS" subtitle="HPA axis / autonomic load" chartWidth={chartWidth}>
           <Svg width={chartWidth} height={STRESS_H}>
             {stressZoneBands.map((z, i) => (
               <Rect key={i} x={PAD_L} y={z.y} width={plotW} height={z.height} fill={z.fill} />
@@ -274,7 +321,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
 
         <View style={styles.separator} />
 
-        <ChartPanel height={CAPACITY_H} label="CAPACITY AXIS" chartWidth={chartWidth}>
+        <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth}>
           <Svg width={chartWidth} height={CAPACITY_H}>
             {[0, 25, 50, 75, 100].map((v) => {
               const y = PAD_T + ((100 - v) / 100) * (CAPACITY_H - PAD_T - PAD_B);
@@ -299,7 +346,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
 
         <View style={styles.separator} />
 
-        <ChartPanel height={OUTPUT_H} label="OUTPUT AXIS" chartWidth={chartWidth}>
+        <ChartPanel height={OUTPUT_H} label="OUTPUT" subtitle="neuromuscular performance" chartWidth={chartWidth}>
           <Svg width={chartWidth} height={OUTPUT_H}>
             {[-5, 0, 5].map((v) => {
               const y = PAD_T + ((svData.absMax - v) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
@@ -328,7 +375,85 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
             ))}
           </Svg>
         </ChartPanel>
+
+        <View style={styles.separator} />
+
+        <ChartPanel height={RECOVERY_H} label="RECOVERY INDEX" subtitle="HRV / RHR" chartWidth={chartWidth}>
+          <Svg width={chartWidth} height={RECOVERY_H}>
+            {(() => {
+              const { minR, maxR } = recoveryIndex;
+              const range = maxR - minR || 1;
+              const gridVals = [minR, (minR + maxR) / 2, maxR].map(v => Math.round(v * 10) / 10);
+              return gridVals.map((v) => {
+                const y = PAD_T + ((maxR - v) / range) * (RECOVERY_H - PAD_T - PAD_B);
+                return (
+                  <Line key={`rg-${v}`} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_GRID} strokeWidth={0.5} />
+                );
+              });
+            })()}
+            {(() => {
+              const { minR, maxR } = recoveryIndex;
+              const range = maxR - minR || 1;
+              if (1.0 >= minR && 1.0 <= maxR) {
+                const y = PAD_T + ((maxR - 1.0) / range) * (RECOVERY_H - PAD_T - PAD_B);
+                return <Line x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_RECOVERY_REF} strokeWidth={1} strokeDasharray="6,4" opacity={0.7} />;
+              }
+              return null;
+            })()}
+            {(() => {
+              const { avgRatio, minR, maxR } = recoveryIndex;
+              const range = maxR - minR || 1;
+              if (avgRatio > 0 && avgRatio >= minR && avgRatio <= maxR) {
+                const y = PAD_T + ((maxR - avgRatio) / range) * (RECOVERY_H - PAD_T - PAD_B);
+                return <Line x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_RECOVERY_AVG} strokeWidth={1} strokeDasharray="6,4" opacity={0.7} />;
+              }
+              return null;
+            })()}
+            {recoveryIndex.data.length > 1 && (
+              <Path d={buildPath(recoveryIndex.data)} stroke={C_RECOVERY} strokeWidth={2} fill="none" />
+            )}
+            {crosshairX != null && (
+              <Line x1={crosshairX} y1={0} x2={crosshairX} y2={RECOVERY_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
+            )}
+            {dateLabels.map((lbl, i) => (
+              <SvgText
+                key={i}
+                x={lbl.x}
+                y={RECOVERY_H - 2}
+                fontSize={8}
+                fill="rgba(255,255,255,0.25)"
+                textAnchor="middle"
+                fontFamily="Rubik_400Regular"
+              >
+                {lbl.text}
+              </SvgText>
+            ))}
+          </Svg>
+        </ChartPanel>
       </View>
+
+      {recoveryIndex.data.length > 0 && (
+        <View style={styles.recoveryStats}>
+          {[
+            { label: "System state", value: recoveryIndex.avgRatio },
+            { label: "Today", value: recoveryIndex.todayRatio },
+            { label: "7-day avg", value: recoveryIndex.avg7 },
+            { label: "14-day avg", value: recoveryIndex.avg14 },
+            { label: "28-day avg", value: recoveryIndex.avg28 },
+          ].map((row) => {
+            if (row.value == null) return null;
+            const dom = row.value >= 1.0 ? "parasympathetic" : "sympathetic";
+            const domColor = row.value >= 1.0 ? C_RECOVERY_REF : "#EF4444";
+            return (
+              <View key={row.label} style={styles.recoveryRow}>
+                <Text style={styles.recoveryLabel}>{row.label}</Text>
+                <Text style={[styles.recoveryVal, { color: domColor }]}>{row.value.toFixed(2)}</Text>
+                <Text style={[styles.recoveryDom, { color: domColor }]}>{dom}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {selectedPoint && (
         <View style={[styles.tooltip, crosshairX != null && crosshairX > chartWidth * 0.6 ? { right: 12 } : { left: 12 }]}>
@@ -358,6 +483,15 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
             <Text style={styles.tooltipVal}>
               {selectedPoint.strengthVelocity != null
                 ? fmtDelta(selectedPoint.strengthVelocity, 1, "%")
+                : "--"}
+            </Text>
+          </View>
+          <View style={styles.tooltipRow}>
+            <View style={[styles.tooltipDot, { backgroundColor: C_RECOVERY }]} />
+            <Text style={styles.tooltipLabel}>RI</Text>
+            <Text style={styles.tooltipVal}>
+              {selectedPoint.hrv != null && selectedPoint.rhr != null && selectedPoint.rhr > 0
+                ? (selectedPoint.hrv / selectedPoint.rhr).toFixed(2)
                 : "--"}
             </Text>
           </View>
@@ -478,5 +612,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Rubik_400Regular",
     color: "rgba(255,255,255,0.2)",
+  },
+  recoveryStats: {
+    marginTop: 8,
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  recoveryRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+  },
+  recoveryLabel: {
+    fontSize: 10,
+    fontFamily: "Rubik_400Regular",
+    color: "rgba(255,255,255,0.35)",
+    width: 80,
+  },
+  recoveryVal: {
+    fontSize: 11,
+    fontFamily: "Rubik_600SemiBold",
+    width: 40,
+    textAlign: "right" as const,
+  },
+  recoveryDom: {
+    fontSize: 9,
+    fontFamily: "Rubik_400Regular",
+    marginLeft: 4,
   },
 });

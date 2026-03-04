@@ -1973,7 +1973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pool.query(
           `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
                   bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
-                  fat_free_mass_lb
+                  fat_free_mass_lb, hrv, resting_hr
            FROM daily_log WHERE user_id = $1 AND day >= $2 AND day <= $3
            ORDER BY day ASC`,
           [userId, from, to],
@@ -2014,6 +2014,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }]));
       const svMap = new Map(svOverTime.map(s => [s.day, s.pctPerWeek]));
 
+      const logMap = new Map<string, { hrv: number | null; rhr: number | null }>();
+      for (const r of logRows.rows) {
+        const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
+        logMap.set(d, {
+          hrv: r.hrv != null ? Number(r.hrv) : null,
+          rhr: r.resting_hr != null ? Number(r.resting_hr) : null,
+        });
+      }
+
       const allDates: string[] = [];
       const cur = new Date(from + "T00:00:00Z");
       const end = new Date(to + "T00:00:00Z");
@@ -2024,12 +2033,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const points = allDates.map(date => {
         const rd = readinessMap.get(date);
+        const lg = logMap.get(date);
         return {
           date,
           hpa: hpaMap.get(date) ?? null,
           hrvDeltaPct: rd?.hrvDelta != null ? Math.round(rd.hrvDelta * 10000) / 100 : null,
           readiness: rd?.score ?? null,
           strengthVelocity: svMap.get(date) ?? null,
+          hrv: lg?.hrv ?? null,
+          rhr: lg?.rhr ?? null,
         };
       });
 
