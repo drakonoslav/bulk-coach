@@ -100,7 +100,7 @@ const panelStyles = StyleSheet.create({
   label: {
     fontSize: 9,
     fontFamily: "Rubik_500Medium",
-    color: "rgba(255,255,255,0.3)",
+    color: "rgba(255,255,255,0.75)",
     textTransform: "uppercase",
     letterSpacing: 1.5,
     marginBottom: 0,
@@ -108,7 +108,7 @@ const panelStyles = StyleSheet.create({
   subtitle: {
     fontSize: 8,
     fontFamily: "Rubik_400Regular",
-    color: "rgba(255,255,255,0.18)",
+    color: "rgba(255,255,255,0.5)",
     letterSpacing: 0.3,
   },
 });
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
   recoveryLabel: {
     fontSize: 10,
     fontFamily: "Rubik_400Regular",
-    color: "rgba(255,255,255,0.35)",
+    color: "rgba(255,255,255,0.7)",
     width: 80,
   },
   recoveryVal: {
