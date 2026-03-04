@@ -510,7 +510,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
               { label: "28-day avg", value: recoveryIndex.avg28, isSystem: false },
             ].map((row) => {
               if (row.value == null) return null;
-              const dom = row.value >= 1.0 ? "parasympathetic" : "sympathetic";
+              const dom = row.value >= 1.0 ? "para" : "symp";
               const domColor = row.value >= 1.0 ? C_RECOVERY_REF : "#EF4444";
               const { zone, zoneColor } = classifyZone(row.value, row.isSystem);
               return (
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontFamily: "Rubik_400Regular",
     marginLeft: 4,
-    width: 82,
+    width: 32,
   },
   recoveryZone: {
     fontSize: 8,
