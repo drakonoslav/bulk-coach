@@ -120,6 +120,7 @@ import {
 import { computeAndUpsertHpa, getHpaForDate, getHpaRange } from "./hpa-engine";
 import { bucketHpa, classifyHpaHrv, stateTooltip } from "./hpa-classifier";
 import { buildForecastSummaryFromExistingOutputs } from "./forecast-engine";
+import { computeRecoveryIndexPairs } from "../lib/recovery-index";
 import {
   computeSCS,
   classifyMode,
@@ -2096,21 +2097,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const hpaNow = hLen >= 1 ? validHpa[hLen - 1].hpaScore : null;
         const hpaPrev = hLen >= 2 ? validHpa[hLen - 2].hpaScore : null;
 
-        const recoveryPairs: { hrv: number; rhr: number }[] = [];
-        for (const r of logRows.rows) {
-          if (r.hrv != null && r.resting_hr != null && Number(r.resting_hr) > 0) {
-            recoveryPairs.push({ hrv: Number(r.hrv), rhr: Number(r.resting_hr) });
-          }
-        }
-        const rpLen = recoveryPairs.length;
-        const recoveryIndexNow = rpLen >= 1 ? recoveryPairs[rpLen - 1].hrv / recoveryPairs[rpLen - 1].rhr : null;
-        const recoveryIndexPrev = rpLen >= 2 ? recoveryPairs[rpLen - 2].hrv / recoveryPairs[rpLen - 2].rhr : null;
+        const recoveryIdx = computeRecoveryIndexPairs(
+          logRows.rows.map((r: any) => ({ hrv: r.hrv != null ? Number(r.hrv) : null, rhr: r.resting_hr != null ? Number(r.resting_hr) : null }))
+        );
+        const recoveryIndexNow = recoveryIdx.now;
+        const recoveryIndexPrev = recoveryIdx.prev;
 
         const ffmResult = ffmVelocity14d(entries);
         const ffmVelocityNow = ffmResult?.velocityLbPerWeek ?? null;
-        const midIdx = Math.max(0, entries.length - 14);
-        const ffmPrevEntries = entries.slice(0, midIdx > 0 ? midIdx : Math.floor(entries.length / 2));
-        const ffmPrevResult = ffmPrevEntries.length >= 14 ? ffmVelocity14d(ffmPrevEntries) : null;
+        const prevWindowEnd = Math.max(0, entries.length - 14);
+        const ffmPrevEntries = prevWindowEnd >= 14 ? entries.slice(0, prevWindowEnd) : null;
+        const ffmPrevResult = ffmPrevEntries ? ffmVelocity14d(ffmPrevEntries) : null;
         const ffmVelocityPrev = ffmPrevResult?.velocityLbPerWeek ?? null;
 
         const waistVel = waistVelocity14d(entries);

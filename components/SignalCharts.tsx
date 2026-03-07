@@ -12,6 +12,7 @@ import { fmtDelta, fmtPctVal } from "@/lib/format";
 import Svg, { Path, Rect, Line, Text as SvgText } from "react-native-svg";
 import Colors from "@/constants/colors";
 import type { ForecastSummary, ForecastResult } from "@/lib/forecast-types";
+import { computeRecoveryIndexPairs } from "@/lib/recovery-index";
 
 interface SignalPoint {
   date: string;
@@ -224,12 +225,19 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   }, [svData.absMax]);
 
   const recoveryIndex = useMemo(() => {
+    const riResult = computeRecoveryIndexPairs(
+      points.map(p => ({ hrv: p.hrv ?? undefined, rhr: p.rhr ?? undefined }))
+    );
+
     const ratios: { idx: number; ratio: number }[] = [];
+    let pairIdx = 0;
     points.forEach((p, i) => {
       if (p.hrv != null && p.rhr != null && p.rhr > 0) {
-        ratios.push({ idx: i, ratio: p.hrv / p.rhr });
+        ratios.push({ idx: i, ratio: riResult.pairs[pairIdx].ratio });
+        pairIdx++;
       }
     });
+
     if (ratios.length === 0) return { data: [], avgRatio: 0, minR: 0, maxR: 2, todayRatio: null as number | null, avg7: null as number | null, avg14: null as number | null, avg28: null as number | null };
 
     const allR = ratios.map(r => r.ratio);
@@ -243,7 +251,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       y: PAD_T + ((maxR - r.ratio) / range) * (RECOVERY_H - PAD_T - PAD_B),
     }));
 
-    const todayRatio = ratios.length > 0 ? ratios[ratios.length - 1].ratio : null;
+    const todayRatio = riResult.now;
 
     const windowAvg = (n: number): number | null => {
       const recent = ratios.filter(r => r.idx >= N - n);
