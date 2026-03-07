@@ -135,6 +135,7 @@ import {
   recordIntervention,
 } from "./intervention-engine";
 import { evaluatePendingInterventionOutcomes } from "./intervention-evaluator";
+import { buildInterventionDecisionSummary } from "./intervention-decision-engine";
 import { normalizeActionKind } from "../lib/intervention-state";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
@@ -4774,7 +4775,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const outputs = await buildInterventionOutputsForDate(today, userId);
       const policy = await buildInterventionPolicySummary(outputs, userId);
-      res.json(policy);
+      const decision = buildInterventionDecisionSummary(policy);
+      res.json({ interventionPolicy: policy, interventionDecision: decision });
     } catch (err: unknown) {
       console.error("intervention policy error:", err);
       res.status(500).json({ error: "Internal server error" });
