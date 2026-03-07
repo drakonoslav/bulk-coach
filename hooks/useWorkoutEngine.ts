@@ -93,6 +93,7 @@ export function useWorkoutEngine() {
   const [state, setState] = useState<WorkoutState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isolationTargets, setIsolationTargets] = useState<MuscleGroup[]>([]);
+  const [compoundTargets, setCompoundTargets] = useState<MuscleGroup[]>([]);
   const [weeklyLoads, setWeeklyLoads] = useState<Record<string, number>>({});
   const [exerciseRecs, setExerciseRecs] = useState<ExerciseRecsState | null>(null);
   const exerciseReqRef = useRef(0);
@@ -125,6 +126,25 @@ export function useWorkoutEngine() {
     } catch (err: any) {
       setError(err.message || "Failed to start workout");
       setStatus("error");
+    }
+  }, []);
+
+  const fetchCompoundTargets = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const intelPromise = getJson(`/api/intel/game/muscle-priority?mode=compound&date=${today}&top_n=5`);
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 3000)
+      );
+      const data: IntelPriorityResponse = await Promise.race([intelPromise, timeoutPromise]) as IntelPriorityResponse;
+      const bridge = collapseIntelPriority(data.queue || []);
+      console.log(`[intel-bridge] compound: mapped=${bridge.mapped}, dropped=${bridge.dropped}, droppedNames=[${bridge.droppedNames.join(",")}], resultCount=${bridge.muscles.length}`);
+      if (!isDroppingTooMany(bridge, 3)) {
+        setCompoundTargets(bridge.muscles.slice(0, 8));
+        console.log(`[intel-bridge] compound targets from Intel: [${bridge.muscles.slice(0, 8).join(",")}]`);
+      }
+    } catch (err: any) {
+      console.log(`[intel-bridge] compound: Intel fetch failed (${err.message})`);
     }
   }, []);
 
@@ -319,6 +339,7 @@ export function useWorkoutEngine() {
     setState(null);
     setError(null);
     setIsolationTargets([]);
+    setCompoundTargets([]);
     setWeeklyLoads({});
     setExerciseRecs(null);
     setStatus("idle");
@@ -329,11 +350,13 @@ export function useWorkoutEngine() {
     state,
     error,
     isolationTargets,
+    compoundTargets,
     weeklyLoads,
     exerciseRecs,
     startWorkout,
     logSet,
     logExerciseSet,
+    fetchCompoundTargets,
     fetchIsolationTargets,
     fetchExerciseRecs,
     clearExerciseRecs,

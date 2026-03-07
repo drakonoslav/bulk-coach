@@ -449,6 +449,7 @@ export default function WorkoutScreen() {
   const handleStartWorkout = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await engine.startWorkout(readinessInput, "strength", polarSessionId);
+    engine.fetchCompoundTargets();
     engine.fetchIsolationTargets(readinessInput);
     const sid = polarSessionId || engine.state?.session_id;
     if (sid) fetchPrompt(sid);
@@ -699,6 +700,24 @@ export default function WorkoutScreen() {
                 </View>
               )}
 
+              {currentPhase === "COMPOUND" && engine.compoundTargets.length > 0 && (
+                <View style={styles.targetsBox}>
+                  <Text style={styles.targetsTitle}>Priority Muscles</Text>
+                  <View style={styles.targetsRow}>
+                    {engine.compoundTargets.map(m => (
+                      <Pressable
+                        key={m}
+                        style={styles.targetChip}
+                        onPress={() => handleMuscleSelect(m)}
+                      >
+                        <Ionicons name="star" size={12} color="#8B5CF6" />
+                        <Text style={styles.targetChipText}>{MUSCLE_LABELS[m]}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {currentPhase === "ISOLATION" && engine.isolationTargets.length > 0 && (
                 <View style={styles.targetsBox}>
                   <Text style={styles.targetsTitle}>Recommended Targets</Text>
@@ -723,7 +742,9 @@ export default function WorkoutScreen() {
                     key={m}
                     muscle={m}
                     onPress={() => handleMuscleSelect(m)}
-                    isTarget={engine.isolationTargets.includes(m)}
+                    isTarget={currentPhase === "COMPOUND"
+                      ? engine.compoundTargets.includes(m)
+                      : engine.isolationTargets.includes(m)}
                     disabled={engine.status === "logging"}
                   />
                 ))}
