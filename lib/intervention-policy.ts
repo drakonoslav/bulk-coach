@@ -1,4 +1,5 @@
 import type {
+  InterventionEvidenceLevel,
   InterventionExperience,
   InterventionPolicySummary,
   InterventionStateSnapshot,
@@ -32,6 +33,52 @@ function confidenceLabel(score: number): "low" | "medium" | "high" {
   if (score >= 0.75) return "high";
   if (score >= 0.50) return "medium";
   return "low";
+}
+
+function evidenceLabel(score: number): InterventionEvidenceLevel {
+  if (score > 0.70) return "strong";
+  if (score >= 0.40) return "moderate";
+  return "weak";
+}
+
+function computePolicyEvidence(
+  topActionCases: SimilarCaseMatch[],
+): { evidenceScore: number; evidenceLevel: InterventionEvidenceLevel } {
+  if (topActionCases.length === 0) {
+    return { evidenceScore: 0, evidenceLevel: "weak" };
+  }
+
+  const supportScore = clamp(topActionCases.length / 5, 0, 1);
+
+  const avgSimilarity =
+    topActionCases.reduce((s, c) => s + c.similarity, 0) / topActionCases.length;
+
+  const casesWithOutcomes = topActionCases.filter(
+    (c) => c.effectivenessScore != null,
+  ).length;
+  const outcomeCompleteness = casesWithOutcomes / topActionCases.length;
+
+  const effVals = topActionCases.map((c) =>
+    normalizedEffectiveness(c.effectivenessScore),
+  );
+  const effMean = effVals.reduce((s, x) => s + x, 0) / effVals.length;
+  const effVariance =
+    effVals.reduce((s, x) => s + (x - effMean) ** 2, 0) / effVals.length;
+  const effStdev = Math.sqrt(effVariance);
+  const consistencyScore = clamp(1 - effStdev / 0.35, 0, 1);
+
+  const recScores = topActionCases.map((c) => recencyScore(c.daysOld));
+  const avgRecency = recScores.reduce((s, x) => s + x, 0) / recScores.length;
+
+  const raw =
+    0.30 * supportScore +
+    0.25 * avgSimilarity +
+    0.20 * outcomeCompleteness +
+    0.15 * consistencyScore +
+    0.10 * avgRecency;
+
+  const score = clamp(raw, 0, 1);
+  return { evidenceScore: score, evidenceLevel: evidenceLabel(score) };
 }
 
 function calendarDay(iso: string): string {
@@ -79,6 +126,8 @@ export function recommendIntervention(
       currentState,
       topAction: null,
       confidence: "low",
+      evidenceLevel: "weak" as const,
+      evidenceScore: 0,
       drivers: ["insufficient prior similar cases"],
       similarCases: [],
     };
@@ -149,10 +198,14 @@ export function recommendIntervention(
   if (consistencyScore >= 0.7) drivers.push("outcomes were consistent");
   else drivers.push("outcomes were mixed");
 
+  const evidence = computePolicyEvidence(best.cases);
+
   return {
     currentState,
     topAction: best.action,
     confidence: confidenceLabel(policyConf),
+    evidenceLevel: evidence.evidenceLevel,
+    evidenceScore: evidence.evidenceScore,
     drivers,
     similarCases: similarCases.slice(0, 5),
   };

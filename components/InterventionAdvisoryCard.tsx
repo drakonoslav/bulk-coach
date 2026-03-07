@@ -5,6 +5,7 @@ import Colors from "@/constants/colors";
 import type {
   InterventionPolicySummary,
   InterventionConfidence,
+  InterventionEvidenceLevel,
   InterventionActionKind,
 } from "@/lib/intervention-types";
 
@@ -26,6 +27,12 @@ const CONFIDENCE_COLORS: Record<InterventionConfidence, string> = {
   high: Colors.success,
   medium: Colors.warning,
   low: Colors.textTertiary,
+};
+
+const EVIDENCE_COLORS: Record<InterventionEvidenceLevel, string> = {
+  strong: Colors.success,
+  moderate: Colors.warning,
+  weak: Colors.textTertiary,
 };
 
 function actionLabel(kind: InterventionActionKind): string {
@@ -59,15 +66,25 @@ export default function InterventionAdvisoryCard() {
 
   const hasRecommendation = data.topAction !== null;
   const confColor = CONFIDENCE_COLORS[data.confidence] ?? Colors.textTertiary;
+  const evidenceColor = EVIDENCE_COLORS[data.evidenceLevel] ?? Colors.textTertiary;
 
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Intervention Advisory</Text>
-        <View style={[styles.badge, { backgroundColor: confColor + "22" }]}>
-          <Text style={[styles.badgeText, { color: confColor }]}>
-            {data.confidence.toUpperCase()}
-          </Text>
+        <View style={styles.badgeRow}>
+          <View style={[styles.badge, { backgroundColor: confColor + "22" }]}>
+            <Text style={[styles.badgeText, { color: confColor }]}>
+              {data.confidence.toUpperCase()}
+            </Text>
+          </View>
+          {hasRecommendation && (
+            <View style={[styles.badge, { backgroundColor: evidenceColor + "22", marginLeft: 6 }]}>
+              <Text style={[styles.badgeText, { color: evidenceColor }]}>
+                {data.evidenceLevel.toUpperCase()}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -97,6 +114,9 @@ export default function InterventionAdvisoryCard() {
               </Text>
             );
           })()}
+          {data.evidenceLevel === "weak" && (
+            <Text style={styles.warningText}>Limited historical evidence</Text>
+          )}
         </>
       ) : (
         <Text style={styles.emptyText}>
@@ -119,6 +139,10 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  badgeRow: {
+    flexDirection: "row",
     alignItems: "center",
   },
   title: {
@@ -159,5 +183,11 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 13,
     marginTop: 10,
+  },
+  warningText: {
+    color: Colors.warning,
+    fontSize: 11,
+    fontStyle: "italic" as const,
+    marginTop: 6,
   },
 });

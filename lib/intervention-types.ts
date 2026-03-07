@@ -1,5 +1,7 @@
 export type InterventionConfidence = "low" | "medium" | "high";
 
+export type InterventionEvidenceLevel = "weak" | "moderate" | "strong";
+
 export type InterventionActionKind =
   | "DELOAD"
   | "REDUCE_VOLUME"
@@ -93,6 +95,8 @@ export interface InterventionPolicySummary {
   currentState: InterventionStateSnapshot;
   topAction: InterventionAction | null;
   confidence: InterventionConfidence;
+  evidenceLevel: InterventionEvidenceLevel;
+  evidenceScore: number;
   drivers: string[];
   similarCases: SimilarCaseMatch[];
 }
