@@ -18,6 +18,7 @@ import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
 import type { ForecastSummary } from "@/lib/forecast-types";
 import MuscleMapCard from "@/components/MuscleMapCard";
+import InterventionAdvisoryCard from "@/components/InterventionAdvisoryCard";
 import { MuscleState, transformIntelResponse, validateIntelSchema } from "@/lib/muscle_map_layout";
 import {
   DailyEntry,
@@ -332,6 +333,8 @@ export default function DashboardScreen() {
           onRangeChange={handleRangeChange}
           forecast={signalForecast}
         />
+
+        <InterventionAdvisoryCard />
 
         <MuscleMapCard
           muscles={muscleMapData}

@@ -986,6 +986,23 @@ async function runMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_intel_receipts_user_date
       ON intel_receipts(user_id, performed_at);
   `);
+
+  await runMigration('026_intervention_experiences', `
+    CREATE TABLE IF NOT EXISTS intervention_experiences (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local_default',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      state_json JSONB NOT NULL,
+      action_json JSONB NOT NULL,
+      outcome_3d_json JSONB,
+      outcome_7d_json JSONB,
+      outcome_14d_json JSONB,
+      effectiveness_score REAL,
+      notes TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_intervention_exp_user_date
+      ON intervention_experiences(user_id, created_at DESC);
+  `);
 }
 
 export { pool };

@@ -129,6 +129,13 @@ import {
   waistVelocity14d,
 } from "../lib/structural-confidence";
 import { classifyAdaptationStage } from "../lib/adaptation-stage";
+import {
+  buildCurrentInterventionStateFromExistingOutputs,
+  buildInterventionPolicySummary,
+  recordIntervention,
+} from "./intervention-engine";
+import { evaluatePendingInterventionOutcomes } from "./intervention-evaluator";
+import { normalizeActionKind } from "../lib/intervention-state";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -4627,6 +4634,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error("POST /api/admin/purge-intel-receipts error:", err);
       return res.status(500).json({ error: "Purge failed", details: String(err) });
+    }
+  });
+
+  async function buildInterventionOutputsForDate(
+    targetDate: string,
+    userId: string,
+  ): Promise<import("./intervention-engine").ExistingInterventionOutputs> {
+    const logRows = await pool.query(
+      `SELECT * FROM daily_log WHERE user_id = $1 AND day <= $2 ORDER BY day ASC`,
+      [userId, targetDate],
+    );
+    const entries: any[] = logRows.rows.map(snakeToCamel);
+
+    const sbRes = await pool.query(
+      `SELECT * FROM strength_baselines WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    );
+    const sb: any = sbRes.rows[0] ? snakeToCamel(sbRes.rows[0]) : {};
+    const strengthBaselines = {
+      pushups: sb.pushupMax != null ? Number(sb.pushupMax) : null,
+      pullups: sb.pullupMax != null ? Number(sb.pullupMax) : null,
+      benchBarReps: sb.benchBarMax != null ? Number(sb.benchBarMax) : null,
+      ohpBarReps: sb.ohpBarMax != null ? Number(sb.ohpBarMax) : null,
+    };
+
+    const { strengthVelocityOverTime, classifyStrengthPhase } = await import("../lib/strength-index");
+    const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
+    const svLen = svOverTime.length;
+    const svNow = svLen >= 1 ? svOverTime[svLen - 1].pctPerWeek : null;
+
+    const strengthPhase = classifyStrengthPhase(svNow).phase;
+    const adaptStage = classifyAdaptationStage(entries, strengthBaselines).stage;
+    const modeResult = classifyMode(entries, strengthBaselines);
+    const scsResult = computeSCS(entries, strengthBaselines);
+
+    const readinessRes = await getReadiness(targetDate, userId);
+    const hpaRes = await getHpaForDate(targetDate, userId);
+
+    const { computeRecoveryIndexPairs } = await import("../lib/recovery-index");
+    const recoveryIdx = computeRecoveryIndexPairs(
+      entries.map((e: any) => ({
+        hrv: e.hrv != null ? Number(e.hrv) : null,
+        rhr: e.restingHr != null ? Number(e.restingHr) : null,
+      })),
+    );
+
+    const { ffmVelocity14d } = await import("../lib/coaching-engine");
+    const ffmResult = ffmVelocity14d(entries);
+    const waistVel = waistVelocity14d(entries);
+
+    const confGrade = readinessRes?.confidenceGrade ?? null;
+
+    return {
+      date: targetDate,
+      readinessScore: readinessRes?.readinessScore ?? null,
+      readinessTier: readinessRes?.tier ?? null,
+      readinessConfidenceGrade: confGrade,
+      hpaScore: hpaRes?.hpaScore ?? null,
+      recoveryIndexNow: recoveryIdx.now,
+      cortisolFlag: readinessRes?.cortisolFlag ?? false,
+      strengthVelocityPctPerWeek: svNow,
+      ffmVelocityLbPerWeek: ffmResult?.velocityLbPerWeek ?? null,
+      waistVelocityInPerWeek: waistVel,
+      strengthPhase,
+      adaptationStage: adaptStage,
+      mode: modeResult.mode,
+      dayClassifier: null,
+      sleepDeltaPct: readinessRes?.sleepDelta != null ? Math.round(readinessRes.sleepDelta * 10000) / 100 : null,
+      hrvDeltaPct: readinessRes?.hrvDelta != null ? Math.round(readinessRes.hrvDelta * 10000) / 100 : null,
+      rhrDeltaBpm: (readinessRes?.rhr7d != null && readinessRes?.rhr28d != null) ? readinessRes.rhr7d - readinessRes.rhr28d : null,
+      structuralConfidence: scsResult.total,
+    };
+  }
+
+  app.get("/api/intervention/policy", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const today = new Date().toISOString().slice(0, 10);
+
+      const outputs = await buildInterventionOutputsForDate(today, userId);
+      const policy = await buildInterventionPolicySummary(outputs, userId);
+      res.json(policy);
+    } catch (err: unknown) {
+      console.error("intervention policy error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/intervention/record", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { actionKind, payload, source, notes } = req.body;
+
+      if (!actionKind || typeof actionKind !== "string") {
+        return res.status(400).json({ error: "actionKind is required" });
+      }
+
+      const kind = normalizeActionKind(actionKind);
+      const action = {
+        kind,
+        payload: payload ?? {},
+        source: (source === "user" || source === "coach" || source === "auto") ? source : "user" as const,
+      };
+
+      const today = new Date().toISOString().slice(0, 10);
+      const outputs = await buildInterventionOutputsForDate(today, userId);
+
+      const id = await recordIntervention(
+        userId,
+        outputs,
+        action,
+        notes,
+      );
+
+      res.json({ ok: true, id });
+    } catch (err: unknown) {
+      console.error("intervention record error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/intervention/evaluate", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+
+      const result = await evaluatePendingInterventionOutcomes(
+        userId,
+        (targetDate: string) => buildInterventionOutputsForDate(targetDate, userId),
+      );
+
+      res.json({ ok: true, ...result });
+    } catch (err: unknown) {
+      console.error("intervention evaluate error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
