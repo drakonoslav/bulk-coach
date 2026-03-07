@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { apiRequest } from "@/lib/query-client";
-import { collapseIntelPriority, isDroppingTooMany } from "@/lib/muscle-bridge";
+import { collapseIntelPriority, isDroppingTooMany, GAME_TO_INTEL } from "@/lib/muscle-bridge";
 import type { IntelPriorityResponse } from "@/lib/muscle-bridge";
 
 export type WorkoutPhase = "COMPOUND" | "ISOLATION";
@@ -28,6 +28,33 @@ export interface SetResult extends WorkoutState {
 }
 
 export type EngineStatus = "idle" | "starting" | "active" | "logging" | "ending" | "finished" | "error";
+
+export interface ExerciseRecommendation {
+  exercise_id: number;
+  exercise_name: string;
+  score: number;
+  score_breakdown: {
+    activation_relevance: number;
+    role_weight: number;
+    bottleneck_clearance: number;
+    secondary_value: number;
+    freshness_bonus: number;
+  };
+  compound_or_isolation: "compound" | "isolation";
+  primary_muscles: { muscle_id: number; muscle: string; activation: number; role_weight?: number }[];
+  secondary_muscles: { muscle_id: number; muscle: string; activation: number; role_weight?: number }[];
+  equipment_tags: string[];
+  movement_slot: string;
+  explanation: string;
+}
+
+export interface ExerciseRecsState {
+  muscle: MuscleGroup;
+  mode: "compound" | "isolation";
+  recommendations: ExerciseRecommendation[];
+  loading: boolean;
+  error: string | null;
+}
 
 const MUSCLE_LABELS: Record<MuscleGroup, string> = {
   chest_upper: "Upper Chest",
@@ -67,6 +94,8 @@ export function useWorkoutEngine() {
   const [error, setError] = useState<string | null>(null);
   const [isolationTargets, setIsolationTargets] = useState<MuscleGroup[]>([]);
   const [weeklyLoads, setWeeklyLoads] = useState<Record<string, number>>({});
+  const [exerciseRecs, setExerciseRecs] = useState<ExerciseRecsState | null>(null);
+  const exerciseReqRef = useRef(0);
 
   const startWorkout = useCallback(async (
     readinessScore: number,
@@ -177,6 +206,88 @@ export function useWorkoutEngine() {
     }
   }, [state, fetchIsolationTargets]);
 
+  const fetchExerciseRecs = useCallback(async (muscle: MuscleGroup, mode: "compound" | "isolation") => {
+    const intelIds = GAME_TO_INTEL[muscle];
+    if (!intelIds || intelIds.length === 0) {
+      setExerciseRecs({ muscle, mode, recommendations: [], loading: false, error: "No Intel mapping" });
+      return;
+    }
+    const muscleId = intelIds[0];
+    const reqId = ++exerciseReqRef.current;
+    setExerciseRecs({ muscle, mode, recommendations: [], loading: true, error: null });
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 4000)
+      );
+      const fetchPromise = getJson(`/api/intel/game/exercise-recommendations?muscle_id=${muscleId}&mode=${mode}&date=${today}&top_n=5`);
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
+      if (reqId !== exerciseReqRef.current) return;
+      const recs = data.recommendations || data.candidates || [];
+      setExerciseRecs({
+        muscle,
+        mode,
+        recommendations: recs,
+        loading: false,
+        error: null,
+      });
+    } catch (err: any) {
+      if (reqId !== exerciseReqRef.current) return;
+      console.log(`[exercise-recs] fetch failed for ${muscle}: ${err.message}`);
+      setExerciseRecs({ muscle, mode, recommendations: [], loading: false, error: err.message });
+    }
+  }, []);
+
+  const clearExerciseRecs = useCallback(() => {
+    setExerciseRecs(null);
+  }, []);
+
+  const logExerciseSet = useCallback(async (
+    muscle: MuscleGroup,
+    exerciseId: number,
+    weight: number,
+    reps: number,
+    isCompound: boolean,
+  ) => {
+    if (!state) return;
+    setStatus("logging");
+    setError(null);
+
+    const setIndex = (state.compoundSets || 0) + (state.isolationSets || 0) + 1;
+    const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
+
+    try {
+      const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/exercise-set`, {
+        muscle,
+        exerciseId,
+        weight,
+        reps,
+        isCompound,
+        cbpCurrent: state.cbpCurrent,
+        compoundSets: state.compoundSets,
+        isolationSets: state.isolationSets,
+        phase: state.phase,
+        strainPoints: state.strainPoints,
+        event_id: eventId,
+      });
+
+      setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });
+      setStatus("active");
+      setExerciseRecs(null);
+
+      if (result.phase === "ISOLATION" && state.phase === "COMPOUND") {
+        const derivedReadiness = 100 * Math.pow(result.cbpStart / 100, 1 / 1.4);
+        await fetchIsolationTargets(derivedReadiness, "FULL_BODY");
+      }
+
+      return result;
+    } catch (err: any) {
+      setError(err.message || "Failed to log exercise set");
+      setStatus("active");
+      return null;
+    }
+  }, [state, fetchIsolationTargets]);
+
   const endWorkout = useCallback(async (opts?: { polarOwned?: boolean }) => {
     if (!state) return;
     setStatus("ending");
@@ -209,6 +320,7 @@ export function useWorkoutEngine() {
     setError(null);
     setIsolationTargets([]);
     setWeeklyLoads({});
+    setExerciseRecs(null);
     setStatus("idle");
   }, []);
 
@@ -218,9 +330,13 @@ export function useWorkoutEngine() {
     error,
     isolationTargets,
     weeklyLoads,
+    exerciseRecs,
     startWorkout,
     logSet,
+    logExerciseSet,
     fetchIsolationTargets,
+    fetchExerciseRecs,
+    clearExerciseRecs,
     endWorkout,
     reset,
   };

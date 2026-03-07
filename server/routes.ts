@@ -52,7 +52,7 @@ import {
   type WorkoutEvent,
   type MuscleGroup,
 } from "./workout-engine";
-import { fireIntelLogSet, fireIntelSessionClose, gameKeyToIntelTargets, resolveSetIntent } from "./intel-writer";
+import { fireIntelLogSet, fireIntelSessionClose, fireIntelExerciseLogSet, gameKeyToIntelTargets, resolveSetIntent } from "./intel-writer";
 import {
   pickIsolationTargets,
   fallbackIsolation,
@@ -3582,6 +3582,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/workout/:sessionId/exercise-set", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const sessionId = req.params.sessionId as string;
+      const { muscle, exerciseId, weight, reps, isCompound, cbpCurrent, compoundSets, isolationSets, phase, strainPoints } = req.body;
+      if (!exerciseId || weight == null || reps == null || !muscle) {
+        return res.status(400).json({ error: "exerciseId, weight, reps, and muscle are required" });
+      }
+
+      const rpe = req.body.rpe ?? null;
+
+      const state = {
+        session_id: sessionId,
+        phase: phase || "COMPOUND" as const,
+        cbpStart: cbpCurrent ?? 100,
+        cbpCurrent: cbpCurrent ?? 100,
+        strainPoints: strainPoints ?? 0,
+        compoundSets: compoundSets ?? 0,
+        isolationSets: isolationSets ?? 0,
+        setLog: [],
+      };
+
+      const event: WorkoutEvent = {
+        t: Date.now(),
+        type: "SET_COMPLETE",
+        muscle: muscle as MuscleGroup,
+        rpe: rpe ?? undefined,
+        isCompound: isCompound ?? (state.phase === "COMPOUND"),
+      };
+
+      const cbpBefore = state.cbpCurrent;
+      const updatedState = applyEvent(state, event);
+      const drain = cbpBefore - updatedState.cbpCurrent;
+
+      await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const weekStart = getWeekStart(today);
+      await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
+
+      res.json(updatedState);
+
+      const eventId = req.body.event_id as string | undefined;
+      fireIntelExerciseLogSet({
+        event_id: eventId || `${sessionId}_s${Date.now()}`,
+        session_id: sessionId,
+        exercise_id: exerciseId,
+        weight,
+        reps,
+        performed_at: today,
+        source: "expo_bulkcoach",
+      }).catch(() => {});
+    } catch (err) {
+      console.error("workout exercise-set error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/workout/:sessionId/next-prompt", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -4586,6 +4644,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(data);
     } catch (err: any) {
       console.error("GET /api/intel/game/muscle-priority error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/game/exercise-recommendations", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const muscleId = req.query.muscle_id as string;
+    const mode = (req.query.mode as string) || "compound";
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const topN = (req.query.top_n as string) || "5";
+    const available = req.query.available as string | undefined;
+    if (!muscleId) return res.status(400).json({ error: "muscle_id is required" });
+    try {
+      let url = `${INTEL_BASE}/game/exercise-recommendations?muscle_id=${encodeURIComponent(muscleId)}&mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&top_n=${encodeURIComponent(topN)}`;
+      if (available) url += `&available=${encodeURIComponent(available)}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        console.log(`[intel-bridge] GET /game/exercise-recommendations?muscle_id=${muscleId} returned ${r.status}`);
+        return intelProxy(r, res);
+      }
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/exercise-recommendations error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/game/exercise-catalog", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "public, max-age=86400");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/exercise-catalog`);
+      if (!r.ok) {
+        console.log(`[intel-bridge] GET /game/exercise-catalog returned ${r.status}`);
+        return intelProxy(r, res);
+      }
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/exercise-catalog error:", err);
       return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });

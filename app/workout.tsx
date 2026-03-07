@@ -8,13 +8,16 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
-import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase } from "@/hooks/useWorkoutEngine";
+import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase, type ExerciseRecommendation } from "@/hooks/useWorkoutEngine";
 import { apiRequest, authFetch, getApiUrl } from "@/lib/query-client";
 
 const READINESS_CHIPS = [50, 60, 70, 75, 80, 90, 100];
@@ -155,6 +158,226 @@ function RpeSelector({
   );
 }
 
+function ScoreBar({ score, label }: { score: number; label: string }) {
+  const pct = Math.round(score * 100);
+  return (
+    <View style={sheetStyles.scoreBarRow}>
+      <Text style={sheetStyles.scoreBarLabel}>{label}</Text>
+      <View style={sheetStyles.scoreBarTrack}>
+        <View style={[sheetStyles.scoreBarFill, { width: `${pct}%` }]} />
+      </View>
+      <Text style={sheetStyles.scoreBarValue}>{pct}%</Text>
+    </View>
+  );
+}
+
+function ExercisePickerSheet({
+  visible,
+  muscle,
+  recommendations,
+  loading,
+  error,
+  onSelectExercise,
+  onSkipBridge,
+  onClose,
+}: {
+  visible: boolean;
+  muscle: MuscleGroup | null;
+  recommendations: ExerciseRecommendation[];
+  loading: boolean;
+  error: string | null;
+  onSelectExercise: (rec: ExerciseRecommendation) => void;
+  onSkipBridge: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <Pressable style={sheetStyles.overlay} onPress={onClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={sheetStyles.keyboardWrap}
+        >
+          <Pressable style={sheetStyles.sheet} onPress={() => {}}>
+            <View style={sheetStyles.handle} />
+            <View style={sheetStyles.headerRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={sheetStyles.title}>
+                  {muscle ? MUSCLE_LABELS[muscle] : "Exercise"}
+                </Text>
+                <Text style={sheetStyles.subtitle}>Pick an exercise for precise tracking</Text>
+              </View>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            {loading && (
+              <View style={sheetStyles.loadingBox}>
+                <ActivityIndicator color={Colors.primary} size="small" />
+                <Text style={sheetStyles.loadingText}>Loading recommendations…</Text>
+              </View>
+            )}
+
+            {error && !loading && (
+              <View style={sheetStyles.errorBox}>
+                <Ionicons name="cloud-offline" size={16} color={Colors.textTertiary} />
+                <Text style={sheetStyles.errorText}>Intel unavailable — use bridge mode</Text>
+              </View>
+            )}
+
+            {!loading && !error && recommendations.length === 0 && (
+              <View style={sheetStyles.emptyBox}>
+                <Text style={sheetStyles.emptyText}>No exercises found for this muscle</Text>
+              </View>
+            )}
+
+            <ScrollView style={sheetStyles.recsList} bounces={false}>
+              {recommendations.map((rec, idx) => (
+                <Pressable
+                  key={rec.exercise_id}
+                  style={sheetStyles.recCard}
+                  onPress={() => onSelectExercise(rec)}
+                >
+                  <View style={sheetStyles.recHeader}>
+                    <View style={sheetStyles.recRank}>
+                      <Text style={sheetStyles.recRankText}>{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={sheetStyles.recName}>{rec.exercise_name}</Text>
+                      <View style={sheetStyles.recTagRow}>
+                        <View style={sheetStyles.recSlotTag}>
+                          <Text style={sheetStyles.recSlotText}>{rec.movement_slot}</Text>
+                        </View>
+                        {rec.equipment_tags.slice(0, 3).map(tag => (
+                          <View key={tag} style={sheetStyles.recEquipTag}>
+                            <Text style={sheetStyles.recEquipText}>{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                    <View style={sheetStyles.recScoreBadge}>
+                      <Text style={sheetStyles.recScoreText}>{Math.round(rec.score * 100)}</Text>
+                    </View>
+                  </View>
+                  <View style={sheetStyles.recBreakdown}>
+                    <ScoreBar score={rec.score_breakdown.activation_relevance} label="Activation" />
+                    <ScoreBar score={rec.score_breakdown.role_weight} label="Role" />
+                    <ScoreBar score={rec.score_breakdown.secondary_value} label="Secondary" />
+                  </View>
+                  <Text style={sheetStyles.recExplanation}>{rec.explanation}</Text>
+                  <View style={sheetStyles.recMuscleRow}>
+                    {rec.primary_muscles.map(m => (
+                      <View key={m.muscle_id} style={sheetStyles.recMusclePill}>
+                        <Text style={sheetStyles.recMusclePillText}>{m.muscle}</Text>
+                        <Text style={sheetStyles.recMuscleActivation}>{m.activation}/5</Text>
+                      </View>
+                    ))}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Pressable style={sheetStyles.bridgeButton} onPress={onSkipBridge}>
+              <Ionicons name="swap-horizontal" size={18} color={Colors.textSecondary} />
+              <Text style={sheetStyles.bridgeButtonText}>Skip — Log as Bridge</Text>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function ExerciseLogSection({
+  exercise,
+  muscle,
+  onLogSet,
+  onCancel,
+  isLogging,
+}: {
+  exercise: ExerciseRecommendation;
+  muscle: MuscleGroup;
+  onLogSet: (weight: number, reps: number) => void;
+  onCancel: () => void;
+  isLogging: boolean;
+}) {
+  const [weight, setWeight] = useState("");
+  const [reps, setReps] = useState("");
+
+  const canLog = weight.trim() !== "" && reps.trim() !== "" &&
+    !isNaN(parseFloat(weight)) && !isNaN(parseInt(reps, 10)) &&
+    parseFloat(weight) > 0 && parseInt(reps, 10) > 0;
+
+  return (
+    <View style={styles.logSection}>
+      <View style={styles.selectedDisplay}>
+        <MaterialCommunityIcons name="dumbbell" size={20} color={Colors.primary} />
+        <Text style={styles.selectedText} numberOfLines={1}>
+          {exercise.exercise_name}
+        </Text>
+      </View>
+      <Text style={exStyles.muscleContext}>
+        {MUSCLE_LABELS[muscle]} · {exercise.compound_or_isolation} · {exercise.movement_slot}
+      </Text>
+
+      <View style={exStyles.inputRow}>
+        <View style={exStyles.inputGroup}>
+          <Text style={exStyles.inputLabel}>Weight (lbs)</Text>
+          <TextInput
+            style={exStyles.textInput}
+            value={weight}
+            onChangeText={setWeight}
+            keyboardType="decimal-pad"
+            placeholder="225"
+            placeholderTextColor={Colors.textTertiary}
+            returnKeyType="next"
+          />
+        </View>
+        <View style={exStyles.inputGroup}>
+          <Text style={exStyles.inputLabel}>Reps</Text>
+          <TextInput
+            style={exStyles.textInput}
+            value={reps}
+            onChangeText={setReps}
+            keyboardType="number-pad"
+            placeholder="5"
+            placeholderTextColor={Colors.textTertiary}
+            returnKeyType="done"
+          />
+        </View>
+      </View>
+
+      <View style={exStyles.tonnagePreview}>
+        <Ionicons name="analytics" size={14} color={Colors.primary} />
+        <Text style={exStyles.tonnageText}>
+          Tonnage: {canLog ? `${(parseFloat(weight) * parseInt(reps, 10)).toLocaleString()} lbs` : "—"}
+        </Text>
+      </View>
+
+      <View style={exStyles.actionRow}>
+        <Pressable style={exStyles.cancelButton} onPress={onCancel}>
+          <Text style={exStyles.cancelText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          style={[exStyles.logExButton, (!canLog || isLogging) && { opacity: 0.5 }]}
+          onPress={() => {
+            if (canLog) onLogSet(parseFloat(weight), parseInt(reps, 10));
+          }}
+          disabled={!canLog || isLogging}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+          <Text style={exStyles.logExText}>Log Set</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export default function WorkoutScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
@@ -174,6 +397,8 @@ export default function WorkoutScreen() {
   const [readinessAuto, setReadinessAuto] = useState<number | null>(null);
   const manualOverrideRef = React.useRef(false);
   const [nextPrompt, setNextPrompt] = useState<CoachPrompt | null>(null);
+  const [showExerciseSheet, setShowExerciseSheet] = useState(false);
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseRecommendation | null>(null);
 
   useEffect(() => {
     if (params.readiness) return;
@@ -227,7 +452,30 @@ export default function WorkoutScreen() {
     if (sid) fetchPrompt(sid);
   };
 
-  const handleLogSet = async () => {
+  const handleMuscleSelect = useCallback((muscle: MuscleGroup) => {
+    if (selectedMuscle === muscle && !selectedExercise) {
+      setSelectedMuscle(null);
+      return;
+    }
+    setSelectedMuscle(muscle);
+    setSelectedExercise(null);
+    const mode = currentPhase === "COMPOUND" ? "compound" : "isolation";
+    engine.fetchExerciseRecs(muscle, mode as "compound" | "isolation");
+    setShowExerciseSheet(true);
+  }, [selectedMuscle, selectedExercise, currentPhase, engine]);
+
+  const handleExerciseSelect = useCallback((rec: ExerciseRecommendation) => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedExercise(rec);
+    setShowExerciseSheet(false);
+  }, []);
+
+  const handleSkipBridge = useCallback(() => {
+    setSelectedExercise(null);
+    setShowExerciseSheet(false);
+  }, []);
+
+  const handleLogBridgeSet = async () => {
     if (!selectedMuscle) return;
     if (!canLogSets) {
       Alert.alert("Baseline still running", "Wait for the 2-minute baseline to finish before logging sets.");
@@ -240,6 +488,25 @@ export default function WorkoutScreen() {
       fetchPrompt(result.session_id);
     }
     setSelectedMuscle(null);
+    setSelectedExercise(null);
+  };
+
+  const handleLogExerciseSet = async (weight: number, reps: number) => {
+    if (!selectedMuscle || !selectedExercise) return;
+    if (!canLogSets) {
+      Alert.alert("Baseline still running", "Wait for the 2-minute baseline to finish before logging sets.");
+      return;
+    }
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const isCompound = currentPhase === "COMPOUND";
+    const result = await engine.logExerciseSet(
+      selectedMuscle, selectedExercise.exercise_id, weight, reps, isCompound
+    );
+    if (result?.session_id) {
+      fetchPrompt(result.session_id);
+    }
+    setSelectedMuscle(null);
+    setSelectedExercise(null);
   };
 
   const handleEndWorkout = () => {
@@ -397,7 +664,7 @@ export default function WorkoutScreen() {
                             styles.coachChip,
                             selectedMuscle === m && styles.coachChipActive,
                           ]}
-                          onPress={() => setSelectedMuscle(m)}
+                          onPress={() => handleMuscleSelect(m)}
                           disabled={engine.status === "logging"}
                         >
                           <Ionicons
@@ -434,7 +701,7 @@ export default function WorkoutScreen() {
                       <Pressable
                         key={m}
                         style={styles.targetChip}
-                        onPress={() => setSelectedMuscle(m)}
+                        onPress={() => handleMuscleSelect(m)}
                       >
                         <Ionicons name="star" size={12} color="#8B5CF6" />
                         <Text style={styles.targetChipText}>{MUSCLE_LABELS[m]}</Text>
@@ -449,7 +716,7 @@ export default function WorkoutScreen() {
                   <MuscleButton
                     key={m}
                     muscle={m}
-                    onPress={() => setSelectedMuscle(selectedMuscle === m ? null : m)}
+                    onPress={() => handleMuscleSelect(m)}
                     isTarget={engine.isolationTargets.includes(m)}
                     disabled={engine.status === "logging"}
                   />
@@ -457,18 +724,31 @@ export default function WorkoutScreen() {
               </View>
             </View>
 
-            {selectedMuscle && (
+            {selectedMuscle && selectedExercise && (
+              <ExerciseLogSection
+                exercise={selectedExercise}
+                muscle={selectedMuscle}
+                onLogSet={handleLogExerciseSet}
+                onCancel={() => { setSelectedExercise(null); setSelectedMuscle(null); }}
+                isLogging={engine.status === "logging"}
+              />
+            )}
+
+            {selectedMuscle && !selectedExercise && (
               <View style={styles.logSection}>
                 <View style={styles.selectedDisplay}>
                   <MaterialCommunityIcons name="arm-flex" size={20} color={Colors.primary} />
                   <Text style={styles.selectedText}>
                     {MUSCLE_LABELS[selectedMuscle]}
                   </Text>
+                  <View style={exStyles.bridgePill}>
+                    <Text style={exStyles.bridgePillText}>Bridge</Text>
+                  </View>
                 </View>
                 <RpeSelector value={rpe} onChange={setRpe} />
                 <Pressable
                   style={[styles.logButton, engine.status === "logging" && { opacity: 0.6 }]}
-                  onPress={handleLogSet}
+                  onPress={handleLogBridgeSet}
                   disabled={engine.status === "logging"}
                 >
                   <Ionicons name="checkmark-circle" size={22} color="#fff" />
@@ -526,6 +806,17 @@ export default function WorkoutScreen() {
           </View>
         )}
       </ScrollView>
+
+      <ExercisePickerSheet
+        visible={showExerciseSheet}
+        muscle={selectedMuscle}
+        recommendations={engine.exerciseRecs?.recommendations || []}
+        loading={engine.exerciseRecs?.loading || false}
+        error={engine.exerciseRecs?.error || null}
+        onSelectExercise={handleExerciseSelect}
+        onSkipBridge={handleSkipBridge}
+        onClose={() => setShowExerciseSheet(false)}
+      />
     </>
   );
 }
@@ -807,5 +1098,192 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_400Regular",
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+});
+
+const sheetStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  keyboardWrap: { justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: Colors.cardBg,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 34,
+    maxHeight: 600,
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.textTertiary,
+    alignSelf: "center", marginTop: 10, marginBottom: 14,
+  },
+  headerRow: {
+    flexDirection: "row", alignItems: "flex-start", marginBottom: 16,
+  },
+  title: {
+    fontSize: 20, fontFamily: "Rubik_700Bold", color: Colors.text,
+  },
+  subtitle: {
+    fontSize: 13, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2,
+  },
+  loadingBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 24, justifyContent: "center",
+  },
+  loadingText: {
+    fontSize: 14, fontFamily: "Rubik_400Regular", color: Colors.textSecondary,
+  },
+  errorBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 20, justifyContent: "center",
+  },
+  errorText: {
+    fontSize: 14, fontFamily: "Rubik_400Regular", color: Colors.textTertiary,
+  },
+  emptyBox: { paddingVertical: 20, alignItems: "center" },
+  emptyText: {
+    fontSize: 14, fontFamily: "Rubik_400Regular", color: Colors.textTertiary,
+  },
+  recsList: { maxHeight: 420 },
+  recCard: {
+    backgroundColor: Colors.cardBgElevated,
+    borderRadius: 14, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  recHeader: {
+    flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10,
+  },
+  recRank: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.primaryMuted, alignItems: "center", justifyContent: "center",
+  },
+  recRankText: {
+    fontSize: 13, fontFamily: "Rubik_700Bold", color: Colors.primary,
+  },
+  recName: {
+    fontSize: 15, fontFamily: "Rubik_600SemiBold", color: Colors.text,
+  },
+  recTagRow: {
+    flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap",
+  },
+  recSlotTag: {
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+  },
+  recSlotText: {
+    fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.primary,
+    textTransform: "uppercase",
+  },
+  recEquipTag: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: Colors.surface,
+  },
+  recEquipText: {
+    fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary,
+  },
+  recScoreBadge: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center",
+  },
+  recScoreText: {
+    fontSize: 15, fontFamily: "Rubik_700Bold", color: "#fff",
+  },
+  recBreakdown: { marginBottom: 8 },
+  scoreBarRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4,
+  },
+  scoreBarLabel: {
+    width: 72, fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary,
+  },
+  scoreBarTrack: {
+    flex: 1, height: 6, backgroundColor: Colors.surface, borderRadius: 3,
+    overflow: "hidden",
+  },
+  scoreBarFill: {
+    height: 6, borderRadius: 3, backgroundColor: Colors.primary,
+  },
+  scoreBarValue: {
+    width: 32, fontSize: 11, fontFamily: "Rubik_600SemiBold",
+    color: Colors.textSecondary, textAlign: "right",
+  },
+  recExplanation: {
+    fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary,
+    lineHeight: 16, marginBottom: 8,
+  },
+  recMuscleRow: {
+    flexDirection: "row", gap: 6, flexWrap: "wrap",
+  },
+  recMusclePill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: "rgba(139, 92, 246, 0.10)",
+  },
+  recMusclePillText: {
+    fontSize: 11, fontFamily: "Rubik_500Medium", color: "#8B5CF6",
+  },
+  recMuscleActivation: {
+    fontSize: 10, fontFamily: "Rubik_700Bold", color: "rgba(139, 92, 246, 0.6)",
+  },
+  bridgeButton: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 14, borderRadius: 12, marginTop: 8,
+    borderWidth: 1.5, borderColor: Colors.border,
+  },
+  bridgeButtonText: {
+    fontSize: 15, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary,
+  },
+});
+
+const exStyles = StyleSheet.create({
+  muscleContext: {
+    fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textTertiary,
+    marginBottom: 14,
+  },
+  inputRow: {
+    flexDirection: "row", gap: 12, marginBottom: 12,
+  },
+  inputGroup: { flex: 1 },
+  inputLabel: {
+    fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary, marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 18, fontFamily: "Rubik_700Bold", color: Colors.text,
+    borderWidth: 1, borderColor: Colors.border, textAlign: "center",
+  },
+  tonnagePreview: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14,
+  },
+  tonnageText: {
+    fontSize: 13, fontFamily: "Rubik_500Medium", color: Colors.primary,
+  },
+  actionRow: {
+    flexDirection: "row", gap: 10,
+  },
+  cancelButton: {
+    flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center",
+    borderWidth: 1.5, borderColor: Colors.border,
+  },
+  cancelText: {
+    fontSize: 15, fontFamily: "Rubik_600SemiBold", color: Colors.textSecondary,
+  },
+  logExButton: {
+    flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: Colors.primary, paddingVertical: 14, borderRadius: 12,
+  },
+  logExText: {
+    fontSize: 16, fontFamily: "Rubik_600SemiBold", color: "#fff",
+  },
+  bridgePill: {
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
+    backgroundColor: Colors.surface, marginLeft: 8,
+  },
+  bridgePillText: {
+    fontSize: 11, fontFamily: "Rubik_600SemiBold", color: Colors.textTertiary,
+    textTransform: "uppercase", letterSpacing: 0.5,
   },
 });
