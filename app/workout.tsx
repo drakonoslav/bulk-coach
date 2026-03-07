@@ -20,6 +20,8 @@ import Colors from "@/constants/colors";
 import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase, type ExerciseRecommendation } from "@/hooks/useWorkoutEngine";
 import { apiRequest, authFetch, getApiUrl } from "@/lib/query-client";
 
+const ENABLE_EXERCISE_PICKER = false;
+
 const READINESS_CHIPS = [50, 60, 70, 75, 80, 90, 100];
 
 function snapToChip(score: number): number {
@@ -453,15 +455,19 @@ export default function WorkoutScreen() {
   };
 
   const handleMuscleSelect = useCallback((muscle: MuscleGroup) => {
-    if (selectedMuscle === muscle && !selectedExercise) {
-      setSelectedMuscle(null);
-      return;
+    if (ENABLE_EXERCISE_PICKER) {
+      if (selectedMuscle === muscle && !selectedExercise) {
+        setSelectedMuscle(null);
+        return;
+      }
+      setSelectedMuscle(muscle);
+      setSelectedExercise(null);
+      const mode = currentPhase === "COMPOUND" ? "compound" : "isolation";
+      engine.fetchExerciseRecs(muscle, mode as "compound" | "isolation");
+      setShowExerciseSheet(true);
+    } else {
+      setSelectedMuscle(selectedMuscle === muscle ? null : muscle);
     }
-    setSelectedMuscle(muscle);
-    setSelectedExercise(null);
-    const mode = currentPhase === "COMPOUND" ? "compound" : "isolation";
-    engine.fetchExerciseRecs(muscle, mode as "compound" | "isolation");
-    setShowExerciseSheet(true);
   }, [selectedMuscle, selectedExercise, currentPhase, engine]);
 
   const handleExerciseSelect = useCallback((rec: ExerciseRecommendation) => {
@@ -724,7 +730,7 @@ export default function WorkoutScreen() {
               </View>
             </View>
 
-            {selectedMuscle && selectedExercise && (
+            {ENABLE_EXERCISE_PICKER && selectedMuscle && selectedExercise && (
               <ExerciseLogSection
                 exercise={selectedExercise}
                 muscle={selectedMuscle}
@@ -734,16 +740,18 @@ export default function WorkoutScreen() {
               />
             )}
 
-            {selectedMuscle && !selectedExercise && (
+            {selectedMuscle && (!ENABLE_EXERCISE_PICKER || !selectedExercise) && (
               <View style={styles.logSection}>
                 <View style={styles.selectedDisplay}>
                   <MaterialCommunityIcons name="arm-flex" size={20} color={Colors.primary} />
                   <Text style={styles.selectedText}>
                     {MUSCLE_LABELS[selectedMuscle]}
                   </Text>
-                  <View style={exStyles.bridgePill}>
-                    <Text style={exStyles.bridgePillText}>Bridge</Text>
-                  </View>
+                  {ENABLE_EXERCISE_PICKER && (
+                    <View style={exStyles.bridgePill}>
+                      <Text style={exStyles.bridgePillText}>Bridge</Text>
+                    </View>
+                  )}
                 </View>
                 <RpeSelector value={rpe} onChange={setRpe} />
                 <Pressable
@@ -807,16 +815,18 @@ export default function WorkoutScreen() {
         )}
       </ScrollView>
 
-      <ExercisePickerSheet
-        visible={showExerciseSheet}
-        muscle={selectedMuscle}
-        recommendations={engine.exerciseRecs?.recommendations || []}
-        loading={engine.exerciseRecs?.loading || false}
-        error={engine.exerciseRecs?.error || null}
-        onSelectExercise={handleExerciseSelect}
-        onSkipBridge={handleSkipBridge}
-        onClose={() => setShowExerciseSheet(false)}
-      />
+      {ENABLE_EXERCISE_PICKER && (
+        <ExercisePickerSheet
+          visible={showExerciseSheet}
+          muscle={selectedMuscle}
+          recommendations={engine.exerciseRecs?.recommendations || []}
+          loading={engine.exerciseRecs?.loading || false}
+          error={engine.exerciseRecs?.error || null}
+          onSelectExercise={handleExerciseSelect}
+          onSkipBridge={handleSkipBridge}
+          onClose={() => setShowExerciseSheet(false)}
+        />
+      )}
     </>
   );
 }
