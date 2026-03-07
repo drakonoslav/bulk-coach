@@ -596,6 +596,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("hpa compute error:", err)
       );
 
+      evaluatePendingInterventionOutcomes(
+        userId,
+        (targetDate: string) => buildInterventionOutputsForDate(targetDate, userId),
+      ).catch((err: unknown) =>
+        console.error("intervention outcome eval error:", err)
+      );
+
       const hasStrength = b.pushupsReps != null || b.pullupsReps != null || b.benchReps != null || b.ohpReps != null;
       if (hasStrength) {
         (async () => {
