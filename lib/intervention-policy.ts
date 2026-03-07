@@ -34,11 +34,20 @@ function confidenceLabel(score: number): "low" | "medium" | "high" {
   return "low";
 }
 
+function calendarDay(iso: string): string {
+  return iso.slice(0, 10);
+}
+
 export function recommendIntervention(
   currentState: InterventionStateSnapshot,
   history: InterventionExperience[],
 ): InterventionPolicySummary {
-  const rawCases: SimilarCaseMatch[] = history.map((exp) => {
+  const snapshotDay = calendarDay(currentState.date);
+  const eligible = history.filter(
+    (exp) => calendarDay(exp.createdAt) !== snapshotDay,
+  );
+
+  const rawCases: SimilarCaseMatch[] = eligible.map((exp) => {
     const similarity = computeStateSimilarity(currentState, exp.state);
     const effectivenessScore =
       exp.effectivenessScore ?? scoreInterventionEffectiveness(exp);

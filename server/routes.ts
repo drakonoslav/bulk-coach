@@ -4666,7 +4666,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const strengthPhase = classifyStrengthPhase(svNow).phase;
     const adaptStage = classifyAdaptationStage(entries, strengthBaselines).stage;
+    const signalQuality = computeStrengthSignalQuality(entries, strengthBaselines).score;
     const modeResult = classifyMode(entries, strengthBaselines);
+    const plateauResult = detectStrengthPlateau(entries, strengthBaselines, modeResult.mode as any);
     const scsResult = computeSCS(entries, strengthBaselines);
 
     const readinessRes = await getReadiness(targetDate, userId);
@@ -4685,25 +4687,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const waistVel = waistVelocity14d(entries);
 
     const confGrade = readinessRes?.confidenceGrade ?? null;
+    const readinessScore = readinessRes?.readinessScore ?? null;
+    const hpaScore = hpaRes?.hpaScore ?? null;
+    const cortisolFlag = readinessRes?.cortisolFlag ?? false;
+    const sleepDeltaPct = readinessRes?.sleepDelta != null ? Math.round(readinessRes.sleepDelta * 10000) / 100 : null;
+    const hrvDeltaPct = readinessRes?.hrvDelta != null ? Math.round(readinessRes.hrvDelta * 10000) / 100 : null;
+    const rhrDeltaBpm = (readinessRes?.rhr7d != null && readinessRes?.rhr28d != null) ? readinessRes.rhr7d - readinessRes.rhr28d : null;
+    const confNumeric = confGrade === "High" ? 0.9 : confGrade === "Med" ? 0.65 : confGrade === "Low" ? 0.35 : null;
+
+    let dayClassifierResult: string | null = null;
+    try {
+      const dayMarks = await classifyDayRange(targetDate, targetDate, userId);
+      if (dayMarks.length > 0) dayClassifierResult = dayMarks[0].color;
+    } catch {}
+
+    let plateauForecastStatus: string | null = null;
+    let fatigueForecastStatus: string | null = null;
+    let peakForecastStatus: string | null = null;
+    try {
+      const forecast = buildForecastSummaryFromExistingOutputs({
+        strengthVelocityNowPctPerWeek: svNow,
+        strengthVelocityPrevPctPerWeek: svLen >= 2 ? svOverTime[svLen - 2].pctPerWeek : null,
+        strengthPhase,
+        adaptationStage: adaptStage,
+        strengthSignalQuality: signalQuality,
+        daysSincePhaseTransition: null,
+        plateauDetected: plateauResult.flagged,
+        readinessNow: readinessScore,
+        readinessPrev: null,
+        readinessConfidence: confNumeric,
+        hpaNow: hpaScore,
+        hpaPrev: null,
+        recoveryIndexNow: recoveryIdx.now,
+        recoveryIndexPrev: recoveryIdx.prev,
+        cortisolFlag,
+        sleepDeltaPct,
+        hrvDeltaPct,
+        rhrDelta: rhrDeltaBpm,
+        ffmVelocityNowLbPerWeek: ffmResult?.velocityLbPerWeek ?? null,
+        ffmVelocityPrevLbPerWeek: null,
+        waistVelocityNowInPerWeek: waistVel,
+        structuralConfidence: scsResult.total,
+        mode: modeResult.mode,
+      });
+      peakForecastStatus = forecast.peakStrength.status;
+      fatigueForecastStatus = forecast.fatigueRisk.status;
+      plateauForecastStatus = forecast.hypertrophyPlateau.status;
+    } catch {}
 
     return {
       date: targetDate,
-      readinessScore: readinessRes?.readinessScore ?? null,
+      readinessScore,
       readinessTier: readinessRes?.tier ?? null,
       readinessConfidenceGrade: confGrade,
-      hpaScore: hpaRes?.hpaScore ?? null,
+      hpaScore,
       recoveryIndexNow: recoveryIdx.now,
-      cortisolFlag: readinessRes?.cortisolFlag ?? false,
+      cortisolFlag,
       strengthVelocityPctPerWeek: svNow,
       ffmVelocityLbPerWeek: ffmResult?.velocityLbPerWeek ?? null,
       waistVelocityInPerWeek: waistVel,
       strengthPhase,
       adaptationStage: adaptStage,
       mode: modeResult.mode,
-      dayClassifier: null,
-      sleepDeltaPct: readinessRes?.sleepDelta != null ? Math.round(readinessRes.sleepDelta * 10000) / 100 : null,
-      hrvDeltaPct: readinessRes?.hrvDelta != null ? Math.round(readinessRes.hrvDelta * 10000) / 100 : null,
-      rhrDeltaBpm: (readinessRes?.rhr7d != null && readinessRes?.rhr28d != null) ? readinessRes.rhr7d - readinessRes.rhr28d : null,
+      dayClassifier: dayClassifierResult,
+      plateauForecastStatus,
+      fatigueForecastStatus,
+      peakForecastStatus,
+      sleepDeltaPct,
+      hrvDeltaPct,
+      rhrDeltaBpm,
       structuralConfidence: scsResult.total,
     };
   }
