@@ -103,8 +103,7 @@ import {
   applyCarryForward,
   getArchives,
 } from "./context-lens";
-import { weeklyDelta, suggestCalorieAdjustment, type DailyEntry } from "../lib/coaching-engine";
-import { classifyMode } from "../lib/structural-confidence";
+import { weeklyDelta, suggestCalorieAdjustment, ffmVelocity14d, type DailyEntry } from "../lib/coaching-engine";
 import type { StrengthBaselines } from "../lib/strength-index";
 import {
   computeReadiness,
@@ -120,6 +119,15 @@ import {
 } from "./readiness-engine";
 import { computeAndUpsertHpa, getHpaForDate, getHpaRange } from "./hpa-engine";
 import { bucketHpa, classifyHpaHrv, stateTooltip } from "./hpa-classifier";
+import { buildForecastSummaryFromExistingOutputs } from "./forecast-engine";
+import {
+  computeSCS,
+  classifyMode,
+  detectStrengthPlateau,
+  computeStrengthSignalQuality,
+  waistVelocity14d,
+} from "../lib/structural-confidence";
+import { classifyAdaptationStage } from "../lib/adaptation-stage";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -1973,7 +1981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pool.query(
           `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
                   bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
-                  fat_free_mass_lb, hrv, resting_hr
+                  fat_free_mass_lb, hrv, resting_hr, waist_in
            FROM daily_log WHERE user_id = $1 AND day >= $2 AND day <= $3
            ORDER BY day ASC`,
           [userId, from, to],
@@ -2004,6 +2012,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ohpReps: r.ohp_reps != null ? Number(r.ohp_reps) : undefined,
         ohpWeightLb: r.ohp_weight_lb != null ? Number(r.ohp_weight_lb) : undefined,
         fatFreeMassLb: r.fat_free_mass_lb != null ? Number(r.fat_free_mass_lb) : undefined,
+        waistIn: r.waist_in != null ? Number(r.waist_in) : undefined,
       })) as DailyEntry[];
       const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
 
@@ -2045,7 +2054,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
 
-      res.json({ from, to, days, points });
+      let forecast = null;
+      try {
+        const svLen = svOverTime.length;
+        const strengthVelocityNowPctPerWeek = svLen >= 1 ? svOverTime[svLen - 1].pctPerWeek : null;
+        const strengthVelocityPrevPctPerWeek = svLen >= 2 ? svOverTime[svLen - 2].pctPerWeek : null;
+
+        const { classifyStrengthPhase } = await import("../lib/strength-index");
+        const phaseResult = classifyStrengthPhase(strengthVelocityNowPctPerWeek);
+        const strengthPhase = phaseResult.phase;
+
+        const adaptationResult = classifyAdaptationStage(entries, strengthBaselines);
+        const adaptStage = adaptationResult.stage;
+
+        const signalQuality = computeStrengthSignalQuality(entries, strengthBaselines).score;
+
+        const modeResult = classifyMode(entries, strengthBaselines);
+        const plateauResult = detectStrengthPlateau(entries, strengthBaselines, modeResult.mode as any);
+        const plateauDetected = plateauResult.flagged;
+
+        const scsResult = computeSCS(entries, strengthBaselines);
+        const structuralConfidence = scsResult.total;
+
+        const validReadiness = readinessRows.filter((r: any) => r != null && r.readinessScore != null);
+        const rLen = validReadiness.length;
+        const latestReadiness = rLen >= 1 ? validReadiness[rLen - 1] : null;
+        const prevReadiness = rLen >= 2 ? validReadiness[rLen - 2] : null;
+        const readinessNow = latestReadiness?.readinessScore ?? null;
+        const readinessPrev = prevReadiness?.readinessScore ?? null;
+        const confGrade = latestReadiness?.confidenceGrade ?? "None";
+        const readinessConfidence = confGrade === "High" ? 0.9 : confGrade === "Med" ? 0.65 : confGrade === "Low" ? 0.35 : null;
+        const cortisolFlag = latestReadiness?.cortisolFlag ?? false;
+        const hrvDeltaPct = latestReadiness?.hrvDelta != null ? Math.round(latestReadiness.hrvDelta * 10000) / 100 : null;
+        const sleepDeltaPct = latestReadiness?.sleepDelta != null ? Math.round(latestReadiness.sleepDelta * 10000) / 100 : null;
+        const rhrDelta = (latestReadiness?.rhr7d != null && latestReadiness?.rhr28d != null)
+          ? latestReadiness.rhr7d - latestReadiness.rhr28d
+          : null;
+
+        const validHpa = hpaRows.filter(h => h.hpaScore != null);
+        const hLen = validHpa.length;
+        const hpaNow = hLen >= 1 ? validHpa[hLen - 1].hpaScore : null;
+        const hpaPrev = hLen >= 2 ? validHpa[hLen - 2].hpaScore : null;
+
+        const recoveryPairs: { hrv: number; rhr: number }[] = [];
+        for (const r of logRows.rows) {
+          if (r.hrv != null && r.resting_hr != null && Number(r.resting_hr) > 0) {
+            recoveryPairs.push({ hrv: Number(r.hrv), rhr: Number(r.resting_hr) });
+          }
+        }
+        const rpLen = recoveryPairs.length;
+        const recoveryIndexNow = rpLen >= 1 ? recoveryPairs[rpLen - 1].hrv / recoveryPairs[rpLen - 1].rhr : null;
+        const recoveryIndexPrev = rpLen >= 2 ? recoveryPairs[rpLen - 2].hrv / recoveryPairs[rpLen - 2].rhr : null;
+
+        const ffmResult = ffmVelocity14d(entries);
+        const ffmVelocityNow = ffmResult?.velocityLbPerWeek ?? null;
+        const midIdx = Math.max(0, entries.length - 14);
+        const ffmPrevEntries = entries.slice(0, midIdx > 0 ? midIdx : Math.floor(entries.length / 2));
+        const ffmPrevResult = ffmPrevEntries.length >= 14 ? ffmVelocity14d(ffmPrevEntries) : null;
+        const ffmVelocityPrev = ffmPrevResult?.velocityLbPerWeek ?? null;
+
+        const waistVel = waistVelocity14d(entries);
+
+        forecast = buildForecastSummaryFromExistingOutputs({
+          strengthVelocityNowPctPerWeek: strengthVelocityNowPctPerWeek,
+          strengthVelocityPrevPctPerWeek: strengthVelocityPrevPctPerWeek,
+          strengthPhase: strengthPhase,
+          adaptationStage: adaptStage,
+          strengthSignalQuality: signalQuality,
+          daysSincePhaseTransition: null,
+          plateauDetected: plateauDetected,
+          readinessNow: readinessNow,
+          readinessPrev: readinessPrev,
+          readinessConfidence: readinessConfidence,
+          hpaNow: hpaNow,
+          hpaPrev: hpaPrev,
+          recoveryIndexNow: recoveryIndexNow,
+          recoveryIndexPrev: recoveryIndexPrev,
+          cortisolFlag: cortisolFlag,
+          sleepDeltaPct: sleepDeltaPct,
+          hrvDeltaPct: hrvDeltaPct,
+          rhrDelta: rhrDelta,
+          ffmVelocityNowLbPerWeek: ffmVelocityNow,
+          ffmVelocityPrevLbPerWeek: ffmVelocityPrev,
+          waistVelocityNowInPerWeek: waistVel,
+          structuralConfidence: structuralConfidence,
+          mode: modeResult.mode,
+        });
+      } catch (forecastErr) {
+        console.error("forecast computation error (non-fatal):", forecastErr);
+      }
+
+      res.json({ from, to, days, points, forecast });
     } catch (err: unknown) {
       console.error("signals chart error:", err);
       res.status(500).json({ error: "Internal server error" });

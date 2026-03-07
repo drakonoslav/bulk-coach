@@ -16,6 +16,7 @@ import { loadEntries } from "@/lib/entry-storage";
 import { authFetch, getApiUrl } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
+import type { ForecastSummary } from "@/lib/forecast-types";
 import MuscleMapCard from "@/components/MuscleMapCard";
 import { MuscleState, transformIntelResponse, validateIntelSchema } from "@/lib/muscle_map_layout";
 import {
@@ -171,6 +172,7 @@ export default function DashboardScreen() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [signalPoints, setSignalPoints] = useState<SignalPoint[]>([]);
+  const [signalForecast, setSignalForecast] = useState<ForecastSummary | null>(null);
   const [signalDays, setSignalDays] = useState(30);
   const [muscleMapData, setMuscleMapData] = useState<MuscleState[]>([]);
   const [muscleMapDate, setMuscleMapDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -250,6 +252,7 @@ export default function DashboardScreen() {
       if (res.ok) {
         const data = await res.json();
         setSignalPoints(data.points || []);
+        setSignalForecast(data.forecast ?? null);
       }
     } catch {}
   }, []);
@@ -327,6 +330,7 @@ export default function DashboardScreen() {
           points={signalPoints}
           rangeDays={signalDays}
           onRangeChange={handleRangeChange}
+          forecast={signalForecast}
         />
 
         <MuscleMapCard

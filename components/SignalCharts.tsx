@@ -11,6 +11,7 @@ import {
 import { fmtDelta, fmtPctVal } from "@/lib/format";
 import Svg, { Path, Rect, Line, Text as SvgText } from "react-native-svg";
 import Colors from "@/constants/colors";
+import type { ForecastSummary, ForecastResult } from "@/lib/forecast-types";
 
 interface SignalPoint {
   date: string;
@@ -26,6 +27,7 @@ interface SignalChartsProps {
   points: SignalPoint[];
   rangeDays: number;
   onRangeChange: (days: number) => void;
+  forecast?: ForecastSummary | null;
 }
 
 const RANGES = [30, 60, 90];
@@ -113,7 +115,7 @@ const panelStyles = StyleSheet.create({
   },
 });
 
-export default function SignalCharts({ points, rangeDays, onRangeChange }: SignalChartsProps) {
+export default function SignalCharts({ points, rangeDays, onRangeChange, forecast }: SignalChartsProps) {
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const containerRef = useRef<View>(null);
@@ -574,6 +576,90 @@ export default function SignalCharts({ points, rangeDays, onRangeChange }: Signa
           <Text style={styles.emptyText}>No signal data yet</Text>
         </View>
       )}
+
+      {forecast && <ForecastCards forecast={forecast} />}
+    </View>
+  );
+}
+
+const FORECAST_STATUS_LABELS: Record<string, string> = {
+  rising: "Rising",
+  near_peak: "Near peak",
+  past_peak: "Past peak",
+  stable: "Stable",
+  rising_risk: "Rising risk",
+  high_risk: "High risk",
+  progressing: "Progressing",
+  slowing: "Slowing",
+  plateau_likely: "Plateau likely",
+  insufficient_data: "Insufficient data",
+};
+
+const FORECAST_STATUS_COLORS: Record<string, string> = {
+  rising: "#00D4AA",
+  near_peak: "#FBBF24",
+  past_peak: "#EF4444",
+  stable: "#00D4AA",
+  rising_risk: "#FBBF24",
+  high_risk: "#EF4444",
+  progressing: "#00D4AA",
+  slowing: "#FBBF24",
+  plateau_likely: "#EF4444",
+  insufficient_data: "rgba(255,255,255,0.25)",
+};
+
+const CONF_COLORS: Record<string, string> = {
+  high: "#00D4AA",
+  medium: "#FBBF24",
+  low: "rgba(255,255,255,0.3)",
+};
+
+function ForecastRow({ label, result }: { label: string; result: ForecastResult }) {
+  const statusLabel = FORECAST_STATUS_LABELS[result.status] ?? result.status;
+  const statusColor = FORECAST_STATUS_COLORS[result.status] ?? "rgba(255,255,255,0.5)";
+  const confColor = CONF_COLORS[result.confidence] ?? "rgba(255,255,255,0.3)";
+  const windowText = result.window.daysMin != null && result.window.daysMax != null
+    ? `${result.window.daysMin}–${result.window.daysMax}d`
+    : null;
+
+  return (
+    <View style={fcStyles.row}>
+      <View style={fcStyles.rowHeader}>
+        <Text style={fcStyles.rowLabel}>{label}</Text>
+        <View style={[fcStyles.confBadge, { borderColor: confColor }]}>
+          <Text style={[fcStyles.confText, { color: confColor }]}>{result.confidence}</Text>
+        </View>
+      </View>
+      <View style={fcStyles.statusRow}>
+        <View style={[fcStyles.statusDot, { backgroundColor: statusColor }]} />
+        <Text style={[fcStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+        {windowText && (
+          <Text style={fcStyles.windowText}>{windowText}</Text>
+        )}
+      </View>
+      {result.drivers.length > 0 && (
+        <View style={fcStyles.driversWrap}>
+          {result.drivers.slice(0, 3).map((d, i) => (
+            <Text key={i} style={fcStyles.driverText}>• {d}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ForecastCards({ forecast }: { forecast: ForecastSummary }) {
+  return (
+    <View style={fcStyles.container}>
+      <View style={fcStyles.headerRow}>
+        <Text style={fcStyles.sectionTitle}>FORECAST</Text>
+        <Text style={fcStyles.sectionSubtitle}>deterministic projection</Text>
+      </View>
+      <ForecastRow label="Peak Strength" result={forecast.peakStrength} />
+      <View style={styles.separator} />
+      <ForecastRow label="Fatigue Risk" result={forecast.fatigueRisk} />
+      <View style={styles.separator} />
+      <ForecastRow label="Hypertrophy Plateau" result={forecast.hypertrophyPlateau} />
     </View>
   );
 }
@@ -716,5 +802,89 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontFamily: "Rubik_500Medium",
     marginLeft: 2,
+  },
+});
+
+const fcStyles = StyleSheet.create({
+  container: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontFamily: "Rubik_500Medium",
+    color: "rgba(255,255,255,0.35)",
+    letterSpacing: 2,
+    textTransform: "uppercase" as const,
+  },
+  sectionSubtitle: {
+    fontSize: 9,
+    fontFamily: "Rubik_400Regular",
+    color: "rgba(255,255,255,0.2)",
+  },
+  row: {
+    paddingVertical: 8,
+  },
+  rowHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  rowLabel: {
+    fontSize: 11,
+    fontFamily: "Rubik_500Medium",
+    color: "rgba(255,255,255,0.75)",
+  },
+  confBadge: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  confText: {
+    fontSize: 8,
+    fontFamily: "Rubik_500Medium",
+    textTransform: "uppercase" as const,
+    letterSpacing: 1,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 3,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 12,
+    fontFamily: "Rubik_600SemiBold",
+  },
+  windowText: {
+    fontSize: 11,
+    fontFamily: "Rubik_400Regular",
+    color: "rgba(255,255,255,0.5)",
+    marginLeft: 4,
+  },
+  driversWrap: {
+    marginTop: 2,
+    paddingLeft: 12,
+  },
+  driverText: {
+    fontSize: 9,
+    fontFamily: "Rubik_400Regular",
+    color: "rgba(255,255,255,0.35)",
+    lineHeight: 14,
   },
 });
