@@ -2123,7 +2123,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const prevWindowEnd = Math.max(0, entries.length - 14);
         const ffmPrevEntries = prevWindowEnd >= 14 ? entries.slice(0, prevWindowEnd) : null;
         const ffmPrevResult = ffmPrevEntries ? ffmVelocity14d(ffmPrevEntries) : null;
-        const ffmVelocityPrev = ffmPrevResult?.velocityLbPerWeek ?? null;
+        let ffmVelocityPrev = ffmPrevResult?.velocityLbPerWeek ?? null;
+        let ffmPrevIsFallback = false;
+
+        if (
+          ffmVelocityPrev == null &&
+          ffmVelocityNow != null &&
+          strengthVelocityNowPctPerWeek != null &&
+          strengthVelocityPrevPctPerWeek != null
+        ) {
+          for (let split = Math.max(prevWindowEnd, 3); split < entries.length - 2; split++) {
+            const fallbackEntries = entries.slice(0, split);
+            const validFfmCount = fallbackEntries.filter(e => e.fatFreeMassLb != null).length;
+            if (validFfmCount >= 3) {
+              const fallbackResult = ffmVelocity14d(fallbackEntries);
+              if (fallbackResult) {
+                ffmVelocityPrev = fallbackResult.velocityLbPerWeek;
+                ffmPrevIsFallback = true;
+                break;
+              }
+            }
+          }
+        }
 
         const waistVel = waistVelocity14d(entries);
 
@@ -2152,6 +2173,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           structuralConfidence: structuralConfidence,
           mode: modeResult.mode,
         });
+
+        if (ffmPrevIsFallback && forecast?.hypertrophyPlateau) {
+          const hp = forecast.hypertrophyPlateau;
+          if (hp.confidence === "high") hp.confidence = "medium";
+          else if (hp.confidence === "medium") hp.confidence = "low";
+          if (!hp.drivers.includes("using shortened prior FFM comparison window")) {
+            hp.drivers.push("using shortened prior FFM comparison window");
+          }
+        }
       } catch (forecastErr) {
         console.error("forecast computation error (non-fatal):", forecastErr);
       }
