@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,7 +15,19 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase } from "@/hooks/useWorkoutEngine";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, authFetch, getApiUrl } from "@/lib/query-client";
+
+const READINESS_CHIPS = [50, 60, 70, 75, 80, 90, 100];
+
+function snapToChip(score: number): number {
+  let best = READINESS_CHIPS[0];
+  let bestDist = Math.abs(score - best);
+  for (const v of READINESS_CHIPS) {
+    const d = Math.abs(score - v);
+    if (d < bestDist) { best = v; bestDist = d; }
+  }
+  return best;
+}
 
 interface CoachPrompt {
   phase: "COMPOUND" | "ISOLATION";
@@ -157,7 +170,37 @@ export default function WorkoutScreen() {
   const [readinessInput, setReadinessInput] = useState(
     params.readiness ? parseInt(params.readiness, 10) : 75
   );
+  const [readinessLoading, setReadinessLoading] = useState(!params.readiness);
+  const [readinessAuto, setReadinessAuto] = useState<number | null>(null);
+  const manualOverrideRef = React.useRef(false);
   const [nextPrompt, setNextPrompt] = useState<CoachPrompt | null>(null);
+
+  useEffect(() => {
+    if (params.readiness) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const url = new URL(`/api/readiness?date=${today}`, getApiUrl());
+        const res = await authFetch(url.toString());
+        if (cancelled) return;
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const score = data?.readinessScore;
+        if (typeof score === "number" && score > 0) {
+          const snapped = snapToChip(Math.round(score));
+          setReadinessAuto(snapped);
+          if (!manualOverrideRef.current) {
+            setReadinessInput(snapped);
+          }
+        }
+      } catch {} finally {
+        if (!cancelled) setReadinessLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const isActive = engine.status === "active" || engine.status === "logging";
   const currentPhase = engine.state?.phase || "COMPOUND";
@@ -252,12 +295,24 @@ export default function WorkoutScreen() {
 
             <View style={styles.readinessSection}>
               <Text style={styles.inputLabel}>Readiness Score</Text>
+              {readinessLoading ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={{ color: Colors.textSecondary, fontSize: 13, fontFamily: "Rubik_400Regular" }}>
+                    Loading today's readiness…
+                  </Text>
+                </View>
+              ) : readinessAuto != null ? (
+                <Text style={{ color: Colors.textSecondary, fontSize: 12, fontFamily: "Rubik_400Regular", marginBottom: 6 }}>
+                  Auto-detected: {readinessAuto} (tap to override)
+                </Text>
+              ) : null}
               <View style={styles.readinessChips}>
-                {[50, 60, 70, 75, 80, 90, 100].map(v => (
+                {READINESS_CHIPS.map(v => (
                   <Pressable
                     key={v}
                     style={[styles.chip, readinessInput === v && styles.chipActive]}
-                    onPress={() => setReadinessInput(v)}
+                    onPress={() => { manualOverrideRef.current = true; setReadinessInput(v); }}
                   >
                     <Text style={[styles.chipText, readinessInput === v && styles.chipTextActive]}>{v}</Text>
                   </Pressable>
