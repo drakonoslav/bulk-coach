@@ -52,7 +52,7 @@ import {
   type WorkoutEvent,
   type MuscleGroup,
 } from "./workout-engine";
-import { fireIntelLogSet, fireIntelSessionClose, gameKeyToIntelTargets } from "./intel-writer";
+import { fireIntelLogSet, fireIntelSessionClose, gameKeyToIntelTargets, resolveSetIntent } from "./intel-writer";
 import {
   pickIsolationTargets,
   fallbackIsolation,
@@ -3565,13 +3565,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const intelTargets = gameKeyToIntelTargets(muscle as string);
       if (intelTargets.length > 0) {
         const eventId = req.body.event_id as string | undefined;
+        const intent = resolveSetIntent(muscle as string, !!event.isCompound);
         fireIntelLogSet({
           event_id: eventId || `${sessionId}_s${Date.now()}`,
           session_id: sessionId,
           muscle_targets: intelTargets,
-          movement_type: event.isCompound ? "compound" : "isolation",
+          movement_type: intent.movementType,
           rpe: rpe ?? null,
           performed_at: today,
+          estimated_tonnage: intent.estimatedTonnage,
         }).catch(() => {});
       }
     } catch (err) {

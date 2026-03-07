@@ -1,28 +1,57 @@
 const INTEL_BASE = process.env.LIFTING_INTEL_BASE_URL || "";
 const INTEL_TIMEOUT_MS = 3000;
 
-const GAME_TO_INTEL: Record<string, number[]> = {
-  chest_upper: [17],
-  chest_mid: [17],
-  chest_lower: [17],
-  back_lats: [16],
-  back_upper: [13],
-  back_mid: [14],
-  delts_front: [5],
-  delts_side: [7],
-  delts_rear: [6],
-  biceps: [2],
-  triceps: [3],
-  quads: [23],
-  hamstrings: [24],
-  glutes: [20],
-  calves: [26],
-  abs: [19],
-  neck: [8],
+type SetIntent = "direct_isolation" | "compound_primary" | "compound_secondary";
+
+interface MuscleProfile {
+  intelIds: number[];
+  intent: SetIntent;
+  compoundTonnage: number;
+  isolationTonnage: number;
+}
+
+const MUSCLE_PROFILES: Record<string, MuscleProfile> = {
+  chest_upper:  { intelIds: [17], intent: "compound_primary",   compoundTonnage: 2800, isolationTonnage: 800 },
+  chest_mid:    { intelIds: [17], intent: "compound_primary",   compoundTonnage: 3200, isolationTonnage: 900 },
+  chest_lower:  { intelIds: [17], intent: "compound_secondary", compoundTonnage: 2400, isolationTonnage: 700 },
+  back_lats:    { intelIds: [16], intent: "compound_primary",   compoundTonnage: 3000, isolationTonnage: 1000 },
+  back_upper:   { intelIds: [13], intent: "compound_secondary", compoundTonnage: 2200, isolationTonnage: 800 },
+  back_mid:     { intelIds: [14], intent: "compound_secondary", compoundTonnage: 2400, isolationTonnage: 800 },
+  delts_front:  { intelIds: [5],  intent: "compound_secondary", compoundTonnage: 1600, isolationTonnage: 500 },
+  delts_side:   { intelIds: [7],  intent: "direct_isolation",   compoundTonnage: 800,  isolationTonnage: 500 },
+  delts_rear:   { intelIds: [6],  intent: "direct_isolation",   compoundTonnage: 800,  isolationTonnage: 500 },
+  biceps:       { intelIds: [2],  intent: "direct_isolation",   compoundTonnage: 1200, isolationTonnage: 600 },
+  triceps:      { intelIds: [3],  intent: "direct_isolation",   compoundTonnage: 1400, isolationTonnage: 700 },
+  quads:        { intelIds: [23], intent: "compound_primary",   compoundTonnage: 4000, isolationTonnage: 1500 },
+  hamstrings:   { intelIds: [24], intent: "compound_primary",   compoundTonnage: 3000, isolationTonnage: 1200 },
+  glutes:       { intelIds: [20], intent: "compound_primary",   compoundTonnage: 3500, isolationTonnage: 1000 },
+  calves:       { intelIds: [26], intent: "direct_isolation",   compoundTonnage: 600,  isolationTonnage: 600 },
+  abs:          { intelIds: [19], intent: "direct_isolation",   compoundTonnage: 400,  isolationTonnage: 400 },
+  neck:         { intelIds: [8],  intent: "direct_isolation",   compoundTonnage: 300,  isolationTonnage: 300 },
 };
 
 export function gameKeyToIntelTargets(gameKey: string): number[] {
-  return GAME_TO_INTEL[gameKey] || [];
+  return MUSCLE_PROFILES[gameKey]?.intelIds || [];
+}
+
+export function resolveSetIntent(gameKey: string, isCompound: boolean): {
+  movementType: "compound" | "isolation";
+  estimatedTonnage: number;
+} {
+  const profile = MUSCLE_PROFILES[gameKey];
+  if (!profile) {
+    return { movementType: isCompound ? "compound" : "isolation", estimatedTonnage: isCompound ? 500 : 200 };
+  }
+
+  if (isCompound) {
+    return { movementType: "compound", estimatedTonnage: profile.compoundTonnage };
+  }
+
+  if (profile.intent === "compound_primary" || profile.intent === "compound_secondary") {
+    return { movementType: "isolation", estimatedTonnage: profile.isolationTonnage };
+  }
+
+  return { movementType: "isolation", estimatedTonnage: profile.isolationTonnage };
 }
 
 interface LogSetPayload {
@@ -32,6 +61,7 @@ interface LogSetPayload {
   movement_type: "compound" | "isolation";
   rpe: number | null;
   performed_at: string;
+  estimated_tonnage?: number;
 }
 
 interface SessionClosePayload {
@@ -61,7 +91,7 @@ export async function fireIntelLogSet(payload: LogSetPayload): Promise<void> {
       const body = await res.text().catch(() => "");
       console.error(`[intel-writer] log-set failed: status=${res.status} event_id=${payload.event_id} body=${body.slice(0, 200)}`);
     } else {
-      console.log(`[intel-writer] log-set OK: event_id=${payload.event_id} session_id=${payload.session_id}`);
+      console.log(`[intel-writer] log-set OK: event_id=${payload.event_id} session_id=${payload.session_id} tonnage=${payload.estimated_tonnage ?? "default"}`);
     }
   } catch (err: any) {
     const reason = err.name === "AbortError" ? "timeout" : err.message;
