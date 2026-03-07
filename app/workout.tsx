@@ -20,7 +20,7 @@ import Colors from "@/constants/colors";
 import { useWorkoutEngine, MUSCLE_LABELS, type MuscleGroup, type WorkoutPhase, type ExerciseRecommendation } from "@/hooks/useWorkoutEngine";
 import { apiRequest, authFetch, getApiUrl } from "@/lib/query-client";
 
-const ENABLE_EXERCISE_PICKER = false;
+const ENABLE_EXERCISE_PICKER = true;
 
 const READINESS_CHIPS = [50, 60, 70, 75, 80, 90, 100];
 
