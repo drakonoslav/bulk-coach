@@ -145,6 +145,9 @@ export function useWorkoutEngine() {
     setStatus("logging");
     setError(null);
 
+    const setIndex = (state.compoundSets || 0) + (state.isolationSets || 0) + 1;
+    const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
+
     try {
       const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/set`, {
         muscle,
@@ -155,6 +158,7 @@ export function useWorkoutEngine() {
         isolationSets: state.isolationSets,
         phase: state.phase,
         strainPoints: state.strainPoints,
+        event_id: eventId,
       });
 
       setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });

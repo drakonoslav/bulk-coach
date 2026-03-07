@@ -52,6 +52,7 @@ import {
   type WorkoutEvent,
   type MuscleGroup,
 } from "./workout-engine";
+import { fireIntelLogSet, fireIntelSessionClose, gameKeyToIntelTargets } from "./intel-writer";
 import {
   pickIsolationTargets,
   fallbackIsolation,
@@ -3385,6 +3386,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       await upsertWorkoutSession(w);
       res.json({ ok: true, session_id: w.session_id } as { ok: true; session_id: string });
+
+      if (p.session_id && p.start_ts) {
+        fireIntelSessionClose({
+          session_id: p.session_id,
+          started_at: ensureUTCTimestamp(p.start_ts),
+          ended_at: p.end_ts ? ensureUTCTimestamp(p.end_ts) : new Date().toISOString(),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("workout session upsert error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -3552,6 +3561,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
       res.json(updatedState);
+
+      const intelTargets = gameKeyToIntelTargets(muscle as string);
+      if (intelTargets.length > 0) {
+        const eventId = req.body.event_id as string | undefined;
+        fireIntelLogSet({
+          event_id: eventId || `${sessionId}_s${Date.now()}`,
+          session_id: sessionId,
+          muscle_targets: intelTargets,
+          movement_type: event.isCompound ? "compound" : "isolation",
+          rpe: rpe ?? null,
+          performed_at: today,
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("workout set error:", err);
       res.status(500).json({ error: "Internal server error" });

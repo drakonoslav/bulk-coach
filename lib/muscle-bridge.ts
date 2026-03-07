@@ -151,4 +151,24 @@ export function isDroppingTooMany(bridgeResult: BridgeResult, minRequired: numbe
   return uniqueMuscleSlots < minRequired;
 }
 
-export { DROPPED_MUSCLE_IDS };
+const GAME_TO_INTEL: Record<string, number[]> = {
+  chest_upper: [17],
+  chest_mid: [17],
+  chest_lower: [17],
+  back_lats: [16],
+  back_upper: [13],
+  back_mid: [14],
+  delts_front: [5],
+  delts_side: [7],
+  delts_rear: [6],
+  biceps: [2],
+  triceps: [3],
+  quads: [23],
+  hamstrings: [24],
+  glutes: [20],
+  calves: [26],
+  abs: [19],
+  neck: [8],
+};
+
+export { DROPPED_MUSCLE_IDS, GAME_TO_INTEL };
