@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { apiRequest } from "@/lib/query-client";
+import { collapseIntelPriority, isDroppingTooMany } from "@/lib/muscle-bridge";
+import type { IntelPriorityResponse } from "@/lib/muscle-bridge";
 
 export type WorkoutPhase = "COMPOUND" | "ISOLATION";
 export type MuscleGroup =
@@ -97,6 +99,43 @@ export function useWorkoutEngine() {
     }
   }, []);
 
+  const fetchIsolationTargets = useCallback(async (readinessScore: number, dayType: string = "FULL_BODY") => {
+    const today = new Date().toISOString().slice(0, 10);
+    let intelUsed = false;
+
+    try {
+      const intelPromise = getJson(`/api/intel/game/muscle-priority?mode=isolation&date=${today}&top_n=5`);
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 3000)
+      );
+      const data: IntelPriorityResponse = await Promise.race([intelPromise, timeoutPromise]) as IntelPriorityResponse;
+      const bridge = collapseIntelPriority(data.queue || []);
+      console.log(`[intel-bridge] isolation: mapped=${bridge.mapped}, dropped=${bridge.dropped}, droppedNames=[${bridge.droppedNames.join(",")}], resultCount=${bridge.muscles.length}`);
+
+      if (!isDroppingTooMany(bridge, 3)) {
+        setIsolationTargets(bridge.muscles.slice(0, 5));
+        intelUsed = true;
+        console.log(`[intel-bridge] isolation targets from Intel: [${bridge.muscles.slice(0, 5).join(",")}]`);
+      } else {
+        console.log(`[intel-bridge] isolation: too many dropped, falling back to local`);
+      }
+    } catch (err: any) {
+      console.log(`[intel-bridge] isolation: Intel fetch failed (${err.message}), falling back to local`);
+    }
+
+    if (!intelUsed) {
+      try {
+        const targets = await postJson("/api/muscle/isolation-targets", {
+          readinessScore,
+          dayType,
+          count: 3,
+        });
+        setIsolationTargets(targets.targets || []);
+        console.log(`[intel-bridge] isolation targets from local fallback: [${(targets.targets || []).join(",")}]`);
+      } catch {}
+    }
+  }, []);
+
   const logSet = useCallback(async (
     muscle: MuscleGroup,
     rpe: number,
@@ -118,18 +157,12 @@ export function useWorkoutEngine() {
         strainPoints: state.strainPoints,
       });
 
-      setState(result);
+      setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });
       setStatus("active");
 
       if (result.phase === "ISOLATION" && state.phase === "COMPOUND") {
-        try {
-          const targets = await postJson("/api/muscle/isolation-targets", {
-            readinessScore: 100 * Math.pow(result.cbpStart / 100, 1 / 1.4),
-            dayType: "FULL_BODY",
-            count: 3,
-          });
-          setIsolationTargets(targets.targets || []);
-        } catch {}
+        const derivedReadiness = 100 * Math.pow(result.cbpStart / 100, 1 / 1.4);
+        await fetchIsolationTargets(derivedReadiness, "FULL_BODY");
       }
 
       return result;
@@ -138,18 +171,7 @@ export function useWorkoutEngine() {
       setStatus("active");
       return null;
     }
-  }, [state]);
-
-  const fetchIsolationTargets = useCallback(async (readinessScore: number, dayType: string = "FULL_BODY") => {
-    try {
-      const targets = await postJson("/api/muscle/isolation-targets", {
-        readinessScore,
-        dayType,
-        count: 3,
-      });
-      setIsolationTargets(targets.targets || []);
-    } catch {}
-  }, []);
+  }, [state, fetchIsolationTargets]);
 
   const endWorkout = useCallback(async (opts?: { polarOwned?: boolean }) => {
     if (!state) return;

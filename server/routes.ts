@@ -3609,11 +3609,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const setsLeft = Math.max(1, Math.floor(cbpCurrent / 10));
         promptTitle = "Compounds available";
         promptBody = `You have budget for ~${setsLeft} more compound sets. Focus on large muscle groups for maximum stimulus.`;
-        const compoundOptions: MuscleGroup[] = ["chest_upper", "chest_mid", "back_lats", "back_upper", "quads", "hamstrings", "glutes"];
-        const deficits = compoundOptions
-          .map(m => ({ m, deficit: (DEFAULT_WEEKLY_TARGETS[m] || 10) - (loads[m] || 0) }))
-          .sort((a, b) => b.deficit - a.deficit);
-        recommendedMuscles = deficits.slice(0, 3).map(d => d.m);
+
+        let intelUsed = false;
+        if (INTEL_BASE) {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const ir = await fetch(
+              `${INTEL_BASE}/game/muscle-priority?mode=compound&date=${encodeURIComponent(today)}&top_n=5`,
+              { signal: controller.signal }
+            );
+            clearTimeout(timeout);
+            if (ir.ok) {
+              const { collapseIntelPriority, isDroppingTooMany } = await import("../lib/muscle-bridge");
+              const prioData = await ir.json();
+              const bridge = collapseIntelPriority(prioData.queue || []);
+              console.log(`[intel-bridge] compound: mapped=${bridge.mapped}, dropped=${bridge.dropped}, droppedNames=[${bridge.droppedNames.join(",")}], resultCount=${bridge.muscles.length}`);
+              if (!isDroppingTooMany(bridge, 3)) {
+                recommendedMuscles = bridge.muscles.slice(0, 7);
+                intelUsed = true;
+                console.log(`[intel-bridge] compound recommendations from Intel: [${recommendedMuscles.join(",")}]`);
+              } else {
+                console.log(`[intel-bridge] compound: too many dropped, filling from local fallback`);
+              }
+            } else {
+              console.log(`[intel-bridge] compound: Intel returned ${ir.status}, using local fallback`);
+            }
+          } catch (intelErr: any) {
+            console.log(`[intel-bridge] compound: Intel fetch failed (${intelErr.name === "AbortError" ? "timeout" : intelErr.message}), using local fallback`);
+          }
+        }
+
+        if (!intelUsed) {
+          const compoundOptions: MuscleGroup[] = ["chest_upper", "chest_mid", "back_lats", "back_upper", "quads", "hamstrings", "glutes"];
+          const deficits = compoundOptions
+            .map(m => ({ m, deficit: (DEFAULT_WEEKLY_TARGETS[m] || 10) - (loads[m] || 0) }))
+            .sort((a, b) => b.deficit - a.deficit);
+          recommendedMuscles = deficits.slice(0, 3).map(d => d.m);
+          console.log(`[intel-bridge] compound recommendations from local fallback: [${recommendedMuscles.join(",")}]`);
+        }
+
         if (cbpCurrent <= 40) {
           stopRule = `CBP is low (${Math.round(cbpCurrent)}). Switch to isolation after next set if RPE >= 8.`;
         }
@@ -4489,6 +4524,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return intelProxy(r, res);
     } catch (err: any) {
       console.error("GET /api/intel/strength/day error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/game/muscle-state", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/muscle-state?date=${encodeURIComponent(date)}`);
+      if (!r.ok) {
+        console.log(`[intel-bridge] GET /game/muscle-state returned ${r.status}`);
+        return intelProxy(r, res);
+      }
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/muscle-state error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/game/muscle-priority", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const mode = (req.query.mode as string) || "compound";
+    const topN = (req.query.top_n as string) || "5";
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/muscle-priority?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&top_n=${encodeURIComponent(topN)}`);
+      if (!r.ok) {
+        console.log(`[intel-bridge] GET /game/muscle-priority?mode=${mode} returned ${r.status}`);
+        return intelProxy(r, res);
+      }
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/muscle-priority error:", err);
       return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });
