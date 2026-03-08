@@ -227,6 +227,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.error(`[startup-cleanup] lift time cleanup error: ${err.message}`);
   }
 
+  try {
+    const fixSessions = await pool.query(`
+      UPDATE workout_session SET date = (start_ts AT TIME ZONE timezone)::date
+      WHERE source = 'workout_game'
+        AND timezone IS NOT NULL
+        AND date IS DISTINCT FROM (start_ts AT TIME ZONE timezone)::date
+      RETURNING session_id, date AS new_date
+    `);
+    if (fixSessions.rowCount && fixSessions.rowCount > 0) {
+      console.log(`[startup-cleanup] Fixed ${fixSessions.rowCount} workout_session dates to local timezone`);
+    }
+    const fixSets = await pool.query(`
+      UPDATE strength_sets s SET day = to_char(ws.date, 'YYYY-MM-DD')
+      FROM workout_session ws
+      WHERE s.source = 'workout_game'
+        AND s.id LIKE ws.session_id || '_%'
+        AND s.day != to_char(ws.date, 'YYYY-MM-DD')
+        AND ws.date IS NOT NULL
+      RETURNING s.id, s.day AS new_day
+    `);
+    if (fixSets.rowCount && fixSets.rowCount > 0) {
+      console.log(`[startup-cleanup] Re-filed ${fixSets.rowCount} strength_sets rows to correct day`);
+    }
+    const fixBridge = await pool.query(`
+      UPDATE daily_game_bridge_entries b SET day = to_char(ws.date, 'YYYY-MM-DD')
+      FROM workout_session ws
+      WHERE ws.session_id = b.session_id
+        AND b.day != to_char(ws.date, 'YYYY-MM-DD')
+        AND ws.date IS NOT NULL
+      RETURNING b.id, b.day AS new_day
+    `);
+    if (fixBridge.rowCount && fixBridge.rowCount > 0) {
+      console.log(`[startup-cleanup] Re-filed ${fixBridge.rowCount} bridge entries to correct day`);
+    }
+  } catch (err: any) {
+    console.error(`[startup-cleanup] day re-file error: ${err.message}`);
+  }
+
   setInterval(() => {
     try {
       if (!fs.existsSync(CHUNK_DIR)) return;
