@@ -353,24 +353,29 @@ function ChartPanel({
   subtitle,
   children,
   chartWidth,
-  inlineLabels,
+  legendRows,
 }: {
   height: number;
   label: string;
   subtitle?: string;
   children: React.ReactNode;
   chartWidth: number;
-  inlineLabels?: { text: string; color: string }[];
+  legendRows?: { text: string; color: string }[][];
 }) {
+  const legendH = legendRows ? legendRows.length * 14 : 0;
   return (
-    <View style={[panelStyles.container, { height: height + (subtitle ? 32 : 22) }]}>
-      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 4, marginLeft: 2, flexWrap: "wrap" }}>
+    <View style={[panelStyles.container, { height: height + (subtitle ? 32 : 22) + legendH }]}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: legendRows ? 2 : 4, marginLeft: 2 }}>
         <Text style={panelStyles.label}>{label}</Text>
         {subtitle && <Text style={panelStyles.subtitle}>{subtitle}</Text>}
-        {inlineLabels && inlineLabels.map((il, idx) => (
-          <Text key={idx} style={{ fontSize: 9, fontWeight: "800", color: il.color, letterSpacing: 1.2 }}>{il.text}</Text>
-        ))}
       </View>
+      {legendRows && legendRows.map((row, ri) => (
+        <View key={ri} style={{ flexDirection: "row", gap: 8, marginLeft: 2, marginBottom: ri < legendRows.length - 1 ? 1 : 3 }}>
+          {row.map((il, ci) => (
+            <Text key={ci} style={{ fontSize: 7.5, fontWeight: "800" as const, color: il.color, letterSpacing: 1.0 }}>{il.text}</Text>
+          ))}
+        </View>
+      ))}
       <View style={{ height, overflow: "hidden" }}>
         {chartWidth > 0 && children}
       </View>
@@ -648,10 +653,17 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         <View style={styles.separator} />
 
-        <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth} inlineLabels={[
-          { text: "AWAKE", color: C_AWAKE_IN_BED },
-          { text: "LATENCY", color: C_LATENCY },
-          { text: "WASO", color: C_WASO },
+        <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth} legendRows={[
+          [
+            { text: "AWAKE", color: C_AWAKE_IN_BED },
+            { text: "LATENCY", color: C_LATENCY },
+            { text: "WASO", color: C_WASO },
+          ],
+          [
+            { text: "INSTABILITY", color: C_BLEND_LW },
+            { text: "FRAGMENTATION", color: C_BLEND_WA },
+            { text: "DYSREGULATION", color: C_BLEND_LA },
+          ],
         ]}>
           <Svg width={chartWidth} height={CAPACITY_H}>
             {[0, 25, 50, 75, 100].map((v) => {
