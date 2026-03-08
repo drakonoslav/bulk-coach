@@ -1600,9 +1600,12 @@ export default function LogScreen() {
                       )}
                     </View>
                     {exSets.map((s, j) => (
-                      <View key={j} style={{ flexDirection: "row", alignItems: "center", marginLeft: 16, marginBottom: 2 }}>
+                      <View key={j} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginLeft: 16, marginBottom: 2 }}>
                         <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
-                          {s.weight} lb × {s.reps} reps · RIR {s.rir} · {Math.round(s.tonnage).toLocaleString()} lb
+                          {s.weight} lb × {s.reps} reps · RIR {s.rir}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          {Math.round(s.tonnage).toLocaleString()} lb
                         </Text>
                       </View>
                     ))}
