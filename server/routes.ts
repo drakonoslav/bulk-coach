@@ -3470,7 +3470,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
              END,
              updated_at = NOW()`,
           [userId, derivedDate, startTs, endTs, durationMin, workingMin]
-        ).catch((err: any) => console.error("[game-session] daily_log merge error:", err.message));
+        ).then((r: any) => {
+          console.log(`[game-session] daily_log merge OK: day=${derivedDate} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
+        }).catch((err: any) => console.error("[game-session] daily_log merge error:", err.message));
       }
     } catch (err) {
       console.error("workout session upsert error:", err);

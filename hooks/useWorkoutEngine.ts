@@ -319,14 +319,19 @@ export function useWorkoutEngine() {
 
     try {
       const endTs = new Date().toISOString();
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const localParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date(state.start_ts));
+      const localDate = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       await postJson("/api/canonical/workouts/upsert-session", {
         session_id: state.session_id,
-        date: state.start_ts.slice(0, 10),
+        date: localDate,
         start_ts: state.start_ts,
         end_ts: endTs,
         workout_type: "strength",
         source: "workout_game",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: tz,
       });
       setStatus("finished");
     } catch (err: any) {
