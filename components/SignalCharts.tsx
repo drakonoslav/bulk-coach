@@ -353,18 +353,23 @@ function ChartPanel({
   subtitle,
   children,
   chartWidth,
+  inlineLabels,
 }: {
   height: number;
   label: string;
   subtitle?: string;
   children: React.ReactNode;
   chartWidth: number;
+  inlineLabels?: { text: string; color: string }[];
 }) {
   return (
     <View style={[panelStyles.container, { height: height + (subtitle ? 32 : 22) }]}>
-      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 4, marginLeft: 2 }}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 4, marginLeft: 2, flexWrap: "wrap" }}>
         <Text style={panelStyles.label}>{label}</Text>
         {subtitle && <Text style={panelStyles.subtitle}>{subtitle}</Text>}
+        {inlineLabels && inlineLabels.map((il, idx) => (
+          <Text key={idx} style={{ fontSize: 9, fontWeight: "800", color: il.color, letterSpacing: 1.2 }}>{il.text}</Text>
+        ))}
       </View>
       <View style={{ height, overflow: "hidden" }}>
         {chartWidth > 0 && children}
@@ -643,7 +648,11 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         <View style={styles.separator} />
 
-        <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth}>
+        <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth} inlineLabels={[
+          { text: "AWAKE", color: C_AWAKE_IN_BED },
+          { text: "LATENCY", color: C_LATENCY },
+          { text: "WASO", color: C_WASO },
+        ]}>
           <Svg width={chartWidth} height={CAPACITY_H}>
             {[0, 25, 50, 75, 100].map((v) => {
               const y = PAD_T + ((100 - v) / 100) * (CAPACITY_H - PAD_T - PAD_B);
