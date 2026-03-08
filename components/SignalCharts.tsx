@@ -219,22 +219,19 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
   const disruptionSeries = useMemo(() => {
     const pctToY = (pct: number) => PAD_T + ((100 - pct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
-    const WINDOW = 7;
     const buildSeries = (getter: (p: SignalPoint) => number | null) => {
       const raw: { x: number; y: number }[] = [];
-      const avg: { x: number; y: number }[] = [];
-      const buf: number[] = [];
+      const vals: number[] = [];
       points.forEach((p, i) => {
         const v = getter(p);
         if (v != null) {
           raw.push({ x: xForIdx(i), y: pctToY(v) });
-          buf.push(v);
-          if (buf.length > WINDOW) buf.shift();
-          const mean = buf.reduce((s, n) => s + n, 0) / buf.length;
-          avg.push({ x: xForIdx(i), y: pctToY(mean) });
+          vals.push(v);
         }
       });
-      return { raw, avg };
+      const avgPct = vals.length > 0 ? vals.reduce((s, n) => s + n, 0) / vals.length : null;
+      const avgY = avgPct != null ? pctToY(avgPct) : null;
+      return { raw, avgY };
     };
     return {
       latency: buildSeries(p => p.latencyPct),
@@ -396,14 +393,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             {disruptionSeries.awakeInBed.raw.length > 1 && (
               <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1} fill="none" opacity={0.2} />
             )}
-            {disruptionSeries.latency.avg.length > 1 && (
-              <Path d={buildPath(disruptionSeries.latency.avg)} stroke={C_LATENCY} strokeWidth={1.5} fill="none" opacity={0.7} />
+            {disruptionSeries.latency.avgY != null && (
+              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1} opacity={0.5} />
             )}
-            {disruptionSeries.waso.avg.length > 1 && (
-              <Path d={buildPath(disruptionSeries.waso.avg)} stroke={C_WASO} strokeWidth={1.5} fill="none" opacity={0.7} />
+            {disruptionSeries.waso.avgY != null && (
+              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1} opacity={0.5} />
             )}
-            {disruptionSeries.awakeInBed.avg.length > 1 && (
-              <Path d={buildPath(disruptionSeries.awakeInBed.avg)} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} fill="none" opacity={0.7} />
+            {disruptionSeries.awakeInBed.avgY != null && (
+              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1} opacity={0.5} />
             )}
             {readinessData.length > 1 && (
               <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2} fill="none" />
