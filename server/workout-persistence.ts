@@ -173,31 +173,23 @@ export async function persistWorkoutDerivedState(
 
     case "session_close": {
       const durationMin = Math.round(input.durationMinutes ?? 0);
-      const workingMin = input.workingMinutes != null ? Math.round(input.workingMinutes) : null;
       const localStartTime = utcToLocalHHMM(input.startTs, sessionTz);
       const localEndTime = utcToLocalHHMM(input.endTs, sessionTz);
 
-      console.log(`${tag} timestamps: startTs=${input.startTs} → ${localStartTime}, endTs=${input.endTs} → ${localEndTime} (tz=${sessionTz})`);
+      console.log(`${tag} DAILY_LOG MERGE DISABLED — would write: day=${day} start=${localStartTime} end=${localEndTime} lift_min=${durationMin} (tz=${sessionTz})`);
 
       try {
         const r = await pool.query(
-          `INSERT INTO daily_log (user_id, day, lift_done, lift_start_time, lift_end_time, lift_min, lift_working_min)
-           VALUES ($1, $2, TRUE, $3, $4, $5, $6)
+          `INSERT INTO daily_log (user_id, day, lift_done)
+           VALUES ($1, $2, TRUE)
            ON CONFLICT (user_id, day) DO UPDATE SET
              lift_done = TRUE,
-             lift_start_time = COALESCE(LEAST(daily_log.lift_start_time, EXCLUDED.lift_start_time), EXCLUDED.lift_start_time, daily_log.lift_start_time),
-             lift_end_time = COALESCE(GREATEST(daily_log.lift_end_time, EXCLUDED.lift_end_time), EXCLUDED.lift_end_time, daily_log.lift_end_time),
-             lift_min = COALESCE(daily_log.lift_min, 0) + COALESCE(EXCLUDED.lift_min, 0),
-             lift_working_min = CASE
-               WHEN EXCLUDED.lift_working_min IS NULL THEN daily_log.lift_working_min
-               ELSE COALESCE(daily_log.lift_working_min, 0) + EXCLUDED.lift_working_min
-             END,
              updated_at = NOW()`,
-          [input.userId, day, localStartTime, localEndTime, durationMin, workingMin],
+          [input.userId, day],
         );
-        console.log(`${tag} daily_log merge OK: day=${day} start=${localStartTime} end=${localEndTime} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
+        console.log(`${tag} daily_log lift_done=true OK: day=${day} rows=${r.rowCount}`);
       } catch (err: any) {
-        console.error(`${tag} daily_log merge ERROR: ${err.message}`);
+        console.error(`${tag} daily_log lift_done ERROR: ${err.message}`);
       }
 
       fireIntelSessionClose({
