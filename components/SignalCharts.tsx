@@ -22,6 +22,12 @@ interface SignalPoint {
   strengthVelocity: number | null;
   hrv: number | null;
   rhr: number | null;
+  latencyPct: number | null;
+  wasoPct: number | null;
+  awakeInBedPct: number | null;
+  latencyMin: number | null;
+  wasoMin: number | null;
+  awakeInBedMin: number | null;
 }
 
 interface SignalChartsProps {
@@ -46,6 +52,9 @@ const C_SV = "#6EBF8B";
 const C_RECOVERY = "#00E5FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
+const C_LATENCY = "#C0C0C0";
+const C_WASO = "#FFFFFF";
+const C_AWAKE_IN_BED = "#8B5CF6";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.35)";
@@ -208,6 +217,39 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     return out;
   }, [points, xForIdx]);
 
+  const latencyData = useMemo(() => {
+    const out: { x: number; y: number }[] = [];
+    points.forEach((p, i) => {
+      if (p.latencyPct != null) {
+        const y = PAD_T + ((100 - p.latencyPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
+        out.push({ x: xForIdx(i), y });
+      }
+    });
+    return out;
+  }, [points, xForIdx]);
+
+  const wasoData = useMemo(() => {
+    const out: { x: number; y: number }[] = [];
+    points.forEach((p, i) => {
+      if (p.wasoPct != null) {
+        const y = PAD_T + ((100 - p.wasoPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
+        out.push({ x: xForIdx(i), y });
+      }
+    });
+    return out;
+  }, [points, xForIdx]);
+
+  const awakeInBedData = useMemo(() => {
+    const out: { x: number; y: number }[] = [];
+    points.forEach((p, i) => {
+      if (p.awakeInBedPct != null) {
+        const y = PAD_T + ((100 - p.awakeInBedPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
+        out.push({ x: xForIdx(i), y });
+      }
+    });
+    return out;
+  }, [points, xForIdx]);
+
   const svData = useMemo(() => {
     const out: { x: number; y: number }[] = [];
     const vals = points.filter(p => p.strengthVelocity != null).map(p => p.strengthVelocity!);
@@ -354,6 +396,15 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             })}
             {readinessData.length > 1 && (
               <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2} fill="none" />
+            )}
+            {latencyData.length > 1 && (
+              <Path d={buildPath(latencyData)} stroke={C_LATENCY} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
+            )}
+            {wasoData.length > 1 && (
+              <Path d={buildPath(wasoData)} stroke={C_WASO} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
+            )}
+            {awakeInBedData.length > 1 && (
+              <Path d={buildPath(awakeInBedData)} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
             )}
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={CAPACITY_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
@@ -564,6 +615,27 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             <View style={[styles.tooltipDot, { backgroundColor: C_READINESS }]} />
             <Text style={styles.tooltipLabel}>Readiness</Text>
             <Text style={styles.tooltipVal}>{selectedPoint.readiness != null ? Math.round(selectedPoint.readiness) : "--"}</Text>
+          </View>
+          <View style={styles.tooltipRow}>
+            <View style={[styles.tooltipDot, { backgroundColor: C_LATENCY }]} />
+            <Text style={styles.tooltipLabel}>Latency</Text>
+            <Text style={styles.tooltipVal}>
+              {selectedPoint.latencyMin != null ? `${selectedPoint.latencyMin}m (${Math.round(selectedPoint.latencyPct!)}%)` : "--"}
+            </Text>
+          </View>
+          <View style={styles.tooltipRow}>
+            <View style={[styles.tooltipDot, { backgroundColor: C_WASO }]} />
+            <Text style={styles.tooltipLabel}>WASO</Text>
+            <Text style={styles.tooltipVal}>
+              {selectedPoint.wasoMin != null ? `${selectedPoint.wasoMin}m (${Math.round(selectedPoint.wasoPct!)}%)` : "--"}
+            </Text>
+          </View>
+          <View style={styles.tooltipRow}>
+            <View style={[styles.tooltipDot, { backgroundColor: C_AWAKE_IN_BED }]} />
+            <Text style={styles.tooltipLabel}>Awake</Text>
+            <Text style={styles.tooltipVal}>
+              {selectedPoint.awakeInBedMin != null ? `${selectedPoint.awakeInBedMin}m (${Math.round(selectedPoint.awakeInBedPct!)}%)` : "--"}
+            </Text>
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_SV }]} />

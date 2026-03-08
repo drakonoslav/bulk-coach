@@ -168,6 +168,12 @@ interface SignalPoint {
   strengthVelocity: number | null;
   hrv: number | null;
   rhr: number | null;
+  latencyPct: number | null;
+  wasoPct: number | null;
+  awakeInBedPct: number | null;
+  latencyMin: number | null;
+  wasoMin: number | null;
+  awakeInBedMin: number | null;
 }
 
 export default function DashboardScreen() {

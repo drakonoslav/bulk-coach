@@ -2112,7 +2112,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pool.query(
           `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
                   bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
-                  fat_free_mass_lb, hrv, resting_hr, waist_in
+                  fat_free_mass_lb, hrv, resting_hr, waist_in,
+                  sleep_latency_min, sleep_waso_min
            FROM daily_log WHERE user_id = $1 AND day >= $2 AND day <= $3
            ORDER BY day ASC`,
           [userId, from, to],
@@ -2187,12 +2188,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const [date, val] of legacySvMap) svMap.set(date, val);
       }
 
-      const logMap = new Map<string, { hrv: number | null; rhr: number | null }>();
+      const logMap = new Map<string, { hrv: number | null; rhr: number | null; latencyMin: number | null; wasoMin: number | null; awakeInBedMin: number | null }>();
       for (const r of vitalsRows.rows) {
         const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
         logMap.set(d, {
           hrv: r.hrv_rmssd_ms != null ? Number(r.hrv_rmssd_ms) : null,
           rhr: r.resting_hr_bpm != null ? Number(r.resting_hr_bpm) : null,
+          latencyMin: null, wasoMin: null, awakeInBedMin: null,
         });
       }
       for (const r of logRows.rows) {
@@ -2200,8 +2202,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const existing = logMap.get(d);
         const hrv = r.hrv != null ? Number(r.hrv) : existing?.hrv ?? null;
         const rhr = r.resting_hr != null ? Number(r.resting_hr) : existing?.rhr ?? null;
-        logMap.set(d, { hrv, rhr });
+        const latencyMin = r.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
+        const wasoMin = r.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
+        const awakeInBedMin = (latencyMin != null && wasoMin != null) ? latencyMin + wasoMin : null;
+        logMap.set(d, { hrv, rhr, latencyMin, wasoMin, awakeInBedMin });
       }
+
+      const maxLatency = Math.max(1, ...Array.from(logMap.values()).map(v => v.latencyMin ?? 0));
+      const maxWaso = Math.max(1, ...Array.from(logMap.values()).map(v => v.wasoMin ?? 0));
+      const maxAwakeInBed = Math.max(1, ...Array.from(logMap.values()).map(v => v.awakeInBedMin ?? 0));
 
       const allDates: string[] = [];
       const cur = new Date(from + "T00:00:00Z");
@@ -2222,8 +2231,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           strengthVelocity: svMap.get(date) ?? null,
           hrv: lg?.hrv ?? null,
           rhr: lg?.rhr ?? null,
+          latencyPct: lg?.latencyMin != null ? Math.round((lg.latencyMin / maxLatency) * 10000) / 100 : null,
+          wasoPct: lg?.wasoMin != null ? Math.round((lg.wasoMin / maxWaso) * 10000) / 100 : null,
+          awakeInBedPct: lg?.awakeInBedMin != null ? Math.round((lg.awakeInBedMin / maxAwakeInBed) * 10000) / 100 : null,
+          latencyMin: lg?.latencyMin ?? null,
+          wasoMin: lg?.wasoMin ?? null,
+          awakeInBedMin: lg?.awakeInBedMin ?? null,
         };
       });
+
+      const sleepDisruptionMaxes = { maxLatency, maxWaso, maxAwakeInBed };
 
       let forecast = null;
       try {
@@ -2344,7 +2361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("forecast computation error (non-fatal):", forecastErr);
       }
 
-      res.json({ from, to, days, points, forecast, strengthVelocitySource: useIntel ? "intel" : "legacy" });
+      res.json({ from, to, days, points, forecast, strengthVelocitySource: useIntel ? "intel" : "legacy", sleepDisruptionMaxes });
     } catch (err: unknown) {
       console.error("signals chart error:", err);
       res.status(500).json({ error: "Internal server error" });
