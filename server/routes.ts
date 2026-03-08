@@ -2167,7 +2167,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const hpaPrev = hLen >= 2 ? validHpa[hLen - 2].hpaScore : null;
 
         const recoveryIdx = computeRecoveryIndexPairs(
-          logRows.rows.map((r: any) => ({ hrv: r.hrv != null ? Number(r.hrv) : null, rhr: r.resting_hr != null ? Number(r.resting_hr) : null }))
+          allDates.map(d => {
+            const lg = logMap.get(d);
+            return { hrv: lg?.hrv ?? null, rhr: lg?.rhr ?? null };
+          })
         );
         const recoveryIndexNow = recoveryIdx.now;
         const recoveryIndexPrev = recoveryIdx.prev;
