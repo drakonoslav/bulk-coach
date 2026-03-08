@@ -53,7 +53,7 @@ import {
   type MuscleGroup,
 } from "./workout-engine";
 import { fireIntelLogSet, fireIntelSessionClose, fireIntelExerciseLogSet, gameKeyToIntelTargets, resolveSetIntent } from "./intel-writer";
-import { persistWorkoutDerivedState, getWorkoutSessionAudit } from "./workout-persistence";
+import { persistWorkoutDerivedState, getWorkoutSessionAudit, resolveSessionDay } from "./workout-persistence";
 import {
   pickIsolationTargets,
   fallbackIsolation,
@@ -3446,7 +3446,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Validation failed", details: validation.errors });
       }
       const wt = p.workout_type || "other";
-      const derivedDate = p.date || toUTCDateString(p.start_ts, p.timezone);
+      let derivedDate: string;
+      if (p.source === "workout_game") {
+        try {
+          derivedDate = await resolveSessionDay(pool, p.session_id, userId);
+        } catch {
+          return res.status(409).json({ error: "workout_session row not found for workout_game close — start the workout first" });
+        }
+      } else {
+        derivedDate = p.date || toUTCDateString(p.start_ts, p.timezone);
+      }
       const w: WorkoutSession = {
         user_id: userId,
         session_id: p.session_id,
@@ -3493,7 +3502,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           kind: "session_close",
           sessionId: p.session_id,
           userId,
-          day: derivedDate,
           startTs: ensureUTCTimestamp(p.start_ts),
           endTs: ensureUTCTimestamp(p.end_ts),
           durationMinutes: w.duration_minutes,
@@ -3643,6 +3651,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { muscle, rpe, isCompound, cbpCurrent, compoundSets, isolationSets, phase, strainPoints } = req.body;
       if (!muscle) return res.status(400).json({ error: "muscle is required" });
 
+      let sessionDay: string;
+      try {
+        sessionDay = await resolveSessionDay(pool, sessionId, userId);
+      } catch {
+        return res.status(409).json({ error: "workout_session not found — start the workout first" });
+      }
+
       const state = {
         session_id: sessionId,
         phase: phase || "COMPOUND" as const,
@@ -3668,10 +3683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
 
-      const clientDay = req.body.day as string | undefined;
-      const clientTz = req.body.timezone as string | undefined;
-      const today = clientDay || (clientTz ? toUTCDateString(new Date().toISOString(), clientTz) : new Date().toISOString().slice(0, 10));
-      const weekStart = getWeekStart(today);
+      const weekStart = getWeekStart(sessionDay);
       await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
       res.json(updatedState);
@@ -3684,8 +3696,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         eventId: resolvedEventId,
         sessionId,
         userId,
-        day: clientDay,
-        timezone: clientTz,
         muscle: muscle as string,
         isCompound: !!event.isCompound,
         rpe: rpe ?? null,
@@ -3704,6 +3714,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { muscle, exerciseId, weight, reps, isCompound, cbpCurrent, compoundSets, isolationSets, phase, strainPoints } = req.body;
       if (!exerciseId || weight == null || reps == null || !muscle) {
         return res.status(400).json({ error: "exerciseId, weight, reps, and muscle are required" });
+      }
+
+      let sessionDay: string;
+      try {
+        sessionDay = await resolveSessionDay(pool, sessionId, userId);
+      } catch {
+        return res.status(409).json({ error: "workout_session not found — start the workout first" });
       }
 
       const rpe = req.body.rpe ?? null;
@@ -3733,10 +3750,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
 
-      const clientDay = req.body.day as string | undefined;
-      const clientTz = req.body.timezone as string | undefined;
-      const today = clientDay || (clientTz ? toUTCDateString(new Date().toISOString(), clientTz) : new Date().toISOString().slice(0, 10));
-      const weekStart = getWeekStart(today);
+      const weekStart = getWeekStart(sessionDay);
       await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
       res.json(updatedState);
@@ -3749,8 +3763,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         eventId: resolvedEventId,
         sessionId,
         userId,
-        day: clientDay,
-        timezone: clientTz,
         muscle: muscle as string,
         exerciseId,
         weight,

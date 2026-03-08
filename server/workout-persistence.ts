@@ -8,14 +8,29 @@ import {
   resolveSetIntent,
 } from "./intel-writer";
 
+export async function resolveSessionDay(
+  pool: Pool,
+  sessionId: string,
+  userId: string,
+): Promise<string> {
+  const r = await pool.query(
+    `SELECT date, start_ts, timezone FROM workout_session WHERE session_id = $1 AND user_id = $2 LIMIT 1`,
+    [sessionId, userId],
+  );
+  if (r.rowCount === 0) {
+    throw new Error(`workout_session not found: ${sessionId}`);
+  }
+  const row = r.rows[0];
+  const dateVal = typeof row.date === "string" ? row.date : (row.date as Date).toISOString().slice(0, 10);
+  return dateVal;
+}
+
 export type WorkoutWriteInput =
   | {
       kind: "bridge_set";
       eventId: string;
       sessionId: string;
       userId: string;
-      day?: string;
-      timezone?: string;
       muscle: string;
       isCompound: boolean;
       rpe: number | null;
@@ -26,8 +41,6 @@ export type WorkoutWriteInput =
       eventId: string;
       sessionId: string;
       userId: string;
-      day?: string;
-      timezone?: string;
       muscle: string;
       exerciseId: number;
       weight: number;
@@ -39,18 +52,11 @@ export type WorkoutWriteInput =
       kind: "session_close";
       sessionId: string;
       userId: string;
-      day: string;
       startTs: string;
       endTs: string;
       durationMinutes: number | null;
       workingMinutes: number | null;
     };
-
-function resolveDay(day?: string, timezone?: string): string {
-  if (day) return day;
-  if (timezone) return toUTCDateString(new Date().toISOString(), timezone);
-  return new Date().toISOString().slice(0, 10);
-}
 
 export async function persistWorkoutDerivedState(
   pool: Pool,
@@ -58,9 +64,18 @@ export async function persistWorkoutDerivedState(
 ): Promise<void> {
   const tag = `[workout-persist:${input.kind}]`;
 
+  let day: string;
+  try {
+    day = await resolveSessionDay(pool, input.sessionId, input.userId);
+  } catch (err: any) {
+    console.error(`${tag} ABORT: ${err.message}`);
+    return;
+  }
+
+  console.log(`${tag} resolved day=${day} from workout_session row for session=${input.sessionId}`);
+
   switch (input.kind) {
     case "bridge_set": {
-      const day = resolveDay(input.day, input.timezone);
       const intent = resolveSetIntent(input.muscle, input.isCompound);
 
       try {
@@ -91,8 +106,6 @@ export async function persistWorkoutDerivedState(
     }
 
     case "exercise_set": {
-      const day = resolveDay(input.day, input.timezone);
-
       try {
         const r = await pool.query(
           `WITH resolved AS (
@@ -144,9 +157,9 @@ export async function persistWorkoutDerivedState(
                ELSE COALESCE(daily_log.lift_working_min, 0) + EXCLUDED.lift_working_min
              END,
              updated_at = NOW()`,
-          [input.userId, input.day, input.startTs, input.endTs, durationMin, workingMin],
+          [input.userId, day, input.startTs, input.endTs, durationMin, workingMin],
         );
-        console.log(`${tag} daily_log merge OK: day=${input.day} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
+        console.log(`${tag} daily_log merge OK: day=${day} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
       } catch (err: any) {
         console.error(`${tag} daily_log merge ERROR: ${err.message}`);
       }

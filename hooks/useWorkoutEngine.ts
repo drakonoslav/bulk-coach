@@ -199,11 +199,6 @@ export function useWorkoutEngine() {
     const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
 
     try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const localParts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).formatToParts(new Date(state.start_ts));
-      const localDay = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/set`, {
         muscle,
         rpe,
@@ -214,8 +209,6 @@ export function useWorkoutEngine() {
         phase: state.phase,
         strainPoints: state.strainPoints,
         event_id: eventId,
-        day: localDay,
-        timezone: tz,
       });
 
       setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });
@@ -285,11 +278,6 @@ export function useWorkoutEngine() {
     const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
 
     try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const localParts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).formatToParts(new Date(state.start_ts));
-      const localDay = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/exercise-set`, {
         muscle,
         exerciseId,
@@ -302,8 +290,6 @@ export function useWorkoutEngine() {
         phase: state.phase,
         strainPoints: state.strainPoints,
         event_id: eventId,
-        day: localDay,
-        timezone: tz,
       });
 
       setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });
@@ -334,19 +320,12 @@ export function useWorkoutEngine() {
 
     try {
       const endTs = new Date().toISOString();
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const localParts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).formatToParts(new Date(state.start_ts));
-      const localDate = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       await postJson("/api/canonical/workouts/upsert-session", {
         session_id: state.session_id,
-        date: localDate,
         start_ts: state.start_ts,
         end_ts: endTs,
         workout_type: "strength",
         source: "workout_game",
-        timezone: tz,
       });
       setStatus("finished");
     } catch (err: any) {
