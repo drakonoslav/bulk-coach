@@ -226,10 +226,9 @@ function buildDisruptionFillLayers(
       }
       if (midCtrl > highCtrl + 0.5) {
         const belowHigh = active.filter(m => m.avgY > highCtrl + 0.5);
-        if (belowHigh.length === 2) {
-          addTrap(blendKey(belowHigh[0].key, belowHigh[1].key), xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
-        } else if (belowHigh.length === 1) {
-          addTrap(belowHigh[0].key + "_solo", xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
+        if (belowHigh.length >= 1) {
+          const widest = belowHigh.reduce((a, b) => a.avgY > b.avgY ? a : b);
+          addTrap(widest.key + "_solo", xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
         }
       }
       if (lowCtrl > midCtrl + 0.5) {
