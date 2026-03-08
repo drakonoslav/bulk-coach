@@ -777,8 +777,8 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         </ChartPanel>
 
         {sleepPlanet && (
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 5, gap: 6 }}>
-            <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SLEEP PLANET</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 5, gap: 5 }}>
+            <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING:</Text>
             <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepPlanet.accent, letterSpacing: 0.8 }}>{sleepPlanet.code}</Text>
             <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepPlanet.accent, opacity: 0.85 }}>{sleepPlanet.name}</Text>
             <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", flex: 1 }} numberOfLines={1}>{sleepPlanet.subtitle}</Text>
