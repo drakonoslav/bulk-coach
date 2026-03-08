@@ -5115,6 +5115,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/admin/fresh-start", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const uid = (req as any).userId || "local_default";
+      const results: Record<string, number> = {};
+      for (const tbl of [
+        "intel_receipts",
+        "strength_sets",
+        "daily_game_bridge_entries",
+        "workout_session",
+        "daily_log",
+      ]) {
+        const r = await pool.query(`DELETE FROM ${tbl} WHERE user_id = $1`, [uid]);
+        results[tbl] = r.rowCount ?? 0;
+      }
+      console.log("[admin/fresh-start]", JSON.stringify(results));
+      return res.json({ ok: true, deleted: results });
+    } catch (err: any) {
+      console.error("POST /api/admin/fresh-start error:", err);
+      return res.status(500).json({ error: "Fresh start failed", details: String(err) });
+    }
+  });
+
   app.post("/api/admin/purge-intel-receipts", async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     const { from, to } = req.body || {};
