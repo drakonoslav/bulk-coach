@@ -61,6 +61,35 @@ const C_BLEND_LA = "#8B5CF6";
 const C_BLEND_RYB = "#FF4FCF";
 const C_BLEND_WHITE = "#FFFFFF";
 const C_GRID = "rgba(255,255,255,0.08)";
+
+type PlanetCode = "LWA" | "LAW" | "WLA" | "WAL" | "ALW" | "AWL";
+interface SleepPlanet { code: PlanetCode; name: string; subtitle: string; accent: string }
+const PLANET_MAP: Record<PlanetCode, { name: string; subtitle: string; accent: string }> = {
+  LWA: { name: "Stable Crustal World", subtitle: "Mostly stable sleep terrain; onset disturbance leads", accent: C_LATENCY },
+  LAW: { name: "Tectonic Crust World", subtitle: "Crust-led terrain with occasional deep wake pressure", accent: C_LATENCY },
+  WLA: { name: "Convective Mantle World", subtitle: "Maintenance instability dominates the terrain", accent: C_WASO },
+  WAL: { name: "Fragmented Mantle World", subtitle: "Fragmented mantle terrain with wake bursts", accent: C_BLEND_WA },
+  ALW: { name: "Core-Driven Volcanic World", subtitle: "Wake pressure drives the terrain; latency shapes the structure", accent: C_AWAKE_IN_BED },
+  AWL: { name: "Exposed Core World", subtitle: "Wake-dominant terrain with strong fragmentation beneath", accent: C_BLEND_LA },
+};
+function getSleepPlanet(latencyRatio: number | null, wasoRatio: number | null, awakeRatio: number | null): SleepPlanet | null {
+  if (latencyRatio == null || wasoRatio == null || awakeRatio == null) return null;
+  const eps = 1e-6;
+  const items = [
+    { key: "L", value: latencyRatio },
+    { key: "W", value: wasoRatio },
+    { key: "A", value: awakeRatio },
+  ];
+  const tieBreak: Record<string, number> = { A: 0, W: 1, L: 2 };
+  items.sort((a, b) => {
+    const diff = b.value - a.value;
+    if (Math.abs(diff) > eps) return diff;
+    return tieBreak[a.key] - tieBreak[b.key];
+  });
+  const code = (items[0].key + items[1].key + items[2].key) as PlanetCode;
+  const info = PLANET_MAP[code];
+  return { code, ...info };
+}
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.22)";
 const C_ZONE_CALM = "rgba(255,255,255,0.015)";
@@ -587,6 +616,12 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const crosshairX = selectedIdx != null ? xForIdx(selectedIdx) : null;
   const selectedPoint = selectedIdx != null ? points[selectedIdx] : null;
 
+  const sleepPlanet = useMemo(() => {
+    const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
+    if (!pt) return null;
+    return getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
+  }, [selectedPoint, points, N]);
+
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
     const maxLabels = Math.min(Math.floor(chartWidth / 42), 6);
@@ -740,6 +775,15 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             )}
           </Svg>
         </ChartPanel>
+
+        {sleepPlanet && (
+          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 5, gap: 6 }}>
+            <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SLEEP PLANET</Text>
+            <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepPlanet.accent, letterSpacing: 0.8 }}>{sleepPlanet.code}</Text>
+            <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepPlanet.accent, opacity: 0.85 }}>{sleepPlanet.name}</Text>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", flex: 1 }} numberOfLines={1}>{sleepPlanet.subtitle}</Text>
+          </View>
+        )}
 
         <View style={styles.separator} />
 
