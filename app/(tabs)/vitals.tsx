@@ -180,6 +180,8 @@ export default function VitalsScreen() {
   interface ActiveLensEpisode { id: number; tag: string; startDay: string; intensity: number; label: string | null; }
   const [lensArchives, setLensArchives] = useState<LensArchive[]>([]);
   const [activeLenses, setActiveLenses] = useState<ActiveLensEpisode[]>([]);
+  const [sessionsExpanded, setSessionsExpanded] = useState(false);
+  const [dataSourcesExpanded, setDataSourcesExpanded] = useState(false);
   const [expandedArchiveId, setExpandedArchiveId] = useState<number | null>(null);
   const [archiveTab, setArchiveTab] = useState<"terminal" | "episode">("terminal");
   const [hpaData, setHpaData] = useState<{ hpaScore: number | null; suppressionFlag: boolean; drivers: any; hpaBucket: string | null; stateLabel: string | null; stateTooltipText: string | null } | null>(null);
@@ -684,50 +686,92 @@ export default function VitalsScreen() {
         )}
 
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
+          <Pressable
+            style={[styles.cardHeader, !sessionsExpanded && { marginBottom: 0 }, { minHeight: 44 }]}
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSessionsExpanded(v => !v);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: sessionsExpanded }}
+            accessibilityLabel={`Recent Sessions, ${recentSessions.length} items`}
+          >
             <Ionicons name="list-outline" size={18} color={ACCENT} />
             <Text style={styles.cardTitle}>Recent Sessions</Text>
-          </View>
-          {recentSessions.length === 0 ? (
-            <Text style={styles.emptyText}>No session data yet. Upload a snapshot to get started.</Text>
-          ) : (
-            recentSessions.map((s, idx) => (
-              <View key={s.date} style={[styles.sessionRow, idx > 0 && styles.sessionRowBorder]}>
-                <View style={styles.sessionLeft}>
-                  <View style={styles.sessionDateRow}>
-                    <Text style={styles.sessionDate}>{s.date}</Text>
-                    <View style={[styles.badge, s.isImputed ? styles.badgeImputed : styles.badgeMeasured]}>
-                      <Text style={[styles.badgeText, s.isImputed ? styles.badgeTextImputed : styles.badgeTextMeasured]}>
-                        {s.isImputed ? "Imputed" : "Measured"}
-                      </Text>
-                    </View>
-                    {s.multiNightCombined && (
-                      <View style={[styles.badge, styles.badgeWarning]}>
-                        <Text style={[styles.badgeText, styles.badgeTextWarning]}>Combined</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", marginLeft: "auto", gap: 6 }}>
+              {recentSessions.length > 0 && (
+                <View style={styles.drawerCountBadge}>
+                  <Text style={styles.drawerCountText}>{recentSessions.length}</Text>
+                </View>
+              )}
+              <Ionicons
+                name={sessionsExpanded ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={Colors.textTertiary}
+              />
+            </View>
+          </Pressable>
+          {sessionsExpanded && (
+            recentSessions.length === 0 ? (
+              <Text style={styles.emptyText}>No session data yet. Upload a snapshot to get started.</Text>
+            ) : (
+              recentSessions.map((s, idx) => (
+                <View key={s.date} style={[styles.sessionRow, idx > 0 && styles.sessionRowBorder]}>
+                  <View style={styles.sessionLeft}>
+                    <View style={styles.sessionDateRow}>
+                      <Text style={styles.sessionDate}>{s.date}</Text>
+                      <View style={[styles.badge, s.isImputed ? styles.badgeImputed : styles.badgeMeasured]}>
+                        <Text style={[styles.badgeText, s.isImputed ? styles.badgeTextImputed : styles.badgeTextMeasured]}>
+                          {s.isImputed ? "Imputed" : "Measured"}
+                        </Text>
                       </View>
-                    )}
+                      {s.multiNightCombined && (
+                        <View style={[styles.badge, styles.badgeWarning]}>
+                          <Text style={[styles.badgeText, styles.badgeTextWarning]}>Combined</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.sessionRight}>
+                    <Text style={styles.sessionVal}>
+                      {s.nocturnalErections ?? 0} erections
+                    </Text>
+                    <Text style={styles.sessionDur}>
+                      {formatDur(s.nocturnalDurationSeconds ?? 0)}
+                    </Text>
                   </View>
                 </View>
-                <View style={styles.sessionRight}>
-                  <Text style={styles.sessionVal}>
-                    {s.nocturnalErections ?? 0} erections
-                  </Text>
-                  <Text style={styles.sessionDur}>
-                    {formatDur(s.nocturnalDurationSeconds ?? 0)}
-                  </Text>
-                </View>
-              </View>
-            ))
+              ))
+            )
           )}
         </View>
 
         {dataSources.length > 0 && (
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
+            <Pressable
+              style={[styles.cardHeader, !dataSourcesExpanded && { marginBottom: 0 }, { minHeight: 44 }]}
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setDataSourcesExpanded(v => !v);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: dataSourcesExpanded }}
+              accessibilityLabel={`Data Sources, ${dataSources.length} items`}
+            >
               <Ionicons name="link-outline" size={18} color={ACCENT} />
               <Text style={styles.cardTitle}>Data Sources</Text>
-            </View>
-            {dataSources.map((src, idx) => {
+              <View style={{ flexDirection: "row", alignItems: "center", marginLeft: "auto", gap: 6 }}>
+                <View style={styles.drawerCountBadge}>
+                  <Text style={styles.drawerCountText}>{dataSources.length}</Text>
+                </View>
+                <Ionicons
+                  name={dataSourcesExpanded ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={Colors.textTertiary}
+                />
+              </View>
+            </Pressable>
+            {dataSourcesExpanded && dataSources.map((src, idx) => {
               const isConnected = src.status === "connected";
               const needsBuild = src.status === "requires_build";
               const statusColor = isConnected ? MEASURED_COLOR : needsBuild ? Colors.textTertiary : Colors.warning;
@@ -1240,6 +1284,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: Colors.text,
+  },
+  drawerCountBadge: {
+    backgroundColor: ACCENT_MUTED,
+    borderRadius: 10,
+    minWidth: 22,
+    height: 22,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    paddingHorizontal: 6,
+  },
+  drawerCountText: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    color: ACCENT,
   },
   dateRow: {
     flexDirection: "row",
