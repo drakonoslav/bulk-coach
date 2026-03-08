@@ -40,7 +40,7 @@ const PAD_B = 18;
 
 const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
-const C_HRV = "#67E8F9";
+const C_HRV = "#FBBF24";
 const C_READINESS = "#6B8ACD";
 const C_SV = "#6EBF8B";
 const C_RECOVERY = "#00E5FF";
