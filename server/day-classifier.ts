@@ -75,15 +75,38 @@ async function fetchDayLogs(
   endDate: string,
   userId: string,
 ): Promise<DayRow[]> {
-  const { rows } = await pool.query(
-    `SELECT day, morning_weight_lb, waist_in, sleep_minutes, resting_hr, hrv,
-            lift_done, deload_week, adherence
-     FROM daily_log
-     WHERE day >= $1 AND day <= $2 AND user_id = $3
-     ORDER BY day ASC`,
-    [startDate, endDate, userId],
-  );
-  return rows;
+  const [logRes, vitalsRes] = await Promise.all([
+    pool.query(
+      `SELECT day, morning_weight_lb, waist_in, sleep_minutes, resting_hr, hrv,
+              lift_done, deload_week, adherence
+       FROM daily_log
+       WHERE day >= $1 AND day <= $2 AND user_id = $3
+       ORDER BY day ASC`,
+      [startDate, endDate, userId],
+    ),
+    pool.query(
+      `SELECT date::text AS day, hrv_rmssd_ms, resting_hr_bpm
+       FROM vitals_daily
+       WHERE date >= $1 AND date <= $2 AND user_id = $3
+       ORDER BY date ASC`,
+      [startDate, endDate, userId],
+    ).catch(() => ({ rows: [] as any[] })),
+  ]);
+  const vitalsMap = new Map<string, { hrv: number | null; rhr: number | null }>();
+  for (const v of vitalsRes.rows) {
+    vitalsMap.set(v.day, {
+      hrv: v.hrv_rmssd_ms != null ? Number(v.hrv_rmssd_ms) : null,
+      rhr: v.resting_hr_bpm != null ? Number(v.resting_hr_bpm) : null,
+    });
+  }
+  return logRes.rows.map((r: any) => {
+    const vd = vitalsMap.get(r.day);
+    return {
+      ...r,
+      hrv: r.hrv != null ? Number(r.hrv) : vd?.hrv ?? null,
+      resting_hr: r.resting_hr != null ? Number(r.resting_hr) : vd?.rhr ?? null,
+    };
+  });
 }
 
 async function fetchAndrogenProxy(

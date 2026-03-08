@@ -4966,12 +4966,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const hpaRes = await getHpaForDate(targetDate, userId);
 
     const { computeRecoveryIndexPairs } = await import("../lib/recovery-index");
-    const recoveryIdx = computeRecoveryIndexPairs(
-      entries.map((e: any) => ({
-        hrv: e.hrv != null ? Number(e.hrv) : null,
-        rhr: e.restingHr != null ? Number(e.restingHr) : null,
-      })),
-    );
+    const vitalsForRI = await pool.query(
+      `SELECT date::text AS day, hrv_rmssd_ms, resting_hr_bpm
+       FROM vitals_daily WHERE user_id = $1 AND date <= $2
+       ORDER BY date ASC`,
+      [userId, targetDate],
+    ).catch(() => ({ rows: [] as any[] }));
+    const vitalsMap = new Map<string, { hrv: number | null; rhr: number | null }>();
+    for (const v of vitalsForRI.rows) {
+      vitalsMap.set(v.day, {
+        hrv: v.hrv_rmssd_ms != null ? Number(v.hrv_rmssd_ms) : null,
+        rhr: v.resting_hr_bpm != null ? Number(v.resting_hr_bpm) : null,
+      });
+    }
+    const mergedRIPairs = entries.map((e: any) => {
+      const day = e.day ?? e.date;
+      const vd = day ? vitalsMap.get(typeof day === 'string' ? day : (day as Date).toISOString().slice(0, 10)) : undefined;
+      return {
+        hrv: e.hrv != null ? Number(e.hrv) : vd?.hrv ?? null,
+        rhr: e.restingHr != null ? Number(e.restingHr) : vd?.rhr ?? null,
+      };
+    });
+    const recoveryIdx = computeRecoveryIndexPairs(mergedRIPairs);
 
     const { ffmVelocity14d } = await import("../lib/coaching-engine");
     const ffmResult = ffmVelocity14d(entries);
