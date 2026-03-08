@@ -325,7 +325,7 @@ export function useWorkoutEngine() {
         start_ts: state.start_ts,
         end_ts: endTs,
         workout_type: "strength",
-        source: "app",
+        source: "workout_game",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       setStatus("finished");

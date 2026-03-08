@@ -25,10 +25,12 @@ import {
   loadEntry,
   loadStrengthExercises,
   loadStrengthSets,
+  loadBridgeSets,
   saveStrengthSets,
   loadIntelReceipt,
   type StrengthExercise,
   type StrengthSet,
+  type GameBridgeEntry,
   type IntelReceipt,
 } from "@/lib/entry-storage";
 import { USE_INTEL_STRENGTH } from "@/lib/intel-strength";
@@ -329,6 +331,7 @@ export default function LogScreen() {
 
   const [strengthExercises, setStrengthExercises] = useState<StrengthExercise[]>([]);
   const [strengthSetsDay, setStrengthSetsDay] = useState<StrengthSet[]>([]);
+  const [bridgeEntriesDay, setBridgeEntriesDay] = useState<GameBridgeEntry[]>([]);
   const [strengthSetsSaving, setStrengthSetsSaving] = useState(false);
   const [strengthSetsDirty, setStrengthSetsDirty] = useState(false);
   const [strengthModalVisible, setStrengthModalVisible] = useState(false);
@@ -362,6 +365,10 @@ export default function LogScreen() {
     if (s.reps != null) parts.push(`× ${s.reps}`);
     if (s.rir != null) parts.push(`(RIR ${s.rir})`);
     return `${name} — ${parts.join(" ")}`.trim();
+  }
+
+  function formatMuscleLabel(key: string): string {
+    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   interface ContextEvent {
@@ -721,6 +728,12 @@ export default function LogScreen() {
     } catch {
       setStrengthSetsDay([]);
       setStrengthSetsDirty(false);
+    }
+    try {
+      const bridge = await loadBridgeSets(day);
+      setBridgeEntriesDay(bridge);
+    } catch {
+      setBridgeEntriesDay([]);
     }
     try {
       const receipt = await loadIntelReceipt(day);
@@ -1679,6 +1692,57 @@ export default function LogScreen() {
                 )}
               </Pressable>
             </View>
+          </View>
+        )}
+
+        {bridgeEntriesDay.length > 0 && (
+          <View style={[styles.sectionCard, { borderColor: "#F5925625" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <Ionicons name="fitness-outline" size={14} color="#F59256" />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: "#F59256" }}>
+                Bridge Sets
+              </Text>
+              <View style={{ backgroundColor: "#F5925630", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1, marginLeft: "auto" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "#F59256" }}>
+                  {bridgeEntriesDay.length}
+                </Text>
+              </View>
+            </View>
+            {bridgeEntriesDay.map((b) => (
+              <View
+                key={b.id}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#F5925625",
+                  backgroundColor: "#0B1220",
+                  marginBottom: 6,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                      {formatMuscleLabel(b.muscle)}
+                    </Text>
+                    <View style={{ backgroundColor: "#F5925630", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontFamily: "Rubik_500Medium", color: "#F59256" }}>
+                        {b.isCompound ? "COMPOUND" : "ISOLATION"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                    {b.rpe != null ? `RPE ${b.rpe}` : ""}
+                    {b.rpe != null && b.estimatedTonnage != null ? " · " : ""}
+                    {b.estimatedTonnage != null ? `Est. ${Math.round(b.estimatedTonnage)} lb tonnage` : ""}
+                  </Text>
+                </View>
+              </View>
+            ))}
           </View>
         )}
 

@@ -3450,6 +3450,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ended_at: p.end_ts ? ensureUTCTimestamp(p.end_ts) : new Date().toISOString(),
         }).catch(() => {});
       }
+
+      if (p.source === "workout_game" && p.end_ts && wt === "strength") {
+        const durationMin = w.duration_minutes ?? 0;
+        const workingMin = p.working_minutes ?? null;
+        const startTs = ensureUTCTimestamp(p.start_ts);
+        const endTs = ensureUTCTimestamp(p.end_ts);
+        pool.query(
+          `INSERT INTO daily_log (user_id, day, lift_done, lift_start_time, lift_end_time, lift_min, lift_working_min)
+           VALUES ($1, $2, TRUE, $3, $4, $5, $6)
+           ON CONFLICT (user_id, day) DO UPDATE SET
+             lift_done = TRUE,
+             lift_start_time = COALESCE(LEAST(daily_log.lift_start_time, EXCLUDED.lift_start_time), EXCLUDED.lift_start_time, daily_log.lift_start_time),
+             lift_end_time = COALESCE(GREATEST(daily_log.lift_end_time, EXCLUDED.lift_end_time), EXCLUDED.lift_end_time, daily_log.lift_end_time),
+             lift_min = COALESCE(daily_log.lift_min, 0) + COALESCE(EXCLUDED.lift_min, 0),
+             lift_working_min = CASE
+               WHEN EXCLUDED.lift_working_min IS NULL THEN daily_log.lift_working_min
+               ELSE COALESCE(daily_log.lift_working_min, 0) + EXCLUDED.lift_working_min
+             END,
+             updated_at = NOW()`,
+          [userId, derivedDate, startTs, endTs, durationMin, workingMin]
+        ).catch((err: any) => console.error("[game-session] daily_log merge error:", err.message));
+      }
     } catch (err) {
       console.error("workout session upsert error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -3618,12 +3640,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(updatedState);
 
+      const eventId = req.body.event_id as string | undefined;
+      const resolvedEventId = eventId || `${sessionId}_s${Date.now()}`;
+      const intent = resolveSetIntent(muscle as string, !!event.isCompound);
+
+      pool.query(
+        `INSERT INTO daily_game_bridge_entries (id, user_id, day, session_id, muscle, movement_type, rpe, estimated_tonnage, phase, is_compound)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (id) DO NOTHING`,
+        [resolvedEventId, userId, today, sessionId, muscle, intent.movementType, rpe ?? null, intent.estimatedTonnage, phase || "COMPOUND", !!event.isCompound]
+      ).catch((err: any) => console.error("[game-bridge] insert error:", err.message));
+
       const intelTargets = gameKeyToIntelTargets(muscle as string);
       if (intelTargets.length > 0) {
-        const eventId = req.body.event_id as string | undefined;
-        const intent = resolveSetIntent(muscle as string, !!event.isCompound);
         fireIntelLogSet({
-          event_id: eventId || `${sessionId}_s${Date.now()}`,
+          event_id: resolvedEventId,
           session_id: sessionId,
           muscle_targets: intelTargets,
           movement_type: intent.movementType,
@@ -3681,8 +3712,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedState);
 
       const eventId = req.body.event_id as string | undefined;
+      const resolvedEventId = eventId || `${sessionId}_s${Date.now()}`;
+
+      pool.query(
+        `INSERT INTO strength_sets (id, user_id, day, exercise_id, weight_lb, reps, set_type, is_measured, source)
+         SELECT $1, $2, $3, $4, $5, $6, 'top', TRUE, 'workout_game'
+         WHERE EXISTS (SELECT 1 FROM strength_exercises WHERE id = $4)
+         ON CONFLICT (id) DO NOTHING`,
+        [resolvedEventId, userId, today, String(exerciseId), weight, reps]
+      ).then((r: any) => {
+        if (r.rowCount === 0) console.log(`[game-exercise-set] skipped strength_sets: exercise_id=${exerciseId} not in local catalog`);
+        else console.log(`[game-exercise-set] strength_sets OK: id=${resolvedEventId} exercise=${exerciseId} ${weight}×${reps}`);
+      }).catch((err: any) => console.error("[game-exercise-set] strength_sets insert error:", err.message));
+
       fireIntelExerciseLogSet({
-        event_id: eventId || `${sessionId}_s${Date.now()}`,
+        event_id: resolvedEventId,
         session_id: sessionId,
         exercise_id: exerciseId,
         weight,
@@ -4483,7 +4527,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const r = await pool.query(
-        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, created_at
+        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, source, created_at
          FROM strength_sets
          WHERE user_id = $1
            AND day >= $2
@@ -4496,6 +4540,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error("GET /api/strength-sets error:", err);
       return res.status(500).json({ error: "Failed to load strength sets" });
+    }
+  });
+
+  app.get("/api/game-bridge-sets", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const day = String(req.query.day || "");
+      if (!day) return res.status(400).json({ error: "day query param is required (YYYY-MM-DD)" });
+      const r = await pool.query(
+        `SELECT id, user_id, day, session_id, muscle, movement_type, rpe, estimated_tonnage, phase, is_compound, created_at
+         FROM daily_game_bridge_entries
+         WHERE user_id = $1 AND day = $2
+         ORDER BY created_at ASC`,
+        [userId, day]
+      );
+      return res.json({ entries: r.rows });
+    } catch (err: any) {
+      console.error("GET /api/game-bridge-sets error:", err);
+      return res.status(500).json({ error: "Failed to load bridge sets" });
     }
   });
 
@@ -4560,7 +4623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await client.query("COMMIT");
 
       const out = await pool.query(
-        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, created_at
+        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, source, created_at
          FROM strength_sets
          WHERE user_id = $1 AND day = $2
          ORDER BY created_at ASC`,

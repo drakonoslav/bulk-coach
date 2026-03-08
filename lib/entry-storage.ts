@@ -107,6 +107,20 @@ export interface StrengthSet {
   seconds?: number;
   setType?: string;
   isMeasured?: boolean;
+  source?: string;
+  createdAt?: string;
+}
+
+export interface GameBridgeEntry {
+  id: string;
+  day: string;
+  sessionId: string;
+  muscle: string;
+  movementType: string;
+  rpe?: number;
+  estimatedTonnage?: number;
+  phase?: string;
+  isCompound: boolean;
   createdAt?: string;
 }
 
@@ -131,6 +145,22 @@ function rowToStrengthSet(row: any): StrengthSet {
     seconds: row.seconds != null ? Number(row.seconds) : undefined,
     setType: row.set_type ?? undefined,
     isMeasured: row.is_measured != null ? Boolean(row.is_measured) : undefined,
+    source: row.source ?? undefined,
+    createdAt: row.created_at ?? undefined,
+  };
+}
+
+function rowToBridgeEntry(row: any): GameBridgeEntry {
+  return {
+    id: String(row.id),
+    day: String(row.day),
+    sessionId: String(row.session_id),
+    muscle: String(row.muscle),
+    movementType: String(row.movement_type),
+    rpe: row.rpe != null ? Number(row.rpe) : undefined,
+    estimatedTonnage: row.estimated_tonnage != null ? Number(row.estimated_tonnage) : undefined,
+    phase: row.phase ?? undefined,
+    isCompound: Boolean(row.is_compound),
     createdAt: row.created_at ?? undefined,
   };
 }
@@ -179,6 +209,22 @@ export async function loadStrengthExercises(): Promise<StrengthExercise[]> {
     return rows.map(rowToStrengthExercise);
   } catch (err) {
     console.error("loadStrengthExercises API error:", err);
+    return [];
+  }
+}
+
+export async function loadBridgeSets(day: string): Promise<GameBridgeEntry[]> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/game-bridge-sets", baseUrl);
+    url.searchParams.set("day", day);
+    const res = await authFetch(url.toString());
+    if (!res.ok) throw new Error(`${res.status}`);
+    const raw = await res.json();
+    const rows: any[] = Array.isArray(raw?.entries) ? raw.entries : [];
+    return rows.map(rowToBridgeEntry);
+  } catch (err) {
+    console.error("loadBridgeSets API error:", err);
     return [];
   }
 }

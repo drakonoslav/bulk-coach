@@ -1003,6 +1003,26 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_intervention_exp_user_date
       ON intervention_experiences(user_id, created_at DESC);
   `);
+
+  await runMigration('027_game_bridge_and_strength_source', `
+    ALTER TABLE strength_sets ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
+
+    CREATE TABLE IF NOT EXISTS daily_game_bridge_entries (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL DEFAULT 'local_default',
+      day           TEXT NOT NULL,
+      session_id    TEXT NOT NULL,
+      muscle        TEXT NOT NULL,
+      movement_type TEXT NOT NULL,
+      rpe           REAL,
+      estimated_tonnage REAL,
+      phase         TEXT,
+      is_compound   BOOLEAN NOT NULL DEFAULT false,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_game_bridge_user_day
+      ON daily_game_bridge_entries (user_id, day);
+  `);
 }
 
 export { pool };
