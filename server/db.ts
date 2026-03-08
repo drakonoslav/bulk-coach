@@ -1023,6 +1023,120 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_daily_game_bridge_user_day
       ON daily_game_bridge_entries (user_id, day);
   `);
+
+  await runMigration('028_intel_exercise_mapping', `
+    CREATE TABLE IF NOT EXISTS intel_exercise_mapping (
+      intel_exercise_id  INTEGER PRIMARY KEY,
+      intel_exercise_name TEXT NOT NULL,
+      local_exercise_id  TEXT REFERENCES strength_exercises(id),
+      mapped             BOOLEAN NOT NULL DEFAULT false
+    );
+
+    INSERT INTO intel_exercise_mapping (intel_exercise_id, intel_exercise_name, local_exercise_id, mapped) VALUES
+      -- Squats → back_squat
+      (1,  'Back Squat (high-bar)',              'back_squat',          true),
+      (2,  'Back Squat (low-bar)',               'back_squat',          true),
+      (3,  'Front Squat',                        'back_squat',          true),
+      (4,  'Box Squat',                          'back_squat',          true),
+      (5,  'Pause Squat',                        'back_squat',          true),
+      (6,  'Overhead Squat',                     NULL,                  false),
+      (7,  'Zercher Squat',                      NULL,                  false),
+      (8,  'Goblet Squat',                       'back_squat',          true),
+      (9,  'Safety Bar Squat',                   'back_squat',          true),
+      (10, 'Hack Squat',                         'back_squat',          true),
+      -- Deadlifts → rdl
+      (11, 'Conventional Deadlift',              'rdl',                 true),
+      (12, 'Sumo Deadlift',                      'rdl',                 true),
+      (13, 'Romanian Deadlift',                  'rdl',                 true),
+      (14, 'Stiff-Leg Deadlift',                 'rdl',                 true),
+      (15, 'Deficit Deadlift',                   'rdl',                 true),
+      (16, 'Block/Pin Pull Deadlift',            'rdl',                 true),
+      (17, 'Rack Pull',                          'rdl',                 true),
+      (18, 'Trap-Bar Deadlift (high-handle)',     'rdl',                 true),
+      (19, 'Trap-Bar Deadlift (low-handle)',      'rdl',                 true),
+      (20, 'Single-Leg Romanian Deadlift',       'rdl',                 true),
+      (21, 'Good Morning (barbell)',             'rdl',                 true),
+      -- Hip/Glute
+      (22, 'Glute-Ham Raise',                    'hip_thrust',          true),
+      (23, 'Walking Lunge',                      'back_squat',          true),
+      (24, 'Reverse Lunge',                      'back_squat',          true),
+      (25, 'Forward Lunge',                      'back_squat',          true),
+      (26, 'Bulgarian Split Squat',              'back_squat',          true),
+      (27, 'Rear-Foot-Elevated Split Squat',     'back_squat',          true),
+      (28, 'Step-Up (high box, loaded)',          'back_squat',          true),
+      (29, 'Single-Leg Squat / Pistol Squat',    'back_squat',          true),
+      (30, 'Barbell Hip Thrust',                 'hip_thrust',          true),
+      (31, 'Barbell Glute Bridge',               'hip_thrust',          true),
+      (32, 'Single-Leg Hip Thrust',              'hip_thrust',          true),
+      -- Bench Press → bench_press
+      (33, 'Flat Barbell Bench Press',           'bench_press',         true),
+      (34, 'Flat Dumbbell Bench Press',          'bench_press',         true),
+      (35, 'Incline Barbell Bench Press',        'incline_db_press',    true),
+      (36, 'Incline Dumbbell Bench Press',       'incline_db_press',    true),
+      (37, 'Decline Bench Press',                'bench_press',         true),
+      (38, 'Close-Grip Bench Press',             'bench_press',         true),
+      (39, 'Floor Press',                        'bench_press',         true),
+      (40, 'Board Press / Pin Press',            'bench_press',         true),
+      (41, 'Spoto Press',                        'bench_press',         true),
+      (42, 'Weighted Push-Up',                   'bench_press',         true),
+      (43, 'Parallel Bar Dips (chest-focused)',   'bench_press',         true),
+      (44, 'Parallel Bar Dips (tricep-focused)',  'bench_press',         true),
+      (45, 'Ring Dips',                          'bench_press',         true),
+      -- Overhead Press → ohp
+      (46, 'Standing Barbell Overhead Press',    'ohp',                 true),
+      (47, 'Standing Dumbbell Overhead Press',   'ohp',                 true),
+      (48, 'Seated Barbell Overhead Press',      'ohp',                 true),
+      (49, 'Seated Dumbbell Overhead Press',     'ohp',                 true),
+      (50, 'Push Press',                         'ohp',                 true),
+      (51, 'Push Jerk',                          NULL,                  false),
+      (52, 'Split Jerk',                         NULL,                  false),
+      (53, 'Handstand Push-Up',                  'ohp',                 true),
+      (54, 'Viking Press',                       'ohp',                 true),
+      -- Rows → chest_supported_row
+      (55, 'Bent-Over Barbell Row (overhand)',    'chest_supported_row', true),
+      (56, 'Bent-Over Barbell Row (underhand)',   'chest_supported_row', true),
+      (57, 'Pendlay Row',                        'chest_supported_row', true),
+      (58, 'Yates Row',                          'chest_supported_row', true),
+      (59, 'Chest-Supported Row',                'chest_supported_row', true),
+      (60, 'T-Bar Row',                          'chest_supported_row', true),
+      (61, 'Meadows Row',                        'chest_supported_row', true),
+      (62, 'Seated Cable Row',                   'chest_supported_row', true),
+      (63, 'Dumbbell Row',                       'chest_supported_row', true),
+      (64, 'Inverted Row',                       'chest_supported_row', true),
+      -- Pull-ups → pullup_or_pulldown
+      (65, 'Pull-Up (overhand grip)',            'pullup_or_pulldown',  true),
+      (66, 'Chin-Up (underhand grip)',           'pullup_or_pulldown',  true),
+      (67, 'Neutral-Grip Pull-Up',              'pullup_or_pulldown',  true),
+      (68, 'Weighted Pull-Up',                   'pullup_or_pulldown',  true),
+      (69, 'Weighted Chin-Up',                   'pullup_or_pulldown',  true),
+      (70, 'Commando Pull-Up',                  'pullup_or_pulldown',  true),
+      (71, 'L-Sit Pull-Up',                     'pullup_or_pulldown',  true),
+      (72, 'Muscle-Up',                          'pullup_or_pulldown',  true),
+      -- Olympic lifts → unmapped
+      (73, 'Power Clean',                        NULL,                  false),
+      (74, 'Hang Power Clean',                   NULL,                  false),
+      (75, 'Clean Pull',                         NULL,                  false),
+      (76, 'Clean and Jerk',                     NULL,                  false),
+      (77, 'Power Snatch',                       NULL,                  false),
+      (78, 'Hang Power Snatch',                  NULL,                  false),
+      (79, 'Snatch Pull',                        NULL,                  false),
+      (80, 'Clean High Pull',                    NULL,                  false),
+      (81, 'Barbell Complex',                    NULL,                  false),
+      (82, 'Thruster',                           NULL,                  false),
+      (83, 'Devil''s Press',                     NULL,                  false),
+      -- Carries → unmapped (farmer_carry exists but no weight tracking is meaningful)
+      (84, 'Farmer''s Walk',                     'farmer_carry',        true),
+      (85, 'Suitcase Carry',                     'farmer_carry',        true),
+      (86, 'Overhead Carry',                     NULL,                  false),
+      (87, 'Zercher Carry',                      NULL,                  false),
+      (88, 'Yoke Walk',                          NULL,                  false),
+      (89, 'Sandbag Carry',                      NULL,                  false),
+      -- Sled/Tire → unmapped
+      (90, 'Sled Push',                          NULL,                  false),
+      (91, 'Sled Pull',                          NULL,                  false),
+      (92, 'Tire Flip',                          NULL,                  false)
+    ON CONFLICT (intel_exercise_id) DO NOTHING;
+  `);
 }
 
 export { pool };

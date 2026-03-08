@@ -3715,14 +3715,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resolvedEventId = eventId || `${sessionId}_s${Date.now()}`;
 
       pool.query(
-        `INSERT INTO strength_sets (id, user_id, day, exercise_id, weight_lb, reps, set_type, is_measured, source)
-         SELECT $1, $2, $3, $4, $5, $6, 'top', TRUE, 'workout_game'
-         WHERE EXISTS (SELECT 1 FROM strength_exercises WHERE id = $4)
+        `WITH resolved AS (
+           SELECT local_exercise_id FROM intel_exercise_mapping
+           WHERE intel_exercise_id = $4 AND mapped = true
+         )
+         INSERT INTO strength_sets (id, user_id, day, exercise_id, weight_lb, reps, set_type, is_measured, source)
+         SELECT $1, $2, $3, r.local_exercise_id, $5, $6, 'top', TRUE, 'workout_game'
+         FROM resolved r
          ON CONFLICT (id) DO NOTHING`,
-        [resolvedEventId, userId, today, String(exerciseId), weight, reps]
+        [resolvedEventId, userId, today, exerciseId, weight, reps]
       ).then((r: any) => {
-        if (r.rowCount === 0) console.log(`[game-exercise-set] skipped strength_sets: exercise_id=${exerciseId} not in local catalog`);
-        else console.log(`[game-exercise-set] strength_sets OK: id=${resolvedEventId} exercise=${exerciseId} ${weight}×${reps}`);
+        if (r.rowCount === 0) console.log(`[game-exercise-set] skipped strength_sets: intel_exercise_id=${exerciseId} unmapped or duplicate`);
+        else console.log(`[game-exercise-set] strength_sets OK: id=${resolvedEventId} intel_exercise=${exerciseId} → local, ${weight}×${reps}`);
       }).catch((err: any) => console.error("[game-exercise-set] strength_sets insert error:", err.message));
 
       fireIntelExerciseLogSet({
@@ -4559,6 +4563,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error("GET /api/game-bridge-sets error:", err);
       return res.status(500).json({ error: "Failed to load bridge sets" });
+    }
+  });
+
+  app.get("/api/intel/exercise-mapping", async (_req: Request, res: Response) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT intel_exercise_id, intel_exercise_name, local_exercise_id, mapped
+         FROM intel_exercise_mapping
+         ORDER BY intel_exercise_id`
+      );
+      const mapped = rows.filter((r: any) => r.mapped);
+      const unmapped = rows.filter((r: any) => !r.mapped);
+      const localGroups: Record<string, string[]> = {};
+      for (const r of mapped) {
+        const key = r.local_exercise_id;
+        if (!localGroups[key]) localGroups[key] = [];
+        localGroups[key].push(r.intel_exercise_name);
+      }
+      res.json({
+        total: rows.length,
+        mapped_count: mapped.length,
+        unmapped_count: unmapped.length,
+        coverage_pct: Math.round((mapped.length / rows.length) * 100),
+        mapped_exercises: localGroups,
+        unmapped_exercises: unmapped.map((r: any) => ({ id: r.intel_exercise_id, name: r.intel_exercise_name })),
+      });
+    } catch (err: any) {
+      console.error("GET /api/intel/exercise-mapping error:", err);
+      res.status(500).json({ error: "Failed to load mapping" });
     }
   });
 
