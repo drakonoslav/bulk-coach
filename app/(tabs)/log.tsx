@@ -1831,6 +1831,11 @@ export default function LogScreen() {
                     {s.reps != null ? `${s.reps} reps` : ""}
                   </Text>
                 </View>
+                {s.weightLb != null && s.reps != null && (
+                  <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                    {Math.round(s.weightLb * s.reps).toLocaleString()} lb
+                  </Text>
+                )}
               </View>
             ))}
           </View>
