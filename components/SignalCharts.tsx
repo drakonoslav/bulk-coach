@@ -47,14 +47,14 @@ const PAD_B = 18;
 const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#FBBF24";
-const C_READINESS = "#6B8ACD";
+const C_READINESS = "#00E5FF";
 const C_SV = "#6EBF8B";
 const C_RECOVERY = "#00E5FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
-const C_LATENCY = "#C0C0C0";
-const C_WASO = "#FFFFFF";
-const C_AWAKE_IN_BED = "#8B5CF6";
+const C_LATENCY = "#F52B2A";
+const C_WASO = "#FFDE26";
+const C_AWAKE_IN_BED = "#2256AA";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.35)";
@@ -71,6 +71,53 @@ function buildPath(
     d += ` L${data[i].x},${data[i].y}`;
   }
   return d;
+}
+
+function buildExceedanceFill(
+  rawData: { x: number; y: number }[],
+  thresholdY: number,
+): string {
+  if (rawData.length < 2) return "";
+  let path = "";
+  let inExceed = false;
+  for (let i = 0; i < rawData.length; i++) {
+    const p = rawData[i];
+    const above = p.y < thresholdY;
+    if (above && !inExceed) {
+      if (i > 0) {
+        const prev = rawData[i - 1];
+        const dy = p.y - prev.y;
+        if (Math.abs(dy) > 0.01) {
+          const t = (thresholdY - prev.y) / dy;
+          const crossX = prev.x + t * (p.x - prev.x);
+          path += `M${crossX},${thresholdY} L${p.x},${p.y}`;
+        } else {
+          path += `M${p.x},${thresholdY} L${p.x},${p.y}`;
+        }
+      } else {
+        path += `M${p.x},${thresholdY} L${p.x},${p.y}`;
+      }
+      inExceed = true;
+    } else if (above && inExceed) {
+      path += ` L${p.x},${p.y}`;
+    } else if (!above && inExceed) {
+      const prev = rawData[i - 1];
+      const dy = p.y - prev.y;
+      if (Math.abs(dy) > 0.01) {
+        const t = (thresholdY - prev.y) / dy;
+        const crossX = prev.x + t * (p.x - prev.x);
+        path += ` L${crossX},${thresholdY} Z`;
+      } else {
+        path += ` L${p.x},${thresholdY} Z`;
+      }
+      inExceed = false;
+    }
+  }
+  if (inExceed) {
+    const last = rawData[rawData.length - 1];
+    path += ` L${last.x},${thresholdY} Z`;
+  }
+  return path;
 }
 
 function formatDateShort(dateStr: string): string {
@@ -130,6 +177,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const containerRef = useRef<View>(null);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setChartWidth(e.nativeEvent.layout.width);
@@ -161,6 +209,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => {
+          if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
           const x = e.nativeEvent.locationX;
           setSelectedIdx(idxFromX(x));
         },
@@ -169,7 +218,8 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           setSelectedIdx(idxFromX(x));
         },
         onPanResponderRelease: () => {
-          setTimeout(() => setSelectedIdx(null), 2500);
+          if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+          tooltipTimerRef.current = setTimeout(() => setSelectedIdx(null), 6000);
         },
       }),
     [idxFromX],
@@ -231,7 +281,8 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       });
       const avgPct = vals.length > 0 ? vals.reduce((s, n) => s + n, 0) / vals.length : null;
       const avgY = avgPct != null ? pctToY(avgPct) : null;
-      return { raw, avgY };
+      const fillPath = avgY != null ? buildExceedanceFill(raw, avgY) : "";
+      return { raw, avgY, fillPath };
     };
     return {
       latency: buildSeries(p => p.latencyPct),
@@ -384,14 +435,23 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={`th-${v}`} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_THRESHOLD} strokeWidth={1} strokeDasharray="4,4" />
               );
             })}
+            {disruptionSeries.latency.fillPath ? (
+              <Path d={disruptionSeries.latency.fillPath} fill={C_LATENCY} stroke="none" opacity={0.18} />
+            ) : null}
+            {disruptionSeries.waso.fillPath ? (
+              <Path d={disruptionSeries.waso.fillPath} fill={C_WASO} stroke="none" opacity={0.18} />
+            ) : null}
+            {disruptionSeries.awakeInBed.fillPath ? (
+              <Path d={disruptionSeries.awakeInBed.fillPath} fill={C_AWAKE_IN_BED} stroke="none" opacity={0.18} />
+            ) : null}
             {disruptionSeries.latency.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1} fill="none" opacity={0.2} />
+              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1} fill="none" opacity={0.25} />
             )}
             {disruptionSeries.waso.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1} fill="none" opacity={0.2} />
+              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1} fill="none" opacity={0.25} />
             )}
             {disruptionSeries.awakeInBed.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1} fill="none" opacity={0.2} />
+              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1} fill="none" opacity={0.25} />
             )}
             {disruptionSeries.latency.avgY != null && (
               <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1} opacity={0.5} />
@@ -617,28 +677,28 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_LATENCY }]} />
-            <Text style={styles.tooltipLabel}>Latency</Text>
+            <Text style={styles.tooltipLabel}>Sleep Latency</Text>
             <Text style={styles.tooltipVal}>
-              {selectedPoint.latencyMin != null ? `${selectedPoint.latencyMin}m (${Math.round(selectedPoint.latencyPct!)}%)` : "--"}
+              {selectedPoint.latencyMin != null ? `${selectedPoint.latencyMin} min (${Math.round(selectedPoint.latencyPct!)}%)` : "--"}
             </Text>
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_WASO }]} />
-            <Text style={styles.tooltipLabel}>WASO</Text>
+            <Text style={styles.tooltipLabel}>Wake After Sleep Onset</Text>
             <Text style={styles.tooltipVal}>
-              {selectedPoint.wasoMin != null ? `${selectedPoint.wasoMin}m (${Math.round(selectedPoint.wasoPct!)}%)` : "--"}
+              {selectedPoint.wasoMin != null ? `${selectedPoint.wasoMin} min (${Math.round(selectedPoint.wasoPct!)}%)` : "--"}
             </Text>
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_AWAKE_IN_BED }]} />
-            <Text style={styles.tooltipLabel}>Awake</Text>
+            <Text style={styles.tooltipLabel}>Awake-in-Bed</Text>
             <Text style={styles.tooltipVal}>
-              {selectedPoint.awakeInBedMin != null ? `${selectedPoint.awakeInBedMin}m (${Math.round(selectedPoint.awakeInBedPct!)}%)` : "--"}
+              {selectedPoint.awakeInBedMin != null ? `${selectedPoint.awakeInBedMin} min (${Math.round(selectedPoint.awakeInBedPct!)}%)` : "--"}
             </Text>
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_SV }]} />
-            <Text style={styles.tooltipLabel}>Str.Vel</Text>
+            <Text style={styles.tooltipLabel}>Strength Velocity</Text>
             <Text style={styles.tooltipVal}>
               {selectedPoint.strengthVelocity != null
                 ? svSource === "intel"
@@ -649,7 +709,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           </View>
           <View style={styles.tooltipRow}>
             <View style={[styles.tooltipDot, { backgroundColor: C_RECOVERY }]} />
-            <Text style={styles.tooltipLabel}>RI</Text>
+            <Text style={styles.tooltipLabel}>Recovery Index</Text>
             <Text style={styles.tooltipVal}>
               {selectedPoint.hrv != null && selectedPoint.rhr != null && selectedPoint.rhr > 0
                 ? (selectedPoint.hrv / selectedPoint.rhr).toFixed(2)
@@ -808,12 +868,12 @@ const styles = StyleSheet.create({
   tooltip: {
     position: "absolute",
     top: 40,
-    backgroundColor: "rgba(10,10,18,0.92)",
+    backgroundColor: "rgba(10,10,18,0.95)",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
-    padding: 10,
-    minWidth: 130,
+    padding: 12,
+    minWidth: 210,
     zIndex: 10,
   },
   tooltipDate: {
