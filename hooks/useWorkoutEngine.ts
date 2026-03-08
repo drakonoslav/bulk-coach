@@ -114,6 +114,7 @@ export function useWorkoutEngine() {
         sessionId,
         readinessScore,
         workoutType,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
 
       setState({ ...result, start_ts: result.start_ts ?? startTs });
@@ -198,6 +199,11 @@ export function useWorkoutEngine() {
     const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
 
     try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const localParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date(state.start_ts));
+      const localDay = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/set`, {
         muscle,
         rpe,
@@ -208,6 +214,8 @@ export function useWorkoutEngine() {
         phase: state.phase,
         strainPoints: state.strainPoints,
         event_id: eventId,
+        day: localDay,
+        timezone: tz,
       });
 
       setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });
@@ -277,6 +285,11 @@ export function useWorkoutEngine() {
     const eventId = `${state.session_id}_s${setIndex}_${Date.now()}`;
 
     try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const localParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date(state.start_ts));
+      const localDay = `${localParts.find(p => p.type === 'year')?.value}-${localParts.find(p => p.type === 'month')?.value}-${localParts.find(p => p.type === 'day')?.value}`;
       const result: SetResult = await postJson(`/api/workout/${encodeURIComponent(state.session_id)}/exercise-set`, {
         muscle,
         exerciseId,
@@ -289,6 +302,8 @@ export function useWorkoutEngine() {
         phase: state.phase,
         strainPoints: state.strainPoints,
         event_id: eventId,
+        day: localDay,
+        timezone: tz,
       });
 
       setState({ ...result, session_id: state.session_id, start_ts: state.start_ts });

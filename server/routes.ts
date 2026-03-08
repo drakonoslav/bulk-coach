@@ -3561,12 +3561,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/workout/start", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { readinessScore, sessionId, workoutType } = req.body;
+      const { readinessScore, sessionId, workoutType, timezone } = req.body;
       if (readinessScore == null || !sessionId) {
         return res.status(400).json({ error: "readinessScore and sessionId are required" });
       }
       const now = new Date();
-      const dateStr = now.toISOString().slice(0, 10);
+      const dateStr = timezone ? toUTCDateString(now.toISOString(), timezone) : now.toISOString().slice(0, 10);
       await upsertWorkoutSession({
         user_id: userId,
         session_id: sessionId,
@@ -3593,7 +3593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         baseline_window_seconds: null,
         time_to_recovery_sec: null,
         source: "app",
-        timezone: null,
+        timezone: timezone || null,
       });
       const state = initWorkoutState(sessionId, readinessScore);
       await persistWorkoutEvent(sessionId, { t: Date.now(), type: "SESSION_START" }, state.cbpStart, state.cbpCurrent, 0, userId);
@@ -3636,7 +3636,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const clientDay = req.body.day as string | undefined;
+      const clientTz = req.body.timezone as string | undefined;
+      const today = clientDay || (clientTz ? toUTCDateString(new Date().toISOString(), clientTz) : new Date().toISOString().slice(0, 10));
       const weekStart = getWeekStart(today);
       await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
@@ -3707,7 +3709,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await persistWorkoutEvent(sessionId, event, cbpBefore, updatedState.cbpCurrent, drain, userId);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const clientDay = req.body.day as string | undefined;
+      const clientTz = req.body.timezone as string | undefined;
+      const today = clientDay || (clientTz ? toUTCDateString(new Date().toISOString(), clientTz) : new Date().toISOString().slice(0, 10));
       const weekStart = getWeekStart(today);
       await incrementMuscleLoad(muscle as MuscleGroup, weekStart, 1, (rpe ?? 7) >= 7, userId);
 
@@ -3727,8 +3731,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
          ON CONFLICT (id) DO NOTHING`,
         [resolvedEventId, userId, today, exerciseId, weight, reps]
       ).then((r: any) => {
-        if (r.rowCount === 0) console.log(`[game-exercise-set] skipped strength_sets: intel_exercise_id=${exerciseId} unmapped or duplicate`);
-        else console.log(`[game-exercise-set] strength_sets OK: id=${resolvedEventId} intel_exercise=${exerciseId} → local, ${weight}×${reps}`);
+        if (r.rowCount === 0) console.log(`[game-exercise-set] skipped strength_sets: intel_exercise_id=${exerciseId} unmapped or duplicate, day=${today}`);
+        else console.log(`[game-exercise-set] strength_sets OK: id=${resolvedEventId} intel_exercise=${exerciseId} → local, day=${today} ${weight}×${reps}`);
       }).catch((err: any) => console.error("[game-exercise-set] strength_sets insert error:", err.message));
 
       fireIntelExerciseLogSet({
