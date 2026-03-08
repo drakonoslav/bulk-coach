@@ -48,7 +48,7 @@ const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#FBBF24";
 const C_READINESS = "#5CF2FF";
-const C_SV = "#6EBF8B";
+const C_SV = "#FF2D8A";
 const C_RECOVERY = "#5CF2FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
@@ -798,7 +798,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
               );
             })}
             {svData.data.length > 1 && (
-              <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2} fill="none" />
+              <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={OUTPUT_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
