@@ -209,6 +209,24 @@ function avgOfThree(r1?: number, r2?: number, r3?: number): number | null {
 export async function registerRoutes(app: Express): Promise<Server> {
   await initDb();
 
+  try {
+    const cleanup = await pool.query(`
+      UPDATE daily_log SET
+        lift_start_time = CASE WHEN lift_start_time ~ '^\\d{1,2}:\\d{2}$' THEN lift_start_time ELSE NULL END,
+        lift_end_time = CASE WHEN lift_end_time ~ '^\\d{1,2}:\\d{2}$' THEN lift_end_time ELSE NULL END,
+        lift_min = CASE WHEN lift_start_time ~ '^\\d{1,2}:\\d{2}$' THEN lift_min ELSE NULL END,
+        lift_working_min = CASE WHEN lift_start_time ~ '^\\d{1,2}:\\d{2}$' THEN lift_working_min ELSE NULL END
+      WHERE (lift_start_time IS NOT NULL AND lift_start_time !~ '^\\d{1,2}:\\d{2}$')
+         OR (lift_end_time IS NOT NULL AND lift_end_time !~ '^\\d{1,2}:\\d{2}$')
+      RETURNING day
+    `);
+    if (cleanup.rowCount && cleanup.rowCount > 0) {
+      console.log(`[startup-cleanup] Fixed ${cleanup.rowCount} daily_log rows with corrupted lift time fields`);
+    }
+  } catch (err: any) {
+    console.error(`[startup-cleanup] lift time cleanup error: ${err.message}`);
+  }
+
   setInterval(() => {
     try {
       if (!fs.existsSync(CHUNK_DIR)) return;

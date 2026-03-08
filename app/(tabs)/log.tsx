@@ -535,8 +535,9 @@ export default function LogScreen() {
       setCardio(existing.cardioMin?.toString() || "");
       setCardioStartTime(existing.cardioStartTime || "");
       setCardioEndTime(existing.cardioEndTime || "");
-      setLiftStartTime(existing.liftStartTime || "");
-      setLiftEndTime(existing.liftEndTime || "");
+      const hhmmRe = /^\d{1,2}:\d{2}$/;
+      setLiftStartTime(existing.liftStartTime && hhmmRe.test(existing.liftStartTime) ? existing.liftStartTime : "");
+      setLiftEndTime(existing.liftEndTime && hhmmRe.test(existing.liftEndTime) ? existing.liftEndTime : "");
       setLiftMin(existing.liftMin?.toString() || "");
       setLiftWorkingMin(existing.liftWorkingMin?.toString() || "");
       setLiftZ1(existing.liftZ1Min?.toString() || "");
