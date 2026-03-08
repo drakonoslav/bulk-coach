@@ -217,37 +217,30 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     return out;
   }, [points, xForIdx]);
 
-  const latencyData = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    points.forEach((p, i) => {
-      if (p.latencyPct != null) {
-        const y = PAD_T + ((100 - p.latencyPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
-        out.push({ x: xForIdx(i), y });
-      }
-    });
-    return out;
-  }, [points, xForIdx]);
-
-  const wasoData = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    points.forEach((p, i) => {
-      if (p.wasoPct != null) {
-        const y = PAD_T + ((100 - p.wasoPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
-        out.push({ x: xForIdx(i), y });
-      }
-    });
-    return out;
-  }, [points, xForIdx]);
-
-  const awakeInBedData = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    points.forEach((p, i) => {
-      if (p.awakeInBedPct != null) {
-        const y = PAD_T + ((100 - p.awakeInBedPct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
-        out.push({ x: xForIdx(i), y });
-      }
-    });
-    return out;
+  const disruptionSeries = useMemo(() => {
+    const pctToY = (pct: number) => PAD_T + ((100 - pct) / 100) * (CAPACITY_H - PAD_T - PAD_B);
+    const WINDOW = 7;
+    const buildSeries = (getter: (p: SignalPoint) => number | null) => {
+      const raw: { x: number; y: number }[] = [];
+      const avg: { x: number; y: number }[] = [];
+      const buf: number[] = [];
+      points.forEach((p, i) => {
+        const v = getter(p);
+        if (v != null) {
+          raw.push({ x: xForIdx(i), y: pctToY(v) });
+          buf.push(v);
+          if (buf.length > WINDOW) buf.shift();
+          const mean = buf.reduce((s, n) => s + n, 0) / buf.length;
+          avg.push({ x: xForIdx(i), y: pctToY(mean) });
+        }
+      });
+      return { raw, avg };
+    };
+    return {
+      latency: buildSeries(p => p.latencyPct),
+      waso: buildSeries(p => p.wasoPct),
+      awakeInBed: buildSeries(p => p.awakeInBedPct),
+    };
   }, [points, xForIdx]);
 
   const svData = useMemo(() => {
@@ -394,17 +387,26 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={`th-${v}`} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_THRESHOLD} strokeWidth={1} strokeDasharray="4,4" />
               );
             })}
+            {disruptionSeries.latency.raw.length > 1 && (
+              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1} fill="none" opacity={0.2} />
+            )}
+            {disruptionSeries.waso.raw.length > 1 && (
+              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1} fill="none" opacity={0.2} />
+            )}
+            {disruptionSeries.awakeInBed.raw.length > 1 && (
+              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1} fill="none" opacity={0.2} />
+            )}
+            {disruptionSeries.latency.avg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.latency.avg)} stroke={C_LATENCY} strokeWidth={1.5} fill="none" opacity={0.7} />
+            )}
+            {disruptionSeries.waso.avg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.waso.avg)} stroke={C_WASO} strokeWidth={1.5} fill="none" opacity={0.7} />
+            )}
+            {disruptionSeries.awakeInBed.avg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.awakeInBed.avg)} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} fill="none" opacity={0.7} />
+            )}
             {readinessData.length > 1 && (
               <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2} fill="none" />
-            )}
-            {latencyData.length > 1 && (
-              <Path d={buildPath(latencyData)} stroke={C_LATENCY} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
-            )}
-            {wasoData.length > 1 && (
-              <Path d={buildPath(wasoData)} stroke={C_WASO} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
-            )}
-            {awakeInBedData.length > 1 && (
-              <Path d={buildPath(awakeInBedData)} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} fill="none" strokeDasharray="3,2" />
             )}
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={CAPACITY_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
