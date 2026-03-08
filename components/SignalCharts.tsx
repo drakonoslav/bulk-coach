@@ -372,7 +372,7 @@ function ChartPanel({
       {legendRows && legendRows.map((row, ri) => (
         <View key={ri} style={{ flexDirection: "row", gap: 8, marginLeft: 2, marginBottom: ri < legendRows.length - 1 ? 1 : 3 }}>
           {row.map((il, ci) => (
-            <Text key={ci} style={{ fontSize: 7.5, fontWeight: "800" as const, color: il.color, letterSpacing: 1.0 }}>{il.text}</Text>
+            <Text key={ci} style={{ fontSize: 6.5, fontWeight: "800" as const, color: il.color, letterSpacing: 0.6 }}>{il.text}</Text>
           ))}
         </View>
       ))}
