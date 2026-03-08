@@ -200,8 +200,14 @@ function configureExpoAndLanding(app: express.Application) {
     next();
   });
 
-  app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
+  app.use("/assets", express.static(path.resolve(process.cwd(), "assets"), { maxAge: "1d" }));
+  app.use(express.static(path.resolve(process.cwd(), "static-build"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".html")) {
+        res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      }
+    },
+  }));
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
