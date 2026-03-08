@@ -55,10 +55,10 @@ const C_RECOVERY_REF = "#22C55E";
 const C_LATENCY = "#2D8CFF";
 const C_WASO = "#FFC928";
 const C_AWAKE_IN_BED = "#FF4D5A";
-const C_BLEND_LW = "#00C27A";
-const C_BLEND_WA = "#FF7A1A";
+const C_BLEND_LW = "#00E639";
+const C_BLEND_WA = "#FF6600";
 const C_BLEND_LA = "#8B5CF6";
-const C_BLEND_RYB = "#FF4FCF";
+const C_BLEND_RYB = "#FFFFFF";
 const C_BLEND_WHITE = "#FFFFFF";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
@@ -316,16 +316,16 @@ function buildDisruptionFillLayers(
   for (const [k, cfg] of Object.entries(soloSpec)) {
     if (!pathAcc[k]) continue;
     layers.push({
-      d: pathAcc[k], color: cfg.color, opacity: 0.72,
-      strokeColor: cfg.color, strokeWidth: 0.8, glowRadius: 2.5, glowOpacity: 0.10,
+      d: pathAcc[k], color: cfg.color, opacity: 0.85,
+      strokeColor: cfg.color, strokeWidth: 0.8, glowRadius: 2.5, glowOpacity: 0.08,
       isComposite: false, priority: cfg.pri,
     });
   }
   for (const [k, cfg] of Object.entries(compSpec)) {
     if (!pathAcc[k]) continue;
     layers.push({
-      d: pathAcc[k], color: cfg.color, opacity: 0.92,
-      strokeColor: cfg.color, strokeWidth: 1.4, glowRadius: 5.5, glowOpacity: 0.22,
+      d: pathAcc[k], color: cfg.color, opacity: 0.95,
+      strokeColor: cfg.color, strokeWidth: 1.4, glowRadius: 4, glowOpacity: 0.18,
       isComposite: true, priority: cfg.pri,
     });
   }
