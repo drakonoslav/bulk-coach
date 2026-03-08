@@ -8,11 +8,16 @@ import {
   resolveSetIntent,
 } from "./intel-writer";
 
-export async function resolveSessionDay(
+export interface SessionDayInfo {
+  day: string;
+  timezone: string | null;
+}
+
+export async function resolveSessionDayInfo(
   pool: Pool,
   sessionId: string,
   userId: string,
-): Promise<string> {
+): Promise<SessionDayInfo> {
   const r = await pool.query(
     `SELECT date, start_ts, timezone FROM workout_session WHERE session_id = $1 AND user_id = $2 LIMIT 1`,
     [sessionId, userId],
@@ -22,7 +27,32 @@ export async function resolveSessionDay(
   }
   const row = r.rows[0];
   const dateVal = typeof row.date === "string" ? row.date : (row.date as Date).toISOString().slice(0, 10);
-  return dateVal;
+  return { day: dateVal, timezone: row.timezone ?? null };
+}
+
+export async function resolveSessionDay(
+  pool: Pool,
+  sessionId: string,
+  userId: string,
+): Promise<string> {
+  const info = await resolveSessionDayInfo(pool, sessionId, userId);
+  return info.day;
+}
+
+function utcToLocalHHMM(isoTs: string, tz: string | null): string {
+  try {
+    const d = new Date(isoTs);
+    if (isNaN(d.getTime())) return isoTs;
+    const zone = tz || "UTC";
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone, hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(d);
+    const h = parts.find(p => p.type === "hour")?.value ?? "00";
+    const m = parts.find(p => p.type === "minute")?.value ?? "00";
+    return `${h}:${m}`;
+  } catch {
+    return isoTs;
+  }
 }
 
 export type WorkoutWriteInput =
@@ -64,15 +94,17 @@ export async function persistWorkoutDerivedState(
 ): Promise<void> {
   const tag = `[workout-persist:${input.kind}]`;
 
-  let day: string;
+  let sessionInfo: SessionDayInfo;
   try {
-    day = await resolveSessionDay(pool, input.sessionId, input.userId);
+    sessionInfo = await resolveSessionDayInfo(pool, input.sessionId, input.userId);
   } catch (err: any) {
     console.error(`${tag} ABORT: ${err.message}`);
     return;
   }
+  const day = sessionInfo.day;
+  const sessionTz = sessionInfo.timezone;
 
-  console.log(`${tag} resolved day=${day} from workout_session row for session=${input.sessionId}`);
+  console.log(`${tag} resolved day=${day} tz=${sessionTz} from workout_session row for session=${input.sessionId}`);
 
   switch (input.kind) {
     case "bridge_set": {
@@ -142,6 +174,10 @@ export async function persistWorkoutDerivedState(
     case "session_close": {
       const durationMin = Math.round(input.durationMinutes ?? 0);
       const workingMin = input.workingMinutes != null ? Math.round(input.workingMinutes) : null;
+      const localStartTime = utcToLocalHHMM(input.startTs, sessionTz);
+      const localEndTime = utcToLocalHHMM(input.endTs, sessionTz);
+
+      console.log(`${tag} timestamps: startTs=${input.startTs} → ${localStartTime}, endTs=${input.endTs} → ${localEndTime} (tz=${sessionTz})`);
 
       try {
         const r = await pool.query(
@@ -157,9 +193,9 @@ export async function persistWorkoutDerivedState(
                ELSE COALESCE(daily_log.lift_working_min, 0) + EXCLUDED.lift_working_min
              END,
              updated_at = NOW()`,
-          [input.userId, day, input.startTs, input.endTs, durationMin, workingMin],
+          [input.userId, day, localStartTime, localEndTime, durationMin, workingMin],
         );
-        console.log(`${tag} daily_log merge OK: day=${day} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
+        console.log(`${tag} daily_log merge OK: day=${day} start=${localStartTime} end=${localEndTime} lift_min=${durationMin} working_min=${workingMin} rows=${r.rowCount}`);
       } catch (err: any) {
         console.error(`${tag} daily_log merge ERROR: ${err.message}`);
       }
