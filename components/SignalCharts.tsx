@@ -29,6 +29,7 @@ interface SignalChartsProps {
   rangeDays: number;
   onRangeChange: (days: number) => void;
   forecast?: ForecastSummary | null;
+  svSource?: "intel" | "legacy";
 }
 
 const RANGES = [30, 60, 90];
@@ -116,7 +117,7 @@ const panelStyles = StyleSheet.create({
   },
 });
 
-export default function SignalCharts({ points, rangeDays, onRangeChange, forecast }: SignalChartsProps) {
+export default function SignalCharts({ points, rangeDays, onRangeChange, forecast, svSource = "legacy" }: SignalChartsProps) {
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const containerRef = useRef<View>(null);
@@ -210,15 +211,21 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const svData = useMemo(() => {
     const out: { x: number; y: number }[] = [];
     const vals = points.filter(p => p.strengthVelocity != null).map(p => p.strengthVelocity!);
-    const absMax = vals.length > 0 ? Math.max(Math.max(...vals.map(Math.abs)), 5) : 5;
+    const rawAbsMax = vals.length > 0 ? Math.max(...vals.map(Math.abs)) : 0;
+    const minFloor = svSource === "intel" ? 0.1 : 5;
+    const absMax = Math.max(rawAbsMax * 1.2, minFloor);
     points.forEach((p, i) => {
       if (p.strengthVelocity != null) {
         const y = PAD_T + ((absMax - p.strengthVelocity) / (2 * absMax)) * (OUTPUT_H - PAD_T - PAD_B);
         out.push({ x: xForIdx(i), y });
       }
     });
-    return { data: out, absMax };
-  }, [points, xForIdx]);
+    const gridStep = svSource === "intel"
+      ? (absMax > 0.5 ? Math.round(absMax * 10) / 20 : Math.round(absMax * 100) / 200)
+      : Math.round(absMax / 2);
+    const gridLines = gridStep > 0 ? [-gridStep, 0, gridStep] : [0];
+    return { data: out, absMax, gridLines };
+  }, [points, xForIdx, svSource]);
 
   const svZeroY = useMemo(() => {
     return PAD_T + (svData.absMax / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
@@ -358,7 +365,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         <ChartPanel height={OUTPUT_H} label="OUTPUT" subtitle="neuromuscular performance" chartWidth={chartWidth}>
           <Svg width={chartWidth} height={OUTPUT_H}>
-            {[-5, 0, 5].map((v) => {
+            {svData.gridLines.map((v) => {
               const y = PAD_T + ((svData.absMax - v) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
               return (
                 <Line key={v} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={v === 0 ? C_THRESHOLD : C_GRID} strokeWidth={v === 0 ? 1 : 0.5} strokeDasharray={v === 0 ? "4,4" : undefined} />
@@ -563,7 +570,9 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             <Text style={styles.tooltipLabel}>Str.Vel</Text>
             <Text style={styles.tooltipVal}>
               {selectedPoint.strengthVelocity != null
-                ? fmtDelta(selectedPoint.strengthVelocity, 1, "%")
+                ? svSource === "intel"
+                  ? fmtDelta(selectedPoint.strengthVelocity, 2, "")
+                  : fmtDelta(selectedPoint.strengthVelocity, 1, "%")
                 : "--"}
             </Text>
           </View>

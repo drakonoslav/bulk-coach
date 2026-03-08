@@ -1992,7 +1992,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       fromDate.setDate(fromDate.getDate() - days + 1);
       const from = fromDate.toISOString().slice(0, 10);
 
-      const [hpaRows, readinessRows, logRows, sbRes] = await Promise.all([
+      let intelVelocityMap = new Map<string, number>();
+      const intelTrendPromise = INTEL_BASE
+        ? fetch(`${INTEL_BASE}/strength/trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+            .then(async r => {
+              if (!r.ok) return null;
+              const raw = await r.json();
+              const data = raw?.upstream_json ?? raw;
+              if (!data?.days || !Array.isArray(data.days)) return null;
+              return data;
+            })
+            .catch(() => null)
+        : Promise.resolve(null);
+
+      const [hpaRows, readinessRows, logRows, sbRes, intelTrendData] = await Promise.all([
         getHpaRange(from, to, userId),
         getReadinessRange(from, to, userId),
         pool.query(
@@ -2007,7 +2020,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `SELECT exercise, baseline_value FROM strength_baselines WHERE user_id = $1`,
           [userId],
         ),
+        intelTrendPromise,
       ]);
+
+      if (intelTrendData?.days) {
+        for (const d of intelTrendData.days) {
+          intelVelocityMap.set(d.date, d.velocity_14d * 7);
+        }
+      }
 
       const sbMap: Record<string, number> = {};
       for (const r of sbRes.rows) sbMap[r.exercise] = Number(r.baseline_value);
@@ -2038,7 +2058,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         score: r.readinessScore,
         hrvDelta: r.hrvDelta,
       }]));
-      const svMap = new Map(svOverTime.map(s => [s.day, s.pctPerWeek]));
+      const legacySvMap = new Map(svOverTime.map(s => [s.day, s.pctPerWeek]));
+      const useIntel = intelVelocityMap.size > 0;
+      const svMap = new Map<string, number>();
+      if (useIntel) {
+        for (const [date] of legacySvMap) {
+          const intelVal = intelVelocityMap.get(date);
+          if (intelVal != null && isFinite(intelVal)) {
+            svMap.set(date, intelVal);
+          } else {
+            const legacyVal = legacySvMap.get(date);
+            if (legacyVal != null) svMap.set(date, legacyVal);
+          }
+        }
+        for (const [date, val] of intelVelocityMap) {
+          if (!svMap.has(date) && val != null && isFinite(val)) {
+            svMap.set(date, val);
+          }
+        }
+      } else {
+        for (const [date, val] of legacySvMap) svMap.set(date, val);
+      }
 
       const logMap = new Map<string, { hrv: number | null; rhr: number | null }>();
       for (const r of logRows.rows) {
@@ -2187,7 +2227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("forecast computation error (non-fatal):", forecastErr);
       }
 
-      res.json({ from, to, days, points, forecast });
+      res.json({ from, to, days, points, forecast, strengthVelocitySource: useIntel ? "intel" : "legacy" });
     } catch (err: unknown) {
       console.error("signals chart error:", err);
       res.status(500).json({ error: "Internal server error" });

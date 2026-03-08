@@ -166,6 +166,8 @@ interface SignalPoint {
   hrvDeltaPct: number | null;
   readiness: number | null;
   strengthVelocity: number | null;
+  hrv: number | null;
+  rhr: number | null;
 }
 
 export default function DashboardScreen() {
@@ -174,6 +176,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [signalPoints, setSignalPoints] = useState<SignalPoint[]>([]);
   const [signalForecast, setSignalForecast] = useState<ForecastSummary | null>(null);
+  const [svSource, setSvSource] = useState<"intel" | "legacy">("legacy");
   const [signalDays, setSignalDays] = useState(30);
   const [muscleMapData, setMuscleMapData] = useState<MuscleState[]>([]);
   const [muscleMapDate, setMuscleMapDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -254,6 +257,7 @@ export default function DashboardScreen() {
         const data = await res.json();
         setSignalPoints(data.points || []);
         setSignalForecast(data.forecast ?? null);
+        setSvSource(data.strengthVelocitySource === "intel" ? "intel" : "legacy");
       }
     } catch {}
   }, []);
@@ -332,6 +336,7 @@ export default function DashboardScreen() {
           rangeDays={signalDays}
           onRangeChange={handleRangeChange}
           forecast={signalForecast}
+          svSource={svSource}
         />
 
         <InterventionAdvisoryCard />
