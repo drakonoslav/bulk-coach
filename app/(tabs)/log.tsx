@@ -605,6 +605,9 @@ export default function LogScreen() {
       const prevDay = d.toISOString().slice(0, 10);
       const prev = await loadEntry(prevDay);
       setYesterdayEntry(prev);
+      if (prev?.morningWeightLb) {
+        setMorningWeight((cur) => cur || prev.morningWeightLb.toString());
+      }
       try {
         const baseUrl = getApiUrl();
         const res = await authFetch(new URL(`/api/androgen/manual/${prevDay}`, baseUrl).toString());
