@@ -2005,7 +2005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .catch(() => null)
         : Promise.resolve(null);
 
-      const [hpaRows, readinessRows, logRows, sbRes, intelTrendData] = await Promise.all([
+      const [hpaRows, readinessRows, logRows, sbRes, intelTrendData, vitalsRows] = await Promise.all([
         getHpaRange(from, to, userId),
         getReadinessRange(from, to, userId),
         pool.query(
@@ -2021,6 +2021,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           [userId],
         ),
         intelTrendPromise,
+        pool.query(
+          `SELECT date::text AS day, hrv_rmssd_ms, resting_hr_bpm
+           FROM vitals_daily WHERE user_id = $1 AND date >= $2 AND date <= $3
+           ORDER BY date ASC`,
+          [userId, from, to],
+        ).catch(() => ({ rows: [] })),
       ]);
 
       if (intelTrendData?.days) {
@@ -2081,12 +2087,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const logMap = new Map<string, { hrv: number | null; rhr: number | null }>();
-      for (const r of logRows.rows) {
+      for (const r of vitalsRows.rows) {
         const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
         logMap.set(d, {
-          hrv: r.hrv != null ? Number(r.hrv) : null,
-          rhr: r.resting_hr != null ? Number(r.resting_hr) : null,
+          hrv: r.hrv_rmssd_ms != null ? Number(r.hrv_rmssd_ms) : null,
+          rhr: r.resting_hr_bpm != null ? Number(r.resting_hr_bpm) : null,
         });
+      }
+      for (const r of logRows.rows) {
+        const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
+        const existing = logMap.get(d);
+        const hrv = r.hrv != null ? Number(r.hrv) : existing?.hrv ?? null;
+        const rhr = r.resting_hr != null ? Number(r.resting_hr) : existing?.rhr ?? null;
+        logMap.set(d, { hrv, rhr });
       }
 
       const allDates: string[] = [];
