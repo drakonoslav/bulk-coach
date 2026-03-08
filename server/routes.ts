@@ -3452,8 +3452,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (p.source === "workout_game" && p.end_ts && wt === "strength") {
-        const durationMin = w.duration_minutes ?? 0;
-        const workingMin = p.working_minutes ?? null;
+        const durationMin = Math.round(w.duration_minutes ?? 0);
+        const workingMin = p.working_minutes != null ? Math.round(p.working_minutes) : null;
         const startTs = ensureUTCTimestamp(p.start_ts);
         const endTs = ensureUTCTimestamp(p.end_ts);
         pool.query(
