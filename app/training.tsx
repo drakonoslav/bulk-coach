@@ -265,6 +265,13 @@ export default function TrainingScreen() {
         const exerciseNames = [...new Set(sets.map((s) => s.exerciseName))];
         const totalTonnage = data.rows.reduce((sum: number, r: any) => sum + (r.tonnage ?? 0), 0);
         const intelSetIds = data.rows.map((r: any) => Number(r.id)).filter(Number.isFinite);
+        const setDetails = sets.map((s, idx) => ({
+          exercise: s.exerciseName,
+          weight: parseFloat(s.weightLb),
+          reps: parseInt(s.reps, 10),
+          rir: parseInt(s.rir, 10) || 0,
+          tonnage: data.rows[idx]?.tonnage ?? parseFloat(s.weightLb) * parseInt(s.reps, 10),
+        }));
         try {
           await saveIntelReceipt({
             performed_at: selectedDate,
@@ -274,6 +281,7 @@ export default function TrainingScreen() {
             total_tonnage: totalTonnage,
             intel_set_ids: intelSetIds,
             plan_id: session.planId,
+            set_details: setDetails,
           });
         } catch (e) {
           console.warn("Failed to save intel receipt:", e);

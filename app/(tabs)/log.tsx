@@ -1549,7 +1549,17 @@ export default function LogScreen() {
           <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
         </Pressable>
 
-        {intelReceipt && (
+        {intelReceipt && (() => {
+          const details: Array<{ exercise: string; weight: number; reps: number; rir: number; tonnage: number }> = intelReceipt.set_details ?? [];
+          const exerciseGroups = new Map<string, typeof details>();
+          for (const d of details) {
+            const arr = exerciseGroups.get(d.exercise) ?? [];
+            arr.push(d);
+            exerciseGroups.set(d.exercise, arr);
+          }
+          const hasDetails = details.length > 0;
+          const exerciseCount = intelReceipt.exercise_names.length;
+          return (
           <View style={[styles.sectionCard, { borderColor: Colors.primary + "30" }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
               <Ionicons name="receipt-outline" size={14} color={Colors.primary} />
@@ -1562,26 +1572,47 @@ export default function LogScreen() {
                 </Text>
               )}
             </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
               <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.text }}>
-                {intelReceipt.set_count} sets
+                {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""} · {intelReceipt.set_count} sets
               </Text>
               <Text style={{ fontSize: 13, fontFamily: "Rubik_600SemiBold", color: Colors.text }}>
-                {Math.round(intelReceipt.total_tonnage).toLocaleString()} lb tonnage
+                {Math.round(intelReceipt.total_tonnage).toLocaleString()} lb
               </Text>
             </View>
-            <View style={{ gap: 3 }}>
-              {intelReceipt.exercise_names.map((name, i) => (
-                <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary }} />
-                  <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: Colors.textSecondary }}>
-                    {name}
-                  </Text>
-                </View>
-              ))}
+            <View style={{ gap: 10 }}>
+              {intelReceipt.exercise_names.map((name, i) => {
+                const exSets = exerciseGroups.get(name) ?? [];
+                const exTonnage = exSets.reduce((s, d) => s + d.tonnage, 0);
+                return (
+                  <View key={i}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: hasDetails ? 4 : 0 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary }} />
+                        <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>
+                          {name}{hasDetails ? ` (${exSets.length} set${exSets.length !== 1 ? "s" : ""})` : ""}
+                        </Text>
+                      </View>
+                      {hasDetails && exSets.length > 0 && (
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          {Math.round(exTonnage).toLocaleString()} lb
+                        </Text>
+                      )}
+                    </View>
+                    {exSets.map((s, j) => (
+                      <View key={j} style={{ flexDirection: "row", alignItems: "center", marginLeft: 16, marginBottom: 2 }}>
+                        <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+                          {s.weight} lb × {s.reps} reps · RIR {s.rir} · {Math.round(s.tonnage).toLocaleString()} lb
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
             </View>
           </View>
-        )}
+          );
+        })()}
 
         {!USE_INTEL_STRENGTH && (
           <View style={[styles.sectionCard, { borderColor: "#F5925620" }]}>

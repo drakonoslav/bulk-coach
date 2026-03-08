@@ -1137,6 +1137,10 @@ async function runMigrations(): Promise<void> {
       (92, 'Tire Flip',                          NULL,                  false)
     ON CONFLICT (intel_exercise_id) DO NOTHING;
   `);
+
+  await runMigration('029_intel_receipts_set_details', `
+    ALTER TABLE intel_receipts ADD COLUMN IF NOT EXISTS set_details JSONB NOT NULL DEFAULT '[]'::jsonb;
+  `);
 }
 
 export { pool };

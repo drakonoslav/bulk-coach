@@ -5067,13 +5067,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/intel-receipts", async (req: Request, res: Response) => {
     try {
       const userId = "local_default";
-      const { performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id } = req.body;
+      const { performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id, set_details } = req.body;
       if (!performed_at) return res.status(400).json({ error: "performed_at required" });
       const exNames = JSON.stringify(exercise_names ?? []);
       const setIds = JSON.stringify(intel_set_ids ?? []);
+      const details = JSON.stringify(set_details ?? []);
       const result = await pool.query(
-        `INSERT INTO intel_receipts (user_id, performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO intel_receipts (user_id, performed_at, source, exercise_names, set_count, total_tonnage, intel_set_ids, plan_id, set_details)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (user_id, performed_at) DO UPDATE SET
            source = EXCLUDED.source,
            exercise_names = (
@@ -5083,10 +5084,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
            set_count = intel_receipts.set_count + EXCLUDED.set_count,
            total_tonnage = intel_receipts.total_tonnage + EXCLUDED.total_tonnage,
            intel_set_ids = (intel_receipts.intel_set_ids || EXCLUDED.intel_set_ids),
+           set_details = (intel_receipts.set_details || EXCLUDED.set_details),
            plan_id = COALESCE(EXCLUDED.plan_id, intel_receipts.plan_id),
            created_at = NOW()
          RETURNING *`,
-        [userId, performed_at, source ?? "intel", exNames, set_count ?? 0, total_tonnage ?? 0, setIds, plan_id ?? null]
+        [userId, performed_at, source ?? "intel", exNames, set_count ?? 0, total_tonnage ?? 0, setIds, plan_id ?? null, details]
       );
       return res.json(result.rows[0]);
     } catch (err: any) {

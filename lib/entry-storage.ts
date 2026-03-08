@@ -407,6 +407,14 @@ function rowToEntry(row: any): DailyEntry {
   };
 }
 
+export interface IntelSetDetail {
+  exercise: string;
+  weight: number;
+  reps: number;
+  rir: number;
+  tonnage: number;
+}
+
 export interface IntelReceipt {
   performed_at: string;
   source: string;
@@ -415,6 +423,7 @@ export interface IntelReceipt {
   total_tonnage: number;
   intel_set_ids: number[];
   plan_id: number | null;
+  set_details?: IntelSetDetail[];
 }
 
 export async function saveIntelReceipt(receipt: IntelReceipt): Promise<void> {
