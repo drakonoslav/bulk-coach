@@ -656,12 +656,10 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         <ChartPanel height={CAPACITY_H} label="CAPACITY" subtitle="mitochondrial + recovery state" chartWidth={chartWidth} legendRows={[
           [
             { text: "AWAKE", color: C_AWAKE_IN_BED },
-            { text: "LATENCY", color: C_LATENCY },
-            { text: "WASO", color: C_WASO },
-          ],
-          [
-            { text: "INSTABILITY", color: C_BLEND_LW },
             { text: "FRAGMENTATION", color: C_BLEND_WA },
+            { text: "WASO", color: C_WASO },
+            { text: "INSTABILITY", color: C_BLEND_LW },
+            { text: "LATENCY", color: C_LATENCY },
             { text: "DYSREGULATION", color: C_BLEND_LA },
           ],
         ]}>
