@@ -4637,6 +4637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/game-bridge-sets", async (req: Request, res: Response) => {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       const userId = getUserId(req);
       const day = String(req.query.day || "");
       if (!day) return res.status(400).json({ error: "day query param is required (YYYY-MM-DD)" });
@@ -4656,6 +4657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/game-exercise-sets", async (req: Request, res: Response) => {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       const userId = getUserId(req);
       const day = String(req.query.day || "");
       if (!day) return res.status(400).json({ error: "day query param is required (YYYY-MM-DD)" });

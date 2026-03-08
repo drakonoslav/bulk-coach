@@ -218,6 +218,7 @@ export async function loadBridgeSets(day: string): Promise<GameBridgeEntry[]> {
     const baseUrl = getApiUrl();
     const url = new URL("/api/game-bridge-sets", baseUrl);
     url.searchParams.set("day", day);
+    url.searchParams.set("_", String(Date.now()));
     const res = await authFetch(url.toString());
     if (!res.ok) throw new Error(`${res.status}`);
     const raw = await res.json();
@@ -234,6 +235,7 @@ export async function loadGameExerciseSets(day: string): Promise<StrengthSet[]> 
     const baseUrl = getApiUrl();
     const url = new URL("/api/game-exercise-sets", baseUrl);
     url.searchParams.set("day", day);
+    url.searchParams.set("_", String(Date.now()));
     const res = await authFetch(url.toString());
     if (!res.ok) throw new Error(`${res.status}`);
     const raw = await res.json();
