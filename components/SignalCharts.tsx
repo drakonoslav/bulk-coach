@@ -52,13 +52,14 @@ const C_SV = "#6EBF8B";
 const C_RECOVERY = "#00E5FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
-const C_LATENCY = "#F52B2A";
-const C_WASO = "#FFDE26";
-const C_AWAKE_IN_BED = "#2256AA";
-const C_BLEND_RY = "#FF8C00";
-const C_BLEND_YB = "#00CC44";
-const C_BLEND_RB = "#8B2FC9";
-const C_BLEND_RYB = "#FF00FF";
+const C_LATENCY = "#2FA4FF";
+const C_WASO = "#FFD400";
+const C_AWAKE_IN_BED = "#FF3B3B";
+const C_BLEND_LW = "#39FF14";
+const C_BLEND_WA = "#FF7A00";
+const C_BLEND_LA = "#A020F0";
+const C_BLEND_RYB = "#FF00A8";
+const C_BLEND_WHITE = "#FFFFFF";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.35)";
@@ -77,7 +78,17 @@ function buildPath(
   return d;
 }
 
-interface FillLayer { d: string; color: string; opacity: number }
+interface FillLayer {
+  d: string;
+  color: string;
+  opacity: number;
+  strokeColor: string;
+  strokeWidth: number;
+  glowRadius: number;
+  glowOpacity: number;
+  isComposite: boolean;
+  priority: number;
+}
 
 function interpolateGaps(raw: (number | null)[]): (number | null)[] {
   const result = [...raw];
@@ -286,17 +297,33 @@ function buildDisruptionFillLayers(
   }
 
   const layers: FillLayer[] = [];
-  const soloMap: Record<string, string> = { lat_solo: C_LATENCY, waso_solo: C_WASO, awake_solo: C_AWAKE_IN_BED };
-  const blendMap: Record<string, string> = {
-    awake_lat: C_BLEND_RB, lat_waso: C_BLEND_RY, awake_waso: C_BLEND_YB, all3: C_BLEND_RYB,
+  const soloSpec: Record<string, { color: string; pri: number }> = {
+    lat_solo: { color: C_LATENCY, pri: 0 },
+    waso_solo: { color: C_WASO, pri: 1 },
+    awake_solo: { color: C_AWAKE_IN_BED, pri: 2 },
+  };
+  const compSpec: Record<string, { color: string; pri: number }> = {
+    lat_waso: { color: C_BLEND_LW, pri: 10 },
+    awake_waso: { color: C_BLEND_WA, pri: 11 },
+    awake_lat: { color: C_BLEND_LA, pri: 12 },
+    all3: { color: C_BLEND_RYB, pri: 20 },
   };
 
-  for (const [k, color] of Object.entries(soloMap)) {
-    if (pathAcc[k]) layers.push({ d: pathAcc[k], color, opacity: 0.35 });
+  for (const [k, cfg] of Object.entries(soloSpec)) {
+    if (pathAcc[k]) layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.55,
+      strokeColor: cfg.color, strokeWidth: 1, glowRadius: 4, glowOpacity: 0.12,
+      isComposite: false, priority: cfg.pri,
+    });
   }
-  for (const [k, color] of Object.entries(blendMap)) {
-    if (pathAcc[k]) layers.push({ d: pathAcc[k], color, opacity: 0.55 });
+  for (const [k, cfg] of Object.entries(compSpec)) {
+    if (pathAcc[k]) layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.85,
+      strokeColor: cfg.color, strokeWidth: 2.5, glowRadius: 10, glowOpacity: 0.4,
+      isComposite: true, priority: cfg.pri,
+    });
   }
+  layers.sort((a, b) => a.priority - b.priority);
   return layers;
 }
 
@@ -617,30 +644,57 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={`th-${v}`} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_THRESHOLD} strokeWidth={1} strokeDasharray="4,4" />
               );
             })}
-            {disruptionSeries.fillLayers.map((layer, li) => (
-              <Path key={`fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+
+            {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`base-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" />
             ))}
+            {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`base-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+            ))}
+            {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`base-edge-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.7} strokeLinejoin="miter" />
+            ))}
+
+            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`comp-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" />
+            ))}
+            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`comp-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+            ))}
+            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`comp-edge-${li}`} d={layer.d} fill="none" stroke={C_BLEND_WHITE} strokeWidth={layer.strokeWidth} opacity={0.5} strokeLinejoin="miter" />
+            ))}
+            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`comp-cap-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth + 1} opacity={0.9} strokeLinejoin="round" />
+            ))}
+
             {disruptionSeries.latency.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1.2} fill="none" opacity={0.45} />
+              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={2} fill="none" opacity={0.75} />
             )}
             {disruptionSeries.waso.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1.2} fill="none" opacity={0.45} />
+              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={2} fill="none" opacity={0.75} />
             )}
             {disruptionSeries.awakeInBed.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1.2} fill="none" opacity={0.45} />
+              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={2} fill="none" opacity={0.75} />
             )}
+
             {disruptionSeries.latency.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1} opacity={0.6} />
+              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
             )}
             {disruptionSeries.waso.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1} opacity={0.6} />
+              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
             )}
             {disruptionSeries.awakeInBed.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1} opacity={0.6} />
+              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
+            )}
+
+            {readinessData.length > 1 && (
+              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={6} fill="none" opacity={0.15} />
             )}
             {readinessData.length > 1 && (
-              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2} fill="none" />
+              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={3.5} fill="none" opacity={1} />
             )}
+
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={CAPACITY_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
             )}
