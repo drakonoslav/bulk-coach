@@ -229,6 +229,22 @@ export async function loadBridgeSets(day: string): Promise<GameBridgeEntry[]> {
   }
 }
 
+export async function loadGameExerciseSets(day: string): Promise<StrengthSet[]> {
+  try {
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/game-exercise-sets", baseUrl);
+    url.searchParams.set("day", day);
+    const res = await authFetch(url.toString());
+    if (!res.ok) throw new Error(`${res.status}`);
+    const raw = await res.json();
+    const rows: any[] = Array.isArray(raw?.sets) ? raw.sets : [];
+    return rows.map(rowToStrengthSet);
+  } catch (err) {
+    console.error("loadGameExerciseSets API error:", err);
+    return [];
+  }
+}
+
 export async function loadStrengthSets(start: string, end: string): Promise<StrengthSet[]> {
   try {
     const baseUrl = getApiUrl();

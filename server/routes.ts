@@ -4616,6 +4616,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/game-exercise-sets", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const day = String(req.query.day || "");
+      if (!day) return res.status(400).json({ error: "day query param is required (YYYY-MM-DD)" });
+      const r = await pool.query(
+        `SELECT id, day, exercise_id, weight_lb, reps, set_type, is_measured, source, created_at
+         FROM strength_sets
+         WHERE user_id = $1 AND day = $2 AND source = 'workout_game'
+         ORDER BY created_at ASC`,
+        [userId, day]
+      );
+      return res.json({ sets: r.rows });
+    } catch (err: any) {
+      console.error("GET /api/game-exercise-sets error:", err);
+      return res.status(500).json({ error: "Failed to load game exercise sets" });
+    }
+  });
+
   app.get("/api/intel/exercise-mapping", async (_req: Request, res: Response) => {
     try {
       const { rows } = await pool.query(

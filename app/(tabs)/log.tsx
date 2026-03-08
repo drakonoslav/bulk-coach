@@ -26,6 +26,7 @@ import {
   loadStrengthExercises,
   loadStrengthSets,
   loadBridgeSets,
+  loadGameExerciseSets,
   saveStrengthSets,
   loadIntelReceipt,
   type StrengthExercise,
@@ -332,6 +333,7 @@ export default function LogScreen() {
   const [strengthExercises, setStrengthExercises] = useState<StrengthExercise[]>([]);
   const [strengthSetsDay, setStrengthSetsDay] = useState<StrengthSet[]>([]);
   const [bridgeEntriesDay, setBridgeEntriesDay] = useState<GameBridgeEntry[]>([]);
+  const [gameExerciseSetsDay, setGameExerciseSetsDay] = useState<StrengthSet[]>([]);
   const [strengthSetsSaving, setStrengthSetsSaving] = useState(false);
   const [strengthSetsDirty, setStrengthSetsDirty] = useState(false);
   const [strengthModalVisible, setStrengthModalVisible] = useState(false);
@@ -738,6 +740,12 @@ export default function LogScreen() {
       setBridgeEntriesDay(bridge);
     } catch {
       setBridgeEntriesDay([]);
+    }
+    try {
+      const gameSets = await loadGameExerciseSets(day);
+      setGameExerciseSetsDay(gameSets);
+    } catch {
+      setGameExerciseSetsDay([]);
     }
     try {
       const receipt = await loadIntelReceipt(day);
@@ -1743,6 +1751,50 @@ export default function LogScreen() {
                     {b.rpe != null ? `RPE ${b.rpe}` : ""}
                     {b.rpe != null && b.estimatedTonnage != null ? " · " : ""}
                     {b.estimatedTonnage != null ? `Est. ${Math.round(b.estimatedTonnage)} lb tonnage` : ""}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {gameExerciseSetsDay.length > 0 && (
+          <View style={[styles.sectionCard, { borderColor: "#00D4AA25" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <Ionicons name="barbell-outline" size={14} color={Colors.primary} />
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.primary }}>
+                Game Sets
+              </Text>
+              <View style={{ backgroundColor: `${Colors.primary}30`, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1, marginLeft: "auto" }}>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: Colors.primary }}>
+                  {gameExerciseSetsDay.length}
+                </Text>
+              </View>
+            </View>
+            {gameExerciseSetsDay.map((s) => (
+              <View
+                key={s.id}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: `${Colors.primary}25`,
+                  backgroundColor: "#0B1220",
+                  marginBottom: 6,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.text }}>
+                    {formatMuscleLabel(s.exerciseId)}
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 2 }}>
+                    {s.weightLb != null ? `${s.weightLb} lb` : ""}
+                    {s.weightLb != null && s.reps != null ? " × " : ""}
+                    {s.reps != null ? `${s.reps} reps` : ""}
                   </Text>
                 </View>
               </View>
