@@ -47,22 +47,22 @@ const PAD_B = 18;
 const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#FBBF24";
-const C_READINESS = "#00E5FF";
+const C_READINESS = "#5CF2FF";
 const C_SV = "#6EBF8B";
-const C_RECOVERY = "#00E5FF";
+const C_RECOVERY = "#5CF2FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
-const C_LATENCY = "#2FA4FF";
-const C_WASO = "#FFD400";
-const C_AWAKE_IN_BED = "#FF3B3B";
-const C_BLEND_LW = "#39FF14";
-const C_BLEND_WA = "#FF7A00";
-const C_BLEND_LA = "#A020F0";
-const C_BLEND_RYB = "#FF00A8";
+const C_LATENCY = "#2D8CFF";
+const C_WASO = "#FFC928";
+const C_AWAKE_IN_BED = "#FF4D5A";
+const C_BLEND_LW = "#00C27A";
+const C_BLEND_WA = "#FF7A1A";
+const C_BLEND_LA = "#8B5CF6";
+const C_BLEND_RYB = "#FF4FCF";
 const C_BLEND_WHITE = "#FFFFFF";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
-const C_CROSSHAIR = "rgba(255,255,255,0.35)";
+const C_CROSSHAIR = "rgba(255,255,255,0.22)";
 const C_ZONE_CALM = "rgba(255,255,255,0.015)";
 const C_ZONE_MOD = "rgba(251,191,36,0.03)";
 const C_ZONE_HIGH = "rgba(220,38,38,0.04)";
@@ -87,6 +87,7 @@ interface FillLayer {
   glowRadius: number;
   glowOpacity: number;
   isComposite: boolean;
+  isExtreme?: boolean;
   priority: number;
 }
 
@@ -308,19 +309,32 @@ function buildDisruptionFillLayers(
     awake_lat: { color: C_BLEND_LA, pri: 12 },
     all3: { color: C_BLEND_RYB, pri: 20 },
   };
+  const extremeSpec: Record<string, { color: string; pri: number }> = {
+    joint_cap: { color: C_BLEND_WHITE, pri: 30 },
+  };
 
   for (const [k, cfg] of Object.entries(soloSpec)) {
-    if (pathAcc[k]) layers.push({
-      d: pathAcc[k], color: cfg.color, opacity: 0.55,
-      strokeColor: cfg.color, strokeWidth: 1, glowRadius: 4, glowOpacity: 0.12,
+    if (!pathAcc[k]) continue;
+    layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.72,
+      strokeColor: cfg.color, strokeWidth: 0.8, glowRadius: 2.5, glowOpacity: 0.10,
       isComposite: false, priority: cfg.pri,
     });
   }
   for (const [k, cfg] of Object.entries(compSpec)) {
-    if (pathAcc[k]) layers.push({
-      d: pathAcc[k], color: cfg.color, opacity: 0.85,
-      strokeColor: cfg.color, strokeWidth: 2.5, glowRadius: 10, glowOpacity: 0.4,
+    if (!pathAcc[k]) continue;
+    layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.92,
+      strokeColor: cfg.color, strokeWidth: 1.4, glowRadius: 5.5, glowOpacity: 0.22,
       isComposite: true, priority: cfg.pri,
+    });
+  }
+  for (const [k, cfg] of Object.entries(extremeSpec)) {
+    if (!pathAcc[k]) continue;
+    layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.98,
+      strokeColor: cfg.color, strokeWidth: 1.1, glowRadius: 3.5, glowOpacity: 0.18,
+      isComposite: true, isExtreme: true, priority: cfg.pri,
     });
   }
   layers.sort((a, b) => a.priority - b.priority);
@@ -646,53 +660,61 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             })}
 
             {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
-              <Path key={`base-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" />
+              <Path key={`base-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" strokeLinecap="round" />
             ))}
             {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
               <Path key={`base-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
             ))}
             {disruptionSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
-              <Path key={`base-edge-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.7} strokeLinejoin="miter" />
+              <Path key={`base-edge-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.82} strokeLinejoin="miter" strokeLinecap="round" />
             ))}
 
-            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
-              <Path key={`comp-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" />
+            {disruptionSeries.fillLayers.filter(l => l.isComposite && !l.isExtreme).map((layer, li) => (
+              <Path key={`comp-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" strokeLinecap="round" />
             ))}
-            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+            {disruptionSeries.fillLayers.filter(l => l.isComposite && !l.isExtreme).map((layer, li) => (
               <Path key={`comp-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
             ))}
-            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
-              <Path key={`comp-edge-${li}`} d={layer.d} fill="none" stroke={C_BLEND_WHITE} strokeWidth={layer.strokeWidth} opacity={0.5} strokeLinejoin="miter" />
+            {disruptionSeries.fillLayers.filter(l => l.isComposite && !l.isExtreme).map((layer, li) => (
+              <Path key={`comp-edge-${li}`} d={layer.d} fill="none" stroke={C_BLEND_WHITE} strokeWidth={0.9} opacity={0.30} strokeLinejoin="round" strokeLinecap="round" />
             ))}
-            {disruptionSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
-              <Path key={`comp-cap-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth + 1} opacity={0.9} strokeLinejoin="round" />
+            {disruptionSeries.fillLayers.filter(l => l.isComposite && !l.isExtreme).map((layer, li) => (
+              <Path key={`comp-cap-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.96} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+
+            {disruptionSeries.fillLayers.filter(l => l.isExtreme).map((layer, li) => (
+              <React.Fragment key={`extreme-${li}`}>
+                <Path d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" strokeLinecap="round" />
+                <Path d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+                <Path d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.95} strokeLinejoin="round" strokeLinecap="round" />
+              </React.Fragment>
             ))}
 
             {disruptionSeries.latency.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={2} fill="none" opacity={0.75} />
+              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
             {disruptionSeries.waso.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={2} fill="none" opacity={0.75} />
+              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
             {disruptionSeries.awakeInBed.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={2} fill="none" opacity={0.75} />
+              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
 
             {disruptionSeries.latency.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
+              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
             )}
             {disruptionSeries.waso.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
+              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
             )}
             {disruptionSeries.awakeInBed.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1.5} opacity={0.8} strokeDasharray="6,3" />
+              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
             )}
 
             {readinessData.length > 1 && (
-              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={6} fill="none" opacity={0.15} />
+              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={4.0} fill="none" opacity={0.12} strokeLinejoin="round" strokeLinecap="round" />
             )}
             {readinessData.length > 1 && (
-              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={3.5} fill="none" opacity={1} />
+              <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2.4} fill="none" opacity={1} strokeLinejoin="round" strokeLinecap="round" />
             )}
 
             {crosshairX != null && (
