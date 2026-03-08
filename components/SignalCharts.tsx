@@ -55,6 +55,10 @@ const C_RECOVERY_REF = "#22C55E";
 const C_LATENCY = "#F52B2A";
 const C_WASO = "#FFDE26";
 const C_AWAKE_IN_BED = "#2256AA";
+const C_BLEND_RY = "#FF8C00";
+const C_BLEND_YB = "#00CC44";
+const C_BLEND_RB = "#8B2FC9";
+const C_BLEND_RYB = "#FF00FF";
 const C_GRID = "rgba(255,255,255,0.08)";
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
 const C_CROSSHAIR = "rgba(255,255,255,0.35)";
@@ -73,51 +77,227 @@ function buildPath(
   return d;
 }
 
-function buildExceedanceFill(
-  rawData: { x: number; y: number }[],
-  thresholdY: number,
-): string {
-  if (rawData.length < 2) return "";
-  let path = "";
-  let inExceed = false;
-  for (let i = 0; i < rawData.length; i++) {
-    const p = rawData[i];
-    const above = p.y < thresholdY;
-    if (above && !inExceed) {
-      if (i > 0) {
-        const prev = rawData[i - 1];
-        const dy = p.y - prev.y;
-        if (Math.abs(dy) > 0.01) {
-          const t = (thresholdY - prev.y) / dy;
-          const crossX = prev.x + t * (p.x - prev.x);
-          path += `M${crossX},${thresholdY} L${p.x},${p.y}`;
-        } else {
-          path += `M${p.x},${thresholdY} L${p.x},${p.y}`;
+interface FillLayer { d: string; color: string; opacity: number }
+
+function interpolateGaps(raw: (number | null)[]): (number | null)[] {
+  const result = [...raw];
+  const N = raw.length;
+  let prev = -1;
+  for (let i = 0; i < N; i++) {
+    if (raw[i] != null) {
+      if (prev >= 0 && prev < i - 1) {
+        for (let j = prev + 1; j < i; j++) {
+          const t = (j - prev) / (i - prev);
+          result[j] = raw[prev]! + t * (raw[i]! - raw[prev]!);
         }
-      } else {
-        path += `M${p.x},${thresholdY} L${p.x},${p.y}`;
       }
-      inExceed = true;
-    } else if (above && inExceed) {
-      path += ` L${p.x},${p.y}`;
-    } else if (!above && inExceed) {
-      const prev = rawData[i - 1];
-      const dy = p.y - prev.y;
-      if (Math.abs(dy) > 0.01) {
-        const t = (thresholdY - prev.y) / dy;
-        const crossX = prev.x + t * (p.x - prev.x);
-        path += ` L${crossX},${thresholdY} Z`;
-      } else {
-        path += ` L${p.x},${thresholdY} Z`;
-      }
-      inExceed = false;
+      prev = i;
     }
   }
-  if (inExceed) {
-    const last = rawData[rawData.length - 1];
-    path += ` L${last.x},${thresholdY} Z`;
+  return result;
+}
+
+function buildDisruptionFillLayers(
+  points: { latencyPct: number | null; wasoPct: number | null; awakeInBedPct: number | null }[],
+  xForIdx: (i: number) => number,
+  pctToY: (pct: number) => number,
+  latAvgY: number | null,
+  wasoAvgY: number | null,
+  awakeAvgY: number | null,
+): FillLayer[] {
+  const N = points.length;
+  if (N < 2) return [];
+
+  const latY = interpolateGaps(points.map(p => p.latencyPct != null ? pctToY(p.latencyPct) : null));
+  const wasoY = interpolateGaps(points.map(p => p.wasoPct != null ? pctToY(p.wasoPct) : null));
+  const awakeY = interpolateGaps(points.map(p => p.awakeInBedPct != null ? pctToY(p.awakeInBedPct) : null));
+
+  const pathAcc: Record<string, string> = {};
+  function addTrap(key: string, x1: number, t1: number, x2: number, t2: number, b1: number, b2: number) {
+    if (t1 >= b1 - 0.3 && t2 >= b2 - 0.3) return;
+    if (!pathAcc[key]) pathAcc[key] = "";
+    pathAcc[key] += `M${x1.toFixed(1)},${t1.toFixed(1)} L${x2.toFixed(1)},${t2.toFixed(1)} L${x2.toFixed(1)},${b2.toFixed(1)} L${x1.toFixed(1)},${b1.toFixed(1)} Z `;
   }
-  return path;
+
+  interface MLine { key: string; y1: number; y2: number; avgY: number }
+
+  function blendKey(a: string, b: string): string { return [a, b].sort().join("_"); }
+
+  function lerp(v1: number, v2: number, t: number): number { return v1 + t * (v2 - v1); }
+
+  function fillSubSeg(active: { key: string; yL: number; yR: number; avgY: number }[], xL: number, xR: number) {
+    if (active.length === 0 || xR - xL < 0.1) return;
+    if (active.length === 1) {
+      const m = active[0];
+      addTrap(m.key + "_solo", xL, m.yL, xR, m.yR, m.avgY, m.avgY);
+      return;
+    }
+    const sortedL = [...active].sort((a, b) => a.yL - b.yL);
+    const sortedR = [...active].sort((a, b) => a.yR - b.yR);
+    const ctrls = active.map(m => m.avgY).sort((a, b) => a - b);
+    const highCtrl = ctrls[0];
+
+    if (active.length === 2) {
+      const [a, b] = active;
+      const bk = blendKey(a.key, b.key);
+      const lowerCtrl = Math.max(a.avgY, b.avgY);
+      const lowerCtrlM = a.avgY > b.avgY ? a : b;
+      const aTopL = a.yL <= b.yL, aTopR = a.yR <= b.yR;
+      if (aTopL === aTopR) {
+        const top = aTopL ? a : b;
+        const bot = aTopL ? b : a;
+        addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, bot.yL, bot.yR);
+        addTrap(bk, xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+      } else {
+        const dA = a.yR - a.yL, dB = b.yR - b.yL;
+        const den = dA - dB;
+        if (Math.abs(den) > 0.01) {
+          const t = (b.yL - a.yL) / den;
+          const cx = lerp(xL, xR, t);
+          const cy = lerp(a.yL, a.yR, t);
+          const topH1 = aTopL ? a : b, botH1 = aTopL ? b : a;
+          addTrap(topH1.key + "_solo", xL, topH1.yL, cx, cy, botH1.yL, cy);
+          addTrap(bk, xL, botH1.yL, cx, cy, highCtrl, highCtrl);
+          const topH2 = aTopR ? a : b, botH2 = aTopR ? b : a;
+          addTrap(topH2.key + "_solo", cx, cy, xR, topH2.yR, cy, botH2.yR);
+          addTrap(bk, cx, cy, xR, botH2.yR, highCtrl, highCtrl);
+        }
+      }
+      if (lowerCtrl > highCtrl + 0.5) {
+        addTrap(lowerCtrlM.key + "_solo", xL, highCtrl, xR, highCtrl, lowerCtrl, lowerCtrl);
+      }
+    } else if (active.length === 3) {
+      const midCtrl = ctrls[1];
+      const lowCtrl = ctrls[2];
+      const sameOrder = sortedL[0].key === sortedR[0].key && sortedL[1].key === sortedR[1].key;
+      if (sameOrder) {
+        const top = { key: sortedL[0].key, yL: sortedL[0].yL, yR: sortedR[0].yR };
+        const mid = { key: sortedL[1].key, yL: sortedL[1].yL, yR: sortedR[1].yR };
+        const bot = { key: sortedL[2].key, yL: sortedL[2].yL, yR: sortedR[2].yR };
+        addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, mid.yL, mid.yR);
+        addTrap(blendKey(top.key, mid.key), xL, mid.yL, xR, mid.yR, bot.yL, bot.yR);
+        addTrap("all3", xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+      } else {
+        const diffs: { key1: string; key2: string; t: number }[] = [];
+        for (let a = 0; a < active.length; a++) {
+          for (let b = a + 1; b < active.length; b++) {
+            const mA = active[a], mB = active[b];
+            const dA = mA.yR - mA.yL, dB = mB.yR - mB.yL;
+            const den = dA - dB;
+            if (Math.abs(den) > 0.01) {
+              const t = (mB.yL - mA.yL) / den;
+              if (t > 0.01 && t < 0.99) diffs.push({ key1: mA.key, key2: mB.key, t });
+            }
+          }
+        }
+        if (diffs.length === 0) {
+          const top = sortedL[0], bot = sortedL[2];
+          addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, sortedL[1].yL, sortedL[1].yR);
+          addTrap(blendKey(top.key, sortedL[1].key), xL, sortedL[1].yL, xR, sortedL[1].yR, bot.yL, bot.yR);
+          addTrap("all3", xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+        } else {
+          diffs.sort((a, b) => a.t - b.t);
+          const breaks = [0, ...diffs.map(d => d.t), 1];
+          for (let s = 0; s < breaks.length - 1; s++) {
+            const tL = breaks[s], tR = breaks[s + 1];
+            if (tR - tL < 0.005) continue;
+            const subXL = lerp(xL, xR, tL), subXR = lerp(xL, xR, tR);
+            const subActive = active.map(m => ({
+              key: m.key, yL: lerp(m.yL, m.yR, tL), yR: lerp(m.yL, m.yR, tR), avgY: m.avgY,
+            }));
+            const subSorted = [...subActive].sort((a, b) => a.yL - b.yL);
+            addTrap(subSorted[0].key + "_solo", subXL, subSorted[0].yL, subXR, subSorted[0].yR, subSorted[1].yL, subSorted[1].yR);
+            addTrap(blendKey(subSorted[0].key, subSorted[1].key), subXL, subSorted[1].yL, subXR, subSorted[1].yR, subSorted[2].yL, subSorted[2].yR);
+            addTrap("all3", subXL, subSorted[2].yL, subXR, subSorted[2].yR, highCtrl, highCtrl);
+          }
+        }
+      }
+      if (midCtrl > highCtrl + 0.5) {
+        const belowHigh = active.filter(m => m.avgY > highCtrl + 0.5);
+        if (belowHigh.length === 2) {
+          addTrap(blendKey(belowHigh[0].key, belowHigh[1].key), xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
+        } else if (belowHigh.length === 1) {
+          addTrap(belowHigh[0].key + "_solo", xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
+        }
+      }
+      if (lowCtrl > midCtrl + 0.5) {
+        const belowMid = active.filter(m => m.avgY > midCtrl + 0.5);
+        if (belowMid.length >= 1) {
+          addTrap(belowMid[0].key + "_solo", xL, midCtrl, xR, midCtrl, lowCtrl, lowCtrl);
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < N - 1; i++) {
+    const x1 = xForIdx(i), x2 = xForIdx(i + 1);
+    const metrics: MLine[] = [];
+    const tryAdd = (key: string, yArr: (number | null)[], avgY: number | null) => {
+      const v1 = yArr[i], v2 = yArr[i + 1];
+      if (v1 == null || v2 == null || avgY == null) return;
+      if (v1 >= avgY && v2 >= avgY) return;
+      metrics.push({ key, y1: v1, y2: v2, avgY });
+    };
+    tryAdd("lat", latY, latAvgY);
+    tryAdd("waso", wasoY, wasoAvgY);
+    tryAdd("awake", awakeY, awakeAvgY);
+    if (metrics.length === 0) continue;
+
+    const breakpoints: number[] = [0, 1];
+    for (const m of metrics) {
+      if ((m.y1 < m.avgY) !== (m.y2 < m.avgY)) {
+        const dy = m.y2 - m.y1;
+        if (Math.abs(dy) > 0.01) {
+          const t = (m.avgY - m.y1) / dy;
+          if (t > 0.001 && t < 0.999) breakpoints.push(t);
+        }
+      }
+    }
+    for (let a = 0; a < metrics.length; a++) {
+      for (let b = a + 1; b < metrics.length; b++) {
+        const mA = metrics[a], mB = metrics[b];
+        const dA = mA.y2 - mA.y1, dB = mB.y2 - mB.y1;
+        const den = dA - dB;
+        if (Math.abs(den) > 0.01) {
+          const t = (mB.y1 - mA.y1) / den;
+          if (t > 0.001 && t < 0.999) breakpoints.push(t);
+        }
+      }
+    }
+    breakpoints.sort((a, b) => a - b);
+    const unique: number[] = [breakpoints[0]];
+    for (let k = 1; k < breakpoints.length; k++) {
+      if (breakpoints[k] - unique[unique.length - 1] > 0.001) unique.push(breakpoints[k]);
+    }
+
+    for (let s = 0; s < unique.length - 1; s++) {
+      const tL = unique[s], tR = unique[s + 1];
+      const xL = lerp(x1, x2, tL), xR = lerp(x1, x2, tR);
+      const active: { key: string; yL: number; yR: number; avgY: number }[] = [];
+      for (const m of metrics) {
+        const yL = lerp(m.y1, m.y2, tL);
+        const yR = lerp(m.y1, m.y2, tR);
+        if (yL < m.avgY || yR < m.avgY) {
+          active.push({ key: m.key, yL: Math.min(yL, m.avgY), yR: Math.min(yR, m.avgY), avgY: m.avgY });
+        }
+      }
+      fillSubSeg(active, xL, xR);
+    }
+  }
+
+  const layers: FillLayer[] = [];
+  const soloMap: Record<string, string> = { lat_solo: C_LATENCY, waso_solo: C_WASO, awake_solo: C_AWAKE_IN_BED };
+  const blendMap: Record<string, string> = {
+    awake_lat: C_BLEND_RB, lat_waso: C_BLEND_RY, awake_waso: C_BLEND_YB, all3: C_BLEND_RYB,
+  };
+
+  for (const [k, color] of Object.entries(soloMap)) {
+    if (pathAcc[k]) layers.push({ d: pathAcc[k], color, opacity: 0.35 });
+  }
+  for (const [k, color] of Object.entries(blendMap)) {
+    if (pathAcc[k]) layers.push({ d: pathAcc[k], color, opacity: 0.55 });
+  }
+  return layers;
 }
 
 function formatDateShort(dateStr: string): string {
@@ -281,14 +461,16 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       });
       const avgPct = vals.length > 0 ? vals.reduce((s, n) => s + n, 0) / vals.length : null;
       const avgY = avgPct != null ? pctToY(avgPct) : null;
-      const fillPath = avgY != null ? buildExceedanceFill(raw, avgY) : "";
-      return { raw, avgY, fillPath };
+      return { raw, avgY };
     };
-    return {
-      latency: buildSeries(p => p.latencyPct),
-      waso: buildSeries(p => p.wasoPct),
-      awakeInBed: buildSeries(p => p.awakeInBedPct),
-    };
+    const latency = buildSeries(p => p.latencyPct);
+    const waso = buildSeries(p => p.wasoPct);
+    const awakeInBed = buildSeries(p => p.awakeInBedPct);
+    const fillLayers = buildDisruptionFillLayers(
+      points, xForIdx, pctToY,
+      latency.avgY, waso.avgY, awakeInBed.avgY,
+    );
+    return { latency, waso, awakeInBed, fillLayers };
   }, [points, xForIdx]);
 
   const svData = useMemo(() => {
@@ -435,32 +617,26 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={`th-${v}`} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_THRESHOLD} strokeWidth={1} strokeDasharray="4,4" />
               );
             })}
-            {disruptionSeries.latency.fillPath ? (
-              <Path d={disruptionSeries.latency.fillPath} fill={C_LATENCY} stroke="none" opacity={0.18} />
-            ) : null}
-            {disruptionSeries.waso.fillPath ? (
-              <Path d={disruptionSeries.waso.fillPath} fill={C_WASO} stroke="none" opacity={0.18} />
-            ) : null}
-            {disruptionSeries.awakeInBed.fillPath ? (
-              <Path d={disruptionSeries.awakeInBed.fillPath} fill={C_AWAKE_IN_BED} stroke="none" opacity={0.18} />
-            ) : null}
+            {disruptionSeries.fillLayers.map((layer, li) => (
+              <Path key={`fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+            ))}
             {disruptionSeries.latency.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1} fill="none" opacity={0.25} />
+              <Path d={buildPath(disruptionSeries.latency.raw)} stroke={C_LATENCY} strokeWidth={1.2} fill="none" opacity={0.45} />
             )}
             {disruptionSeries.waso.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1} fill="none" opacity={0.25} />
+              <Path d={buildPath(disruptionSeries.waso.raw)} stroke={C_WASO} strokeWidth={1.2} fill="none" opacity={0.45} />
             )}
             {disruptionSeries.awakeInBed.raw.length > 1 && (
-              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1} fill="none" opacity={0.25} />
+              <Path d={buildPath(disruptionSeries.awakeInBed.raw)} stroke={C_AWAKE_IN_BED} strokeWidth={1.2} fill="none" opacity={0.45} />
             )}
             {disruptionSeries.latency.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1} opacity={0.5} />
+              <Line x1={PAD_L} y1={disruptionSeries.latency.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.latency.avgY} stroke={C_LATENCY} strokeWidth={1} opacity={0.6} />
             )}
             {disruptionSeries.waso.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1} opacity={0.5} />
+              <Line x1={PAD_L} y1={disruptionSeries.waso.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.waso.avgY} stroke={C_WASO} strokeWidth={1} opacity={0.6} />
             )}
             {disruptionSeries.awakeInBed.avgY != null && (
-              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1} opacity={0.5} />
+              <Line x1={PAD_L} y1={disruptionSeries.awakeInBed.avgY} x2={chartWidth - PAD_R} y2={disruptionSeries.awakeInBed.avgY} stroke={C_AWAKE_IN_BED} strokeWidth={1} opacity={0.6} />
             )}
             {readinessData.length > 1 && (
               <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2} fill="none" />
