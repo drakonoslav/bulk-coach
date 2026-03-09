@@ -124,6 +124,233 @@ function getHypertrophyForming(csRatio: number | null, dsfRatio: number | null, 
   return { code, ...info, lowConf: available < 3, ideal: IDEAL_SOIL.has(code) };
 }
 
+const C_OUT_CS = "#8B5CF6";
+const C_OUT_DSF = "#00E639";
+const C_OUT_FFM = "#FF6600";
+const C_OUT_DSF_FFM = "#FFD700";
+const C_OUT_DSF_CS = "#2D8CFF";
+const C_OUT_CS_FFM = "#FF4D5A";
+const C_OUT_ALL3 = "#00E5FF";
+const C_OUT_WHITE = "#FFFFFF";
+
+function buildOutputFillLayers(
+  points: { csPct: number | null; dsfPct: number | null; ffmPct: number | null }[],
+  xForIdx: (i: number) => number,
+  pctToY: (pct: number) => number,
+  csAvgY: number | null,
+  dsfAvgY: number | null,
+  ffmAvgY: number | null,
+): FillLayer[] {
+  const N = points.length;
+  if (N < 2) return [];
+
+  const csY = interpolateGaps(points.map(p => p.csPct != null ? pctToY(p.csPct) : null));
+  const dsfY = interpolateGaps(points.map(p => p.dsfPct != null ? pctToY(p.dsfPct) : null));
+  const ffmY = interpolateGaps(points.map(p => p.ffmPct != null ? pctToY(p.ffmPct) : null));
+
+  const pathAcc: Record<string, string> = {};
+  function addTrap(key: string, x1: number, t1: number, x2: number, t2: number, b1: number, b2: number) {
+    if (t1 >= b1 - 0.3 && t2 >= b2 - 0.3) return;
+    if (!pathAcc[key]) pathAcc[key] = "";
+    pathAcc[key] += `M${x1.toFixed(1)},${t1.toFixed(1)} L${x2.toFixed(1)},${t2.toFixed(1)} L${x2.toFixed(1)},${b2.toFixed(1)} L${x1.toFixed(1)},${b1.toFixed(1)} Z `;
+  }
+
+  interface MLine { key: string; y1: number; y2: number; avgY: number }
+  function blendKey(a: string, b: string): string { return [a, b].sort().join("_"); }
+  function lerp(v1: number, v2: number, t: number): number { return v1 + t * (v2 - v1); }
+
+  function fillSubSeg(active: { key: string; yL: number; yR: number; avgY: number }[], xL: number, xR: number) {
+    if (active.length === 0 || xR - xL < 0.1) return;
+    if (active.length === 1) {
+      const m = active[0];
+      addTrap(m.key + "_solo", xL, m.yL, xR, m.yR, m.avgY, m.avgY);
+      return;
+    }
+    const sortedL = [...active].sort((a, b) => a.yL - b.yL);
+    const sortedR = [...active].sort((a, b) => a.yR - b.yR);
+    const ctrls = active.map(m => m.avgY).sort((a, b) => a - b);
+    const highCtrl = ctrls[0];
+
+    if (active.length === 2) {
+      const [a, b] = active;
+      const bk = blendKey(a.key, b.key);
+      const lowerCtrl = Math.max(a.avgY, b.avgY);
+      const lowerCtrlM = a.avgY > b.avgY ? a : b;
+      const aTopL = a.yL <= b.yL, aTopR = a.yR <= b.yR;
+      if (aTopL === aTopR) {
+        const top = aTopL ? a : b;
+        const bot = aTopL ? b : a;
+        addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, bot.yL, bot.yR);
+        addTrap(bk, xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+      } else {
+        const dA = a.yR - a.yL, dB = b.yR - b.yL;
+        const den = dA - dB;
+        if (Math.abs(den) > 0.01) {
+          const t = (b.yL - a.yL) / den;
+          const cx = lerp(xL, xR, t);
+          const cy = lerp(a.yL, a.yR, t);
+          const topH1 = aTopL ? a : b, botH1 = aTopL ? b : a;
+          addTrap(topH1.key + "_solo", xL, topH1.yL, cx, cy, botH1.yL, cy);
+          addTrap(bk, xL, botH1.yL, cx, cy, highCtrl, highCtrl);
+          const topH2 = aTopR ? a : b, botH2 = aTopR ? b : a;
+          addTrap(topH2.key + "_solo", cx, cy, xR, topH2.yR, cy, botH2.yR);
+          addTrap(bk, cx, cy, xR, botH2.yR, highCtrl, highCtrl);
+        }
+      }
+      if (lowerCtrl > highCtrl + 0.5) {
+        addTrap(lowerCtrlM.key + "_solo", xL, highCtrl, xR, highCtrl, lowerCtrl, lowerCtrl);
+      }
+    } else if (active.length === 3) {
+      const midCtrl = ctrls[1];
+      const lowCtrl = ctrls[2];
+      const sameOrder = sortedL[0].key === sortedR[0].key && sortedL[1].key === sortedR[1].key;
+      if (sameOrder) {
+        const top = { key: sortedL[0].key, yL: sortedL[0].yL, yR: sortedR[0].yR };
+        const mid = { key: sortedL[1].key, yL: sortedL[1].yL, yR: sortedR[1].yR };
+        const bot = { key: sortedL[2].key, yL: sortedL[2].yL, yR: sortedR[2].yR };
+        addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, mid.yL, mid.yR);
+        addTrap(blendKey(top.key, mid.key), xL, mid.yL, xR, mid.yR, bot.yL, bot.yR);
+        addTrap("out_all3", xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+      } else {
+        const diffs: { key1: string; key2: string; t: number }[] = [];
+        for (let a = 0; a < active.length; a++) {
+          for (let b = a + 1; b < active.length; b++) {
+            const mA = active[a], mB = active[b];
+            const dA = mA.yR - mA.yL, dB = mB.yR - mB.yL;
+            const den = dA - dB;
+            if (Math.abs(den) > 0.01) {
+              const t = (mB.yL - mA.yL) / den;
+              if (t > 0.01 && t < 0.99) diffs.push({ key1: mA.key, key2: mB.key, t });
+            }
+          }
+        }
+        if (diffs.length === 0) {
+          const top = sortedL[0], bot = sortedL[2];
+          addTrap(top.key + "_solo", xL, top.yL, xR, top.yR, sortedL[1].yL, sortedL[1].yR);
+          addTrap(blendKey(top.key, sortedL[1].key), xL, sortedL[1].yL, xR, sortedL[1].yR, bot.yL, bot.yR);
+          addTrap("out_all3", xL, bot.yL, xR, bot.yR, highCtrl, highCtrl);
+        } else {
+          diffs.sort((a, b) => a.t - b.t);
+          const breaks = [0, ...diffs.map(d => d.t), 1];
+          for (let s = 0; s < breaks.length - 1; s++) {
+            const tL = breaks[s], tR = breaks[s + 1];
+            if (tR - tL < 0.005) continue;
+            const subXL = lerp(xL, xR, tL), subXR = lerp(xL, xR, tR);
+            const subActive = active.map(m => ({
+              key: m.key, yL: lerp(m.yL, m.yR, tL), yR: lerp(m.yL, m.yR, tR), avgY: m.avgY,
+            }));
+            const subSorted = [...subActive].sort((a, b) => a.yL - b.yL);
+            addTrap(subSorted[0].key + "_solo", subXL, subSorted[0].yL, subXR, subSorted[0].yR, subSorted[1].yL, subSorted[1].yR);
+            addTrap(blendKey(subSorted[0].key, subSorted[1].key), subXL, subSorted[1].yL, subXR, subSorted[1].yR, subSorted[2].yL, subSorted[2].yR);
+            addTrap("out_all3", subXL, subSorted[2].yL, subXR, subSorted[2].yR, highCtrl, highCtrl);
+          }
+        }
+      }
+      if (midCtrl > highCtrl + 0.5) {
+        const belowHigh = active.filter(m => m.avgY > highCtrl + 0.5);
+        if (belowHigh.length >= 1) {
+          const widest = belowHigh.reduce((a, b) => a.avgY > b.avgY ? a : b);
+          addTrap(widest.key + "_solo", xL, highCtrl, xR, highCtrl, midCtrl, midCtrl);
+        }
+      }
+      if (lowCtrl > midCtrl + 0.5) {
+        const belowMid = active.filter(m => m.avgY > midCtrl + 0.5);
+        if (belowMid.length >= 1) {
+          addTrap(belowMid[0].key + "_solo", xL, midCtrl, xR, midCtrl, lowCtrl, lowCtrl);
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < N - 1; i++) {
+    const x1 = xForIdx(i), x2 = xForIdx(i + 1);
+    const metrics: MLine[] = [];
+    const tryAdd = (key: string, yArr: (number | null)[], avgY: number | null) => {
+      const v1 = yArr[i], v2 = yArr[i + 1];
+      if (v1 == null || v2 == null || avgY == null) return;
+      if (v1 >= avgY && v2 >= avgY) return;
+      metrics.push({ key, y1: v1, y2: v2, avgY });
+    };
+    tryAdd("cs", csY, csAvgY);
+    tryAdd("dsf", dsfY, dsfAvgY);
+    tryAdd("ffm", ffmY, ffmAvgY);
+    if (metrics.length === 0) continue;
+
+    const breakpoints: number[] = [0, 1];
+    for (const m of metrics) {
+      if ((m.y1 < m.avgY) !== (m.y2 < m.avgY)) {
+        const dy = m.y2 - m.y1;
+        if (Math.abs(dy) > 0.01) {
+          const t = (m.avgY - m.y1) / dy;
+          if (t > 0.001 && t < 0.999) breakpoints.push(t);
+        }
+      }
+    }
+    for (let a = 0; a < metrics.length; a++) {
+      for (let b = a + 1; b < metrics.length; b++) {
+        const mA = metrics[a], mB = metrics[b];
+        const dA = mA.y2 - mA.y1, dB = mB.y2 - mB.y1;
+        const den = dA - dB;
+        if (Math.abs(den) > 0.01) {
+          const t = (mB.y1 - mA.y1) / den;
+          if (t > 0.001 && t < 0.999) breakpoints.push(t);
+        }
+      }
+    }
+    breakpoints.sort((a, b) => a - b);
+    const unique: number[] = [breakpoints[0]];
+    for (let k = 1; k < breakpoints.length; k++) {
+      if (breakpoints[k] - unique[unique.length - 1] > 0.001) unique.push(breakpoints[k]);
+    }
+
+    for (let s = 0; s < unique.length - 1; s++) {
+      const tL = unique[s], tR = unique[s + 1];
+      const xL = lerp(x1, x2, tL), xR = lerp(x1, x2, tR);
+      const active: { key: string; yL: number; yR: number; avgY: number }[] = [];
+      for (const m of metrics) {
+        const yL = lerp(m.y1, m.y2, tL);
+        const yR = lerp(m.y1, m.y2, tR);
+        if (yL < m.avgY || yR < m.avgY) {
+          active.push({ key: m.key, yL: Math.min(yL, m.avgY), yR: Math.min(yR, m.avgY), avgY: m.avgY });
+        }
+      }
+      fillSubSeg(active, xL, xR);
+    }
+  }
+
+  const layers: FillLayer[] = [];
+  const soloSpec: Record<string, { color: string; pri: number }> = {
+    cs_solo: { color: C_OUT_CS, pri: 0 },
+    dsf_solo: { color: C_OUT_DSF, pri: 1 },
+    ffm_solo: { color: C_OUT_FFM, pri: 2 },
+  };
+  const compSpec: Record<string, { color: string; pri: number }> = {
+    dsf_ffm: { color: C_OUT_DSF_FFM, pri: 10 },
+    cs_dsf: { color: C_OUT_DSF_CS, pri: 11 },
+    cs_ffm: { color: C_OUT_CS_FFM, pri: 12 },
+    out_all3: { color: C_OUT_ALL3, pri: 20 },
+  };
+
+  for (const [k, cfg] of Object.entries(soloSpec)) {
+    if (!pathAcc[k]) continue;
+    layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.85,
+      strokeColor: cfg.color, strokeWidth: 0.8, glowRadius: 2.5, glowOpacity: 0.08,
+      isComposite: false, priority: cfg.pri,
+    });
+  }
+  for (const [k, cfg] of Object.entries(compSpec)) {
+    if (!pathAcc[k]) continue;
+    layers.push({
+      d: pathAcc[k], color: cfg.color, opacity: 0.95,
+      strokeColor: cfg.color, strokeWidth: 1.4, glowRadius: 4, glowOpacity: 0.18,
+      isComposite: true, priority: cfg.pri,
+    });
+  }
+  layers.sort((a, b) => a.priority - b.priority);
+  return layers;
+}
+
 const C_CROSSHAIR = "rgba(255,255,255,0.22)";
 const C_ZONE_CALM = "rgba(255,255,255,0.015)";
 const C_ZONE_MOD = "rgba(251,191,36,0.03)";
@@ -608,86 +835,59 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     return PAD_T + (svData.absMax / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
   }, [svData.absMax]);
 
-  const outputStrata = useMemo(() => {
-    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-    const scoreFromDelta = (delta: number, swing: number) => 50 + 50 * clamp(delta / swing, -1, 1);
-    const scoreRaw = (delta: number, swing: number) => 50 + 50 * (delta / swing);
-    const scoreToY = (score: number) => PAD_T + ((100 - score) / 100) * (OUTPUT_H - PAD_T - PAD_B);
+  const outputSoilSeries = useMemo(() => {
+    const pctToY = (pct: number) => PAD_T + ((100 - pct) / 100) * (OUTPUT_H - PAD_T - PAD_B);
 
-    const CS_SWING = 0.25;
-    const DSF_SWING = 0.15;
-    const FFM_CENTER = 0.10;
-    const FFM_SWING = 0.40;
+    const readinessVals = points.map(p => p.readiness).filter((v): v is number => v != null);
+    const deepSleepVals = points.map(p => p.deepSleepMin).filter((v): v is number => v != null);
+    const ffmVals = points.map(p => p.ffmLb).filter((v): v is number => v != null);
 
-    const rollingAvg = (vals: (number | null)[], window: number, minFrac = 0.3): number | null => {
-      const recent = vals.slice(-window).filter((v): v is number => v != null);
-      return recent.length >= Math.max(1, Math.floor(window * minFrac)) ? recent.reduce((s, n) => s + n, 0) / recent.length : null;
+    const csMax = readinessVals.length > 0 ? Math.max(...readinessVals) : 1;
+    const dsfMax = deepSleepVals.length > 0 ? Math.max(...deepSleepVals) : 1;
+    const ffmMax = ffmVals.length > 0 ? Math.max(...ffmVals) : 1;
+
+    const buildSeries = (getter: (p: SignalPoint) => number | null, maxVal: number) => {
+      const raw: { x: number; y: number }[] = [];
+      const pctVals: number[] = [];
+      points.forEach((p, i) => {
+        const v = getter(p);
+        if (v != null && maxVal > 0) {
+          const pct = (v / maxVal) * 100;
+          raw.push({ x: xForIdx(i), y: pctToY(pct) });
+          pctVals.push(pct);
+        }
+      });
+      const avgPct = pctVals.length > 0 ? pctVals.reduce((s, n) => s + n, 0) / pctVals.length : null;
+      const avgY = avgPct != null ? pctToY(avgPct) : null;
+      return { raw, avgPct, avgY };
     };
 
-    const readinessVals = points.map(p => p.readiness);
-    const deepSleepVals = points.map(p => p.deepSleepMin);
-    const ffmVals = points.map(p => p.ffmLb);
+    const cs = buildSeries(p => p.readiness, csMax);
+    const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
+    const ffm = buildSeries(p => p.ffmLb, ffmMax);
 
-    const r7 = rollingAvg(readinessVals, 7);
-    const r28 = rollingAvg(readinessVals, 28);
-    let csScore: number | null = null;
-    let csDelta: number | null = null;
-    let csRaw: number | null = null;
-    if (r7 != null && r28 != null && r28 > 0) {
-      csDelta = (r7 - r28) / r28;
-      csRaw = scoreRaw(csDelta, CS_SWING);
-      csScore = scoreFromDelta(csDelta, CS_SWING);
-    }
-    const csCount = readinessVals.filter(v => v != null).length;
+    const soilPoints = points.map(p => ({
+      csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
+      dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
+      ffmPct: p.ffmLb != null && ffmMax > 0 ? (p.ffmLb / ffmMax) * 100 : null,
+    }));
 
-    const ds7 = rollingAvg(deepSleepVals, 7, 0.3);
-    const ds28 = rollingAvg(deepSleepVals, 28, 0.1);
-    let dsfScore: number | null = null;
-    let dsfDelta: number | null = null;
-    let dsfRaw: number | null = null;
-    if (ds7 != null && ds28 != null && ds28 > 0) {
-      dsfDelta = (ds7 - ds28) / ds28;
-      dsfRaw = scoreRaw(dsfDelta, DSF_SWING);
-      dsfScore = scoreFromDelta(dsfDelta, DSF_SWING);
-    }
-    const dsCount = deepSleepVals.filter(v => v != null).length;
-    const dsNonNullDays = deepSleepVals.map((v, i) => v != null ? points[i]?.date ?? `i${i}` : null).filter(Boolean);
+    const fillLayers = buildOutputFillLayers(
+      soilPoints, xForIdx, pctToY,
+      cs.avgY, dsf.avgY, ffm.avgY,
+    );
 
-    const ffmNonNull = ffmVals.map((v, i) => v != null ? { idx: i, val: v } : null).filter((v): v is { idx: number; val: number } => v != null);
-    let ffmScore: number | null = null;
-    let ffmVel14d: number | null = null;
-    let ffmRaw: number | null = null;
-    const ffmCount = ffmNonNull.length;
-    if (ffmNonNull.length >= 2) {
-      const recent14 = ffmNonNull.slice(-14);
-      if (recent14.length >= 2) {
-        const daySpan = Math.max(1, recent14[recent14.length - 1].idx - recent14[0].idx);
-        ffmVel14d = ((recent14[recent14.length - 1].val - recent14[0].val) / daySpan) * 7;
-        ffmRaw = scoreRaw(ffmVel14d - FFM_CENTER, FFM_SWING);
-        ffmScore = scoreFromDelta(ffmVel14d - FFM_CENTER, FFM_SWING);
-      }
-    }
-
-    const csVal = csScore ?? 50;
-    const dsVal = dsfScore ?? 50;
-    const ffmVal = ffmScore ?? 50;
     return {
-      capacitySupport: { score: csVal, y: scoreToY(csVal), lowConf: csCount < 28 || csScore == null },
-      deepSleepFertility: { score: dsVal, y: scoreToY(dsVal), lowConf: dsCount < 3 || dsfScore == null },
-      ffmMomentum: { score: ffmVal, y: scoreToY(ffmVal), lowConf: ffmCount < 3 || ffmScore == null },
-      csCount, dsCount, ffmCount,
+      cs, dsf, ffm, fillLayers, pctToY,
+      csMax, dsfMax, ffmMax,
       debug: {
-        r7, r28, csDelta, csRaw, csSwing: CS_SWING, csClamp: csVal, csY: scoreToY(csVal),
-        ds7, ds28, dsfDelta, dsfRaw, dsfSwing: DSF_SWING, dsfClamp: dsVal, dsfY: scoreToY(dsVal),
-        dsNonNullDays: dsNonNullDays as string[],
-        ffmVel14d, ffmCenter: FFM_CENTER, ffmSwing: FFM_SWING, ffmRaw, ffmClamp: ffmVal, ffmY: scoreToY(ffmVal),
-        domainMin: 0, domainMax: 100,
-        strataInScoreSpace: true,
-        sameDomain: true,
-        svOnDifferentScale: true,
+        csMax, dsfMax, ffmMax,
+        csAvgPct: cs.avgPct, dsfAvgPct: dsf.avgPct, ffmAvgPct: ffm.avgPct,
+        csCount: readinessVals.length, dsfCount: deepSleepVals.length, ffmCount: ffmVals.length,
+        csAvgY: cs.avgY, dsfAvgY: dsf.avgY, ffmAvgY: ffm.avgY,
       },
     };
-  }, [points]);
+  }, [points, xForIdx]);
 
   const recoveryIndex = useMemo(() => {
     const riResult = computeRecoveryIndexPairs(
@@ -738,11 +938,11 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
   const soilRealm = useMemo(() => {
     return getHypertrophyForming(
-      outputStrata.capacitySupport.score,
-      outputStrata.deepSleepFertility.score,
-      outputStrata.ffmMomentum.score,
+      outputSoilSeries.cs.avgPct,
+      outputSoilSeries.dsf.avgPct,
+      outputSoilSeries.ffm.avgPct,
     );
-  }, [outputStrata]);
+  }, [outputSoilSeries]);
 
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
@@ -911,22 +1111,59 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         <View style={styles.separator} />
 
-        <ChartPanel height={OUTPUT_H} label="OUTPUT" subtitle="neuromuscular performance" chartWidth={chartWidth}>
+        <ChartPanel
+          height={OUTPUT_H}
+          label="OUTPUT"
+          subtitle="neuromuscular performance"
+          chartWidth={chartWidth}
+          legendRows={[[
+            { text: "CS", color: C_OUT_CS },
+            { text: "DSF", color: C_OUT_DSF },
+            { text: "FFM", color: C_OUT_FFM },
+            { text: "CS+DSF", color: C_OUT_DSF_CS },
+            { text: "DSF+FFM", color: C_OUT_DSF_FFM },
+            { text: "CS+FFM", color: C_OUT_CS_FFM },
+          ]]}
+        >
           <Svg width={chartWidth} height={OUTPUT_H}>
-            {svData.gridLines.map((v) => {
-              const y = PAD_T + ((svData.absMax - v) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
-              return (
-                <Line key={v} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={v === 0 ? C_THRESHOLD : C_GRID} strokeWidth={v === 0 ? 1 : 0.5} strokeDasharray={v === 0 ? "4,4" : undefined} />
-              );
-            })}
-            <Line x1={PAD_L} y1={outputStrata.capacitySupport.y} x2={chartWidth - PAD_R} y2={outputStrata.capacitySupport.y} stroke={C_BLEND_LA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.capacitySupport.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {Math.round(outputStrata.capacitySupport.score)}{outputStrata.capacitySupport.lowConf ? " (low)" : ""}</SvgText>
+            {outputSoilSeries.fillLayers.map((layer, li) => (
+              <React.Fragment key={`of-${li}`}>
+                <Path d={layer.d} fill={layer.color} opacity={layer.opacity * 0.35} />
+                <Path d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={layer.opacity * 0.6} />
+              </React.Fragment>
+            ))}
 
-            <Line x1={PAD_L} y1={outputStrata.deepSleepFertility.y} x2={chartWidth - PAD_R} y2={outputStrata.deepSleepFertility.y} stroke={C_BLEND_LW} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.deepSleepFertility.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {Math.round(outputStrata.deepSleepFertility.score)}{outputStrata.deepSleepFertility.lowConf ? " (low)" : ""}</SvgText>
+            {outputSoilSeries.dsf.raw.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.dsf.raw)} stroke={C_OUT_DSF} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {outputSoilSeries.ffm.raw.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.ffm.raw)} stroke={C_OUT_FFM} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {outputSoilSeries.cs.raw.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.cs.raw)} stroke={C_OUT_CS} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
+            )}
 
-            <Line x1={PAD_L} y1={outputStrata.ffmMomentum.y} x2={chartWidth - PAD_R} y2={outputStrata.ffmMomentum.y} stroke={C_BLEND_WA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.ffmMomentum.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {Math.round(outputStrata.ffmMomentum.score)}{outputStrata.ffmMomentum.lowConf ? " (low)" : ""}</SvgText>
+            {outputSoilSeries.cs.avgY != null && (
+              <Line x1={PAD_L} y1={outputSoilSeries.cs.avgY} x2={chartWidth - PAD_R} y2={outputSoilSeries.cs.avgY} stroke={C_OUT_CS} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+            {outputSoilSeries.cs.avgPct != null && outputSoilSeries.cs.avgY != null && (
+              <SvgText x={PAD_L + 2} y={outputSoilSeries.cs.avgY - 3} fontSize={6.5} fill={C_OUT_CS} opacity={0.8} fontFamily="Rubik_400Regular">CS {Math.round(outputSoilSeries.cs.avgPct)}%</SvgText>
+            )}
+
+            {outputSoilSeries.dsf.avgY != null && (
+              <Line x1={PAD_L} y1={outputSoilSeries.dsf.avgY} x2={chartWidth - PAD_R} y2={outputSoilSeries.dsf.avgY} stroke={C_OUT_DSF} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+            {outputSoilSeries.dsf.avgPct != null && outputSoilSeries.dsf.avgY != null && (
+              <SvgText x={PAD_L + 2} y={outputSoilSeries.dsf.avgY - 3} fontSize={6.5} fill={C_OUT_DSF} opacity={0.8} fontFamily="Rubik_400Regular">DSF {Math.round(outputSoilSeries.dsf.avgPct)}%</SvgText>
+            )}
+
+            {outputSoilSeries.ffm.avgY != null && (
+              <Line x1={PAD_L} y1={outputSoilSeries.ffm.avgY} x2={chartWidth - PAD_R} y2={outputSoilSeries.ffm.avgY} stroke={C_OUT_FFM} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+            {outputSoilSeries.ffm.avgPct != null && outputSoilSeries.ffm.avgY != null && (
+              <SvgText x={PAD_L + 2} y={outputSoilSeries.ffm.avgY - 3} fontSize={6.5} fill={C_OUT_FFM} opacity={0.8} fontFamily="Rubik_400Regular">FFM {Math.round(outputSoilSeries.ffm.avgPct)}%</SvgText>
+            )}
+
             {svData.data.length > 1 && (
               <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
@@ -968,40 +1205,37 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         {/* OUTPUT DEBUG PANEL */}
         {(() => {
-          const d = outputStrata.debug;
-          const fmt = (v: number | null | undefined, dp = 4) => v == null ? "null" : v.toFixed(dp);
+          const d = outputSoilSeries.debug;
+          const fmt = (v: number | null | undefined, dp = 2) => v == null ? "null" : v.toFixed(dp);
           const selPt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
           const svNow = selPt?.strengthVelocity ?? null;
           const svY = svNow != null ? (PAD_T + ((svData.absMax - svNow) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B)) : null;
           const sorted = [
-            { k: "D", s: outputStrata.deepSleepFertility.score },
-            { k: "F", s: outputStrata.ffmMomentum.score },
-            { k: "C", s: outputStrata.capacitySupport.score },
+            { k: "D", s: d.dsfAvgPct ?? 0 },
+            { k: "F", s: d.ffmAvgPct ?? 0 },
+            { k: "C", s: d.csAvgPct ?? 0 },
           ].sort((a, b) => b.s - a.s);
           const orderStr = sorted.map(x => `${x.k}=${fmt(x.s, 1)}`).join(" > ");
           return (
             <View style={{ backgroundColor: "rgba(0,0,0,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, padding: 6 }}>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: "#FF6B6B", letterSpacing: 1.5, marginBottom: 3 }}>OUTPUT DEBUG</Text>
-              <Text style={{ fontSize: 7, color: C_BLEND_LA, fontFamily: "monospace" }}>
-                CS: r7={fmt(d.r7)} r28={fmt(d.r28)} delta={fmt(d.csDelta)} swing={fmt(d.csSwing)} raw={fmt(d.csRaw,1)} clamp={fmt(d.csClamp,1)} y={fmt(d.csY,1)}
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: "#FF6B6B", letterSpacing: 1.5, marginBottom: 3 }}>OUTPUT DEBUG (ratio-to-max)</Text>
+              <Text style={{ fontSize: 7, color: C_OUT_CS, fontFamily: "monospace" }}>
+                CS: max={fmt(d.csMax)} avg%={fmt(d.csAvgPct,1)} avgY={fmt(d.csAvgY,1)} pts={d.csCount}
               </Text>
-              <Text style={{ fontSize: 7, color: C_BLEND_LW, fontFamily: "monospace", marginTop: 1 }}>
-                DSF: ds7={fmt(d.ds7)} ds28={fmt(d.ds28)} delta={fmt(d.dsfDelta)} swing={fmt(d.dsfSwing)} raw={fmt(d.dsfRaw,1)} clamp={fmt(d.dsfClamp,1)} y={fmt(d.dsfY,1)}
+              <Text style={{ fontSize: 7, color: C_OUT_DSF, fontFamily: "monospace", marginTop: 1 }}>
+                DSF: max={fmt(d.dsfMax)} avg%={fmt(d.dsfAvgPct,1)} avgY={fmt(d.dsfAvgY,1)} pts={d.dsfCount}
               </Text>
-              <Text style={{ fontSize: 7, color: C_BLEND_LW, fontFamily: "monospace", marginTop: 1 }}>
-                DSF src: {outputStrata.dsCount} pts [{(d.dsNonNullDays || []).join(", ") || "none"}]
-              </Text>
-              <Text style={{ fontSize: 7, color: C_BLEND_WA, fontFamily: "monospace", marginTop: 1 }}>
-                FFM: vel14d={fmt(d.ffmVel14d)} center={fmt(d.ffmCenter)} swing={fmt(d.ffmSwing)} raw={fmt(d.ffmRaw,1)} clamp={fmt(d.ffmClamp,1)} y={fmt(d.ffmY,1)}
+              <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
+                FFM: max={fmt(d.ffmMax)} avg%={fmt(d.ffmAvgPct,1)} avgY={fmt(d.ffmAvgY,1)} pts={d.ffmCount}
               </Text>
               <Text style={{ fontSize: 7, color: "#FF2D8A", fontFamily: "monospace", marginTop: 1 }}>
-                SV: now={fmt(svNow)} y={fmt(svY, 1)}
+                SV: now={fmt(svNow, 4)} y={fmt(svY, 1)} (own scale, absMax={fmt(svData.absMax, 4)})
               </Text>
               <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 2 }}>
                 order: {soilRealm?.code ?? "?"} [{orderStr}]
               </Text>
               <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 1 }}>
-                domain: [{d.domainMin}, {d.domainMax}] scoreSpace={d.strataInScoreSpace ? "YES" : "NO"} sameDomain={d.sameDomain ? "YES" : "NO"} svDiffScale={d.svOnDifferentScale ? "YES" : "NO"}
+                fills={outputSoilSeries.fillLayers.length} domain=[0,100] svDiffScale=YES
               </Text>
             </View>
           );
