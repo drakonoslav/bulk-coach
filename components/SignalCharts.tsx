@@ -840,11 +840,9 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
     const readinessVals = points.map(p => p.readiness).filter((v): v is number => v != null);
     const deepSleepVals = points.map(p => p.deepSleepMin).filter((v): v is number => v != null);
-    const ffmVals = points.map(p => p.ffmLb).filter((v): v is number => v != null);
 
     const csMax = readinessVals.length > 0 ? Math.max(...readinessVals) : 1;
     const dsfMax = deepSleepVals.length > 0 ? Math.max(...deepSleepVals) : 1;
-    const ffmMax = ffmVals.length > 0 ? Math.max(...ffmVals) : 1;
 
     const buildSeries = (getter: (p: SignalPoint) => number | null, maxVal: number) => {
       const raw: { x: number; y: number }[] = [];
@@ -864,13 +862,46 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
     const cs = buildSeries(p => p.readiness, csMax);
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
-    const ffm = buildSeries(p => p.ffmLb, ffmMax);
 
-    const soilPoints = points.map(p => ({
-      csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
-      dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
-      ffmPct: p.ffmLb != null && ffmMax > 0 ? (p.ffmLb / ffmMax) * 100 : null,
-    }));
+    const ffmDeltaScore = (dailyDeltaLb: number): number => {
+      const lo = 0.25 / 7;
+      const hi = 0.50 / 7;
+      const mid = (lo + hi) / 2;
+      const halfWidth = (hi - lo) / 2;
+      const score = 100 * (1 - Math.abs(dailyDeltaLb - mid) / halfWidth);
+      return Math.max(0, Math.min(100, score));
+    };
+
+    const ffmRaw: { x: number; y: number }[] = [];
+    const ffmScoreVals: number[] = [];
+    const ffmDailyDebug: { day: string; today: number | null; yesterday: number | null; delta: number | null; score: number | null }[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const today = points[i].ffmLb;
+      const yesterday = i > 0 ? points[i - 1].ffmLb : null;
+      if (today != null && yesterday != null) {
+        const delta = today - yesterday;
+        const score = ffmDeltaScore(delta);
+        ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
+        ffmScoreVals.push(score);
+        ffmDailyDebug.push({ day: points[i].date, today, yesterday, delta, score });
+      } else {
+        ffmDailyDebug.push({ day: points[i].date, today, yesterday, delta: null, score: null });
+      }
+    }
+    const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
+    const ffmAvgY = ffmAvgPct != null ? pctToY(ffmAvgPct) : null;
+    const ffm = { raw: ffmRaw, avgPct: ffmAvgPct, avgY: ffmAvgY };
+
+    const soilPoints = points.map((p, i) => {
+      const today = p.ffmLb;
+      const yesterday = i > 0 ? points[i - 1].ffmLb : null;
+      const ffmPct = (today != null && yesterday != null) ? ffmDeltaScore(today - yesterday) : null;
+      return {
+        csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
+        dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
+        ffmPct,
+      };
+    });
 
     const fillLayers = buildOutputFillLayers(
       soilPoints, xForIdx, pctToY,
@@ -879,12 +910,13 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
     return {
       cs, dsf, ffm, fillLayers, pctToY,
-      csMax, dsfMax, ffmMax,
+      csMax, dsfMax,
       debug: {
-        csMax, dsfMax, ffmMax,
+        csMax, dsfMax,
         csAvgPct: cs.avgPct, dsfAvgPct: dsf.avgPct, ffmAvgPct: ffm.avgPct,
-        csCount: readinessVals.length, dsfCount: deepSleepVals.length, ffmCount: ffmVals.length,
+        csCount: readinessVals.length, dsfCount: deepSleepVals.length, ffmCount: ffmScoreVals.length,
         csAvgY: cs.avgY, dsfAvgY: dsf.avgY, ffmAvgY: ffm.avgY,
+        ffmDailyDebug,
       },
     };
   }, [points, xForIdx]);
@@ -1226,8 +1258,19 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 DSF: max={fmt(d.dsfMax)} avg%={fmt(d.dsfAvgPct,1)} avgY={fmt(d.dsfAvgY,1)} pts={d.dsfCount}
               </Text>
               <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
-                FFM: max={fmt(d.ffmMax)} avg%={fmt(d.ffmAvgPct,1)} avgY={fmt(d.ffmAvgY,1)} pts={d.ffmCount}
+                FFM: avg%={fmt(d.ffmAvgPct,1)} avgY={fmt(d.ffmAvgY,1)} pts={d.ffmCount}
               </Text>
+              {(() => {
+                const selPtDbg = selectedPoint ?? (N > 0 ? points[N - 1] : null);
+                const selDay = selPtDbg?.date;
+                const dd = d.ffmDailyDebug?.find((x: any) => x.day === selDay);
+                if (!dd) return null;
+                return (
+                  <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
+                    FFM day: today={fmt(dd.today)} yest={fmt(dd.yesterday)} delta={fmt(dd.delta,4)} score={fmt(dd.score,1)}
+                  </Text>
+                );
+              })()}
               <Text style={{ fontSize: 7, color: C_SV, fontFamily: "monospace", marginTop: 1 }}>
                 SV: now={fmt(svNow, 4)} y={fmt(svY, 1)} (own scale, absMax={fmt(svData.absMax, 4)})
               </Text>
