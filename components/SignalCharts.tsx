@@ -881,21 +881,39 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       }
     }
 
-    const ffmOn: boolean[] = new Array(points.length).fill(false);
+    const ffmDelta: (number | null)[] = new Array(points.length).fill(null);
     for (let i = 0; i < points.length; i++) {
       const cur = ffmSmooth[i];
       let prev: number | null = null;
       for (let j = i - 1; j >= 0; j--) {
         if (ffmSmooth[j] != null) { prev = ffmSmooth[j]; break; }
       }
-      if (cur != null && prev != null && cur - prev > 0) {
-        ffmOn[i] = true;
+      if (cur != null && prev != null) {
+        ffmDelta[i] = cur - prev;
       }
     }
 
+    const BASELINE_DECAY = 0.9;
+    const UP_GAIN = 20;
+    const DOWN_LOSS = 20;
+    const BASELINE_CAP = 60;
+    const CANOPY_CAP = 40;
+    const DEFAULT_PEAK = 5;
+
+    const ffmOn: boolean[] = new Array(points.length).fill(false);
     const streaks: number[] = new Array(points.length).fill(0);
+    const baselines: number[] = new Array(points.length).fill(0);
+
     for (let i = 0; i < points.length; i++) {
-      if (ffmOn[i]) {
+      const d = ffmDelta[i];
+      const up = d != null ? Math.max(0, d) : 0;
+      const down = d != null ? Math.max(0, -d) : 0;
+
+      const prevBaseline = i > 0 ? baselines[i - 1] : 0;
+      baselines[i] = Math.max(0, Math.min(BASELINE_CAP, BASELINE_DECAY * prevBaseline + UP_GAIN * up - DOWN_LOSS * down));
+
+      if (d != null && d > 0) {
+        ffmOn[i] = true;
         streaks[i] = (i > 0 ? streaks[i - 1] : 0) + 1;
       }
     }
@@ -906,7 +924,6 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         if (streaks[i] >= 2) completedStreaks.push(streaks[i]);
       }
     }
-    const DEFAULT_PEAK = 5;
     const peakStreak = completedStreaks.length > 0
       ? Math.max(DEFAULT_PEAK, Math.round(completedStreaks.reduce((s, v) => s + v, 0) / completedStreaks.length))
       : DEFAULT_PEAK;
@@ -914,25 +931,20 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const ffmRaw: { x: number; y: number }[] = [];
     const ffmScoreVals: number[] = [];
     const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
-    const ffmDailyDebug: { day: string; on: boolean; streak: number; peakStreak: number; score: number | null }[] = [];
+    const ffmDailyDebug: { day: string; on: boolean; streak: number; baseline: number; canopy: number; score: number | null }[] = [];
     for (let i = 0; i < points.length; i++) {
       if (i < cutoff) {
-        ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], peakStreak, score: null });
+        ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], baseline: baselines[i], canopy: 0, score: null });
         continue;
       }
-      if (streaks[i] > 0) {
-        const ratio = Math.min(1, streaks[i] / peakStreak);
-        const score = 100 * Math.sin((Math.PI / 2) * ratio);
-        ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
-        ffmScoreVals.push(score);
-        ffmScoreByIdx[i] = score;
-        ffmDailyDebug.push({ day: points[i].date, on: true, streak: streaks[i], peakStreak, score });
-      } else {
-        ffmScoreByIdx[i] = 0;
-        ffmRaw.push({ x: xForIdx(i), y: pctToY(0) });
-        ffmScoreVals.push(0);
-        ffmDailyDebug.push({ day: points[i].date, on: false, streak: 0, peakStreak, score: 0 });
-      }
+      const canopy = streaks[i] > 0
+        ? CANOPY_CAP * Math.sin((Math.PI / 2) * Math.min(1, streaks[i] / peakStreak))
+        : 0;
+      const score = Math.max(0, Math.min(100, baselines[i] + canopy));
+      ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
+      ffmScoreVals.push(score);
+      ffmScoreByIdx[i] = score;
+      ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], baseline: baselines[i], canopy, score });
     }
     const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
     const ffmAvgY = ffmAvgPct != null ? pctToY(ffmAvgPct) : null;
