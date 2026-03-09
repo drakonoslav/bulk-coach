@@ -2113,7 +2113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `SELECT day, morning_weight_lb, pushups_reps, pullups_reps,
                   bench_reps, bench_weight_lb, ohp_reps, ohp_weight_lb,
                   fat_free_mass_lb, hrv, resting_hr, waist_in,
-                  sleep_latency_min, sleep_waso_min
+                  sleep_latency_min, sleep_waso_min, sleep_deep_min
            FROM daily_log WHERE user_id = $1 AND day >= $2 AND day <= $3
            ORDER BY day ASC`,
           [userId, from, to],
