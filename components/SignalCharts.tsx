@@ -50,7 +50,7 @@ const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#FBBF24";
 const C_READINESS = "#5CF2FF";
-const C_SV = "#FF2D8A";
+const C_SV = "#FF69B4";
 const C_RECOVERY = "#5CF2FF";
 const C_RECOVERY_AVG = "#FF00FF";
 const C_RECOVERY_REF = "#22C55E";
@@ -1228,7 +1228,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
               <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
                 FFM: max={fmt(d.ffmMax)} avg%={fmt(d.ffmAvgPct,1)} avgY={fmt(d.ffmAvgY,1)} pts={d.ffmCount}
               </Text>
-              <Text style={{ fontSize: 7, color: "#FF2D8A", fontFamily: "monospace", marginTop: 1 }}>
+              <Text style={{ fontSize: 7, color: C_SV, fontFamily: "monospace", marginTop: 1 }}>
                 SV: now={fmt(svNow, 4)} y={fmt(svY, 1)} (own scale, absMax={fmt(svData.absMax, 4)})
               </Text>
               <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 2 }}>
