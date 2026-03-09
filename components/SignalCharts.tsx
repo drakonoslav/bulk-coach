@@ -93,6 +93,35 @@ function getSleepPlanet(latencyRatio: number | null, wasoRatio: number | null, a
   return { code, ...info };
 }
 const C_THRESHOLD = "rgba(255,255,255,0.15)";
+type SoilCode = "DFC" | "DCF" | "FDC" | "FCD" | "CDF" | "CFD";
+interface SoilRealm { code: SoilCode; title: string; subtitle: string; color: string }
+const SOIL_REALM_MAP: Record<SoilCode, { title: string; subtitle: string; color: string }> = {
+  DFC: { title: "Humic Growth Field", subtitle: "Restoration leads; tissue gain follows; support trails", color: "#32D17C" },
+  DCF: { title: "Irrigated Root Field", subtitle: "Repair and support are strong; biomass is still emerging", color: "#46D98E" },
+  FDC: { title: "Biomass Loam", subtitle: "Tissue accumulation dominates with repair beneath it", color: "#FF8A1F" },
+  FCD: { title: "Canopy Surge", subtitle: "Growth expression is strong, but deep repair is not leading", color: "#FF9F40" },
+  CDF: { title: "Temperate Growth Basin", subtitle: "Supportive climate with prepared soil; growth still developing", color: "#8B5CF6" },
+  CFD: { title: "Aerated Yield Plain", subtitle: "System support leads; growth expresses over thinner restoration", color: "#A78BFA" },
+};
+function getHypertrophyForming(csRatio: number | null, dsfRatio: number | null, ffmRatio: number | null): SoilRealm | null {
+  if (csRatio == null || dsfRatio == null || ffmRatio == null) return null;
+  const eps = 1e-6;
+  const items = [
+    { key: "D", value: dsfRatio },
+    { key: "F", value: ffmRatio },
+    { key: "C", value: csRatio },
+  ];
+  const tieBreak: Record<string, number> = { D: 0, F: 1, C: 2 };
+  items.sort((a, b) => {
+    const diff = b.value - a.value;
+    if (Math.abs(diff) > eps) return diff;
+    return tieBreak[a.key] - tieBreak[b.key];
+  });
+  const code = (items[0].key + items[1].key + items[2].key) as SoilCode;
+  const info = SOIL_REALM_MAP[code];
+  return { code, ...info };
+}
+
 const C_CROSSHAIR = "rgba(255,255,255,0.22)";
 const C_ZONE_CALM = "rgba(255,255,255,0.015)";
 const C_ZONE_MOD = "rgba(251,191,36,0.03)";
@@ -683,6 +712,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     return getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
   }, [selectedPoint, points, N]);
 
+  const soilRealm = useMemo(() => {
+    return getHypertrophyForming(
+      outputStrata.capacitySupport?.ratio ?? null,
+      outputStrata.deepSleepFertility?.ratio ?? null,
+      outputStrata.ffmMomentum?.ratio ?? null,
+    );
+  }, [outputStrata]);
+
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
     const maxLabels = Math.min(Math.floor(chartWidth / 42), 6);
@@ -906,6 +943,17 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             ))}
           </Svg>
         </ChartPanel>
+
+        {soilRealm && (
+          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING:</Text>
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.8 }}>{soilRealm.code}</Text>
+              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilRealm.color, opacity: 0.85 }}>{soilRealm.title}</Text>
+            </View>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilRealm.subtitle}</Text>
+          </View>
+        )}
 
         <View style={styles.separator} />
 
