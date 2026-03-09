@@ -1249,63 +1249,52 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         )}
 
         {(() => {
+          const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
+          if (!pt) return null;
           const d = outputSoilSeries.debug;
-          const selPt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
-          const selDay = selPt?.date ?? null;
-          const isLive = selectedPoint != null;
-
-          const csVal = selPt?.readiness;
-          const csPct = csVal != null && d.csMax > 0 ? Math.round((csVal / d.csMax) * 100) : null;
-          const dsfVal = selPt?.deepSleepMin;
-          const dsfPct = dsfVal != null && d.dsfMax > 0 ? Math.round((dsfVal / d.dsfMax) * 100) : null;
-
-          const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === selDay);
-          const ffmPct = ffmEntry?.score != null ? Math.round(ffmEntry.score) : null;
-          const svVal = selPt?.strengthVelocity;
-
-          const csDisplay = isLive && csPct != null ? `${csPct}%` : (d.csAvgPct != null ? `${Math.round(d.csAvgPct)}% avg` : "--");
-          const dsfDisplay = isLive && dsfPct != null ? `${dsfPct}%` : (d.dsfAvgPct != null ? `${Math.round(d.dsfAvgPct)}% avg` : "--");
-          const ffmDisplay = isLive && ffmPct != null ? `${ffmPct}` : (d.ffmAvgPct != null ? `${Math.round(d.ffmAvgPct)} avg` : "--");
-          const svDisplay = svVal != null ? (svVal >= 0 ? "+" : "") + svVal.toFixed(2) : "--";
-
-          const dateLabel = selDay ? formatDateShort(selDay) : "";
-
+          const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === pt.date);
           return (
-            <View style={{ backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, paddingVertical: 5, paddingHorizontal: 8 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <Text style={{ fontSize: 7.5, fontWeight: "700" as const, color: "rgba(255,255,255,0.5)", letterSpacing: 1.2 }}>
-                  {isLive ? `OUTPUT  ${dateLabel}` : "OUTPUT  window avg"}
-                </Text>
-                {soilRealm && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                    <Text style={{ fontSize: 7, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.6 }}>{soilRealm.code}</Text>
-                    {soilRealm.ideal && (
-                      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#22C55E" }} />
-                    )}
-                  </View>
-                )}
+            <View style={{ backgroundColor: "rgba(10,10,18,0.92)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", borderRadius: 6, marginHorizontal: 8, marginTop: 4, marginBottom: 4, paddingVertical: 8, paddingHorizontal: 10 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>{pt.date}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_HPA }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HPA</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hpa != null ? pt.hpa : "--"}</Text>
               </View>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_CS, marginBottom: 2 }} />
-                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_CS }}>{csDisplay}</Text>
-                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>CS</Text>
-                </View>
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_DSF, marginBottom: 2 }} />
-                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_DSF }}>{dsfDisplay}</Text>
-                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>DSF</Text>
-                </View>
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_FFM, marginBottom: 2 }} />
-                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_FFM }}>{ffmDisplay}</Text>
-                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>FFM</Text>
-                </View>
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_SV, marginBottom: 2 }} />
-                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_SV }}>{svDisplay}</Text>
-                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>SV</Text>
-                </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_HRV }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HRV</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hrvDeltaPct != null ? fmtDelta(pt.hrvDeltaPct, 0, "%") : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_READINESS }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Readiness</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.readiness != null ? Math.round(pt.readiness) : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_LATENCY }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Sleep Latency</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.latencyMin != null ? `${pt.latencyMin} min (${Math.round(pt.latencyPct!)}%)` : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_WASO }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Wake After Sleep Onset</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.wasoMin != null ? `${pt.wasoMin} min (${Math.round(pt.wasoPct!)}%)` : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_AWAKE_IN_BED }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Awake-in-Bed</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.awakeInBedMin != null ? `${pt.awakeInBedMin} min (${Math.round(pt.awakeInBedPct!)}%)` : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_SV }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Strength Velocity</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.strengthVelocity != null ? (svSource === "intel" ? fmtDelta(pt.strengthVelocity, 2, "") : fmtDelta(pt.strengthVelocity, 1, "%")) : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_RECOVERY }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Recovery Index</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hrv != null && pt.rhr != null && pt.rhr > 0 ? (pt.hrv / pt.rhr).toFixed(2) : "--"}</Text>
               </View>
             </View>
           );
@@ -1461,71 +1450,6 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         );
       })()}
 
-      {selectedPoint && (
-        <View style={[styles.tooltip, crosshairX != null && crosshairX > chartWidth * 0.6 ? { right: 12 } : { left: 12 }]}>
-          <Text style={styles.tooltipDate}>{selectedPoint.date}</Text>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_HPA }]} />
-            <Text style={styles.tooltipLabel}>HPA</Text>
-            <Text style={styles.tooltipVal}>{selectedPoint.hpa != null ? selectedPoint.hpa : "--"}</Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_HRV }]} />
-            <Text style={styles.tooltipLabel}>HRV</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.hrvDeltaPct != null
-                ? fmtDelta(selectedPoint.hrvDeltaPct, 0, "%")
-                : "--"}
-            </Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_READINESS }]} />
-            <Text style={styles.tooltipLabel}>Readiness</Text>
-            <Text style={styles.tooltipVal}>{selectedPoint.readiness != null ? Math.round(selectedPoint.readiness) : "--"}</Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_LATENCY }]} />
-            <Text style={styles.tooltipLabel}>Sleep Latency</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.latencyMin != null ? `${selectedPoint.latencyMin} min (${Math.round(selectedPoint.latencyPct!)}%)` : "--"}
-            </Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_WASO }]} />
-            <Text style={styles.tooltipLabel}>Wake After Sleep Onset</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.wasoMin != null ? `${selectedPoint.wasoMin} min (${Math.round(selectedPoint.wasoPct!)}%)` : "--"}
-            </Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_AWAKE_IN_BED }]} />
-            <Text style={styles.tooltipLabel}>Awake-in-Bed</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.awakeInBedMin != null ? `${selectedPoint.awakeInBedMin} min (${Math.round(selectedPoint.awakeInBedPct!)}%)` : "--"}
-            </Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_SV }]} />
-            <Text style={styles.tooltipLabel}>Strength Velocity</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.strengthVelocity != null
-                ? svSource === "intel"
-                  ? fmtDelta(selectedPoint.strengthVelocity, 2, "")
-                  : fmtDelta(selectedPoint.strengthVelocity, 1, "%")
-                : "--"}
-            </Text>
-          </View>
-          <View style={styles.tooltipRow}>
-            <View style={[styles.tooltipDot, { backgroundColor: C_RECOVERY }]} />
-            <Text style={styles.tooltipLabel}>Recovery Index</Text>
-            <Text style={styles.tooltipVal}>
-              {selectedPoint.hrv != null && selectedPoint.rhr != null && selectedPoint.rhr > 0
-                ? (selectedPoint.hrv / selectedPoint.rhr).toFixed(2)
-                : "--"}
-            </Text>
-          </View>
-        </View>
-      )}
 
       {N === 0 && (
         <View style={styles.emptyOverlay}>
