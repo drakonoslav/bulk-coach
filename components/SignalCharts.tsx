@@ -609,6 +609,10 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   }, [svData.absMax]);
 
   const outputStrata = useMemo(() => {
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const scoreFromDelta = (delta: number, swing: number) => 50 + 50 * clamp(delta / swing, -1, 1);
+    const scoreToY = (score: number) => PAD_T + ((100 - score) / 100) * (OUTPUT_H - PAD_T - PAD_B);
+
     const rollingAvg = (vals: (number | null)[], window: number): number | null => {
       const recent = vals.slice(-window).filter((v): v is number => v != null);
       return recent.length >= Math.max(1, Math.floor(window * 0.5)) ? recent.reduce((s, n) => s + n, 0) / recent.length : null;
@@ -620,55 +624,46 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
     const r7 = rollingAvg(readinessVals, 7);
     const r28 = rollingAvg(readinessVals, 28);
-    const capacitySupport = (r7 != null && r28 != null && r28 > 0) ? r7 / r28 : null;
+    let csScore: number | null = null;
+    if (r7 != null && r28 != null && r28 > 0) {
+      const csDelta = (r7 - r28) / r28;
+      csScore = scoreFromDelta(csDelta, 0.10);
+    }
     const csCount = readinessVals.filter(v => v != null).length;
 
     const ds7 = rollingAvg(deepSleepVals, 7);
     const ds28 = rollingAvg(deepSleepVals, 28);
-    const deepSleepFertility = (ds7 != null && ds28 != null && ds28 > 0) ? ds7 / ds28 : null;
+    let dsfScore: number | null = null;
+    if (ds7 != null && ds28 != null && ds28 > 0) {
+      const dsfDelta = (ds7 - ds28) / ds28;
+      dsfScore = scoreFromDelta(dsfDelta, 0.15);
+    }
     const dsCount = deepSleepVals.filter(v => v != null).length;
 
     const ffmNonNull = ffmVals.map((v, i) => v != null ? { idx: i, val: v } : null).filter((v): v is { idx: number; val: number } => v != null);
-    let ffmMomentum: number | null = null;
-    let ffmCount = ffmNonNull.length;
-    if (ffmNonNull.length >= 3) {
+    let ffmScore: number | null = null;
+    const ffmCount = ffmNonNull.length;
+    if (ffmNonNull.length >= 2) {
       const recent14 = ffmNonNull.slice(-14);
-      const allWindows: number[] = [];
-      for (let start = 0; start <= ffmNonNull.length - 2; start++) {
-        const windowSlice = ffmNonNull.slice(start, start + Math.min(14, ffmNonNull.length - start));
-        if (windowSlice.length >= 2) {
-          const first = windowSlice[0].val;
-          const last = windowSlice[windowSlice.length - 1].val;
-          allWindows.push(last - first);
-        }
-      }
       if (recent14.length >= 2) {
-        const vel14 = recent14[recent14.length - 1].val - recent14[0].val;
-        const bestVel = allWindows.length > 0 ? Math.max(...allWindows) : null;
-        if (bestVel != null && bestVel > 0) {
-          ffmMomentum = vel14 / bestVel;
-        }
+        const daySpan = Math.max(1, recent14[recent14.length - 1].idx - recent14[0].idx);
+        const vel14 = ((recent14[recent14.length - 1].val - recent14[0].val) / daySpan) * 7;
+        ffmScore = scoreFromDelta(vel14 - 0.20, 0.20);
       }
     }
 
-    const svToY = (ratio: number) => {
-      const scaled = (ratio - 1.0) * svData.absMax * 5;
-      const clamped = Math.max(-svData.absMax, Math.min(svData.absMax, scaled));
-      return PAD_T + ((svData.absMax - clamped) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
-    };
-
-    const csVal = capacitySupport ?? 1.0;
-    const dsVal = deepSleepFertility ?? 1.0;
-    const ffmVal = ffmMomentum ?? 1.0;
+    const csVal = csScore ?? 50;
+    const dsVal = dsfScore ?? 50;
+    const ffmVal = ffmScore ?? 50;
     return {
-      capacitySupport: { ratio: csVal, y: svToY(csVal), lowConf: csCount < 28 || capacitySupport == null },
-      deepSleepFertility: { ratio: dsVal, y: svToY(dsVal), lowConf: dsCount < 28 || deepSleepFertility == null },
-      ffmMomentum: { ratio: ffmVal, y: svToY(ffmVal), lowConf: ffmCount < 14 || ffmMomentum == null },
+      capacitySupport: { score: csVal, y: scoreToY(csVal), lowConf: csCount < 28 || csScore == null },
+      deepSleepFertility: { score: dsVal, y: scoreToY(dsVal), lowConf: dsCount < 28 || dsfScore == null },
+      ffmMomentum: { score: ffmVal, y: scoreToY(ffmVal), lowConf: ffmCount < 14 || ffmScore == null },
       csCount,
       dsCount,
       ffmCount,
     };
-  }, [points, svData.absMax]);
+  }, [points]);
 
   const recoveryIndex = useMemo(() => {
     const riResult = computeRecoveryIndexPairs(
@@ -719,9 +714,9 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
   const soilRealm = useMemo(() => {
     return getHypertrophyForming(
-      outputStrata.capacitySupport?.ratio ?? null,
-      outputStrata.deepSleepFertility?.ratio ?? null,
-      outputStrata.ffmMomentum?.ratio ?? null,
+      outputStrata.capacitySupport.score,
+      outputStrata.deepSleepFertility.score,
+      outputStrata.ffmMomentum.score,
     );
   }, [outputStrata]);
 
@@ -901,13 +896,13 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
               );
             })}
             <Line x1={PAD_L} y1={outputStrata.capacitySupport.y} x2={chartWidth - PAD_R} y2={outputStrata.capacitySupport.y} stroke={C_BLEND_LA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.capacitySupport.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {outputStrata.capacitySupport.ratio.toFixed(2)}{outputStrata.capacitySupport.lowConf ? " (low)" : ""}</SvgText>
+            <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {Math.round(outputStrata.capacitySupport.score)}{outputStrata.capacitySupport.lowConf ? " (low)" : ""}</SvgText>
 
             <Line x1={PAD_L} y1={outputStrata.deepSleepFertility.y} x2={chartWidth - PAD_R} y2={outputStrata.deepSleepFertility.y} stroke={C_BLEND_LW} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.deepSleepFertility.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {outputStrata.deepSleepFertility.ratio.toFixed(2)}{outputStrata.deepSleepFertility.lowConf ? " (low)" : ""}</SvgText>
+            <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {Math.round(outputStrata.deepSleepFertility.score)}{outputStrata.deepSleepFertility.lowConf ? " (low)" : ""}</SvgText>
 
             <Line x1={PAD_L} y1={outputStrata.ffmMomentum.y} x2={chartWidth - PAD_R} y2={outputStrata.ffmMomentum.y} stroke={C_BLEND_WA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.ffmMomentum.lowConf ? 0.4 : 0.7} />
-            <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {outputStrata.ffmMomentum.ratio.toFixed(2)}{outputStrata.ffmMomentum.lowConf ? " (low)" : ""}</SvgText>
+            <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {Math.round(outputStrata.ffmMomentum.score)}{outputStrata.ffmMomentum.lowConf ? " (low)" : ""}</SvgText>
             {svData.data.length > 1 && (
               <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
