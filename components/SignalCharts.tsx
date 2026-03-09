@@ -796,16 +796,27 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     const buildSeries = (getter: (p: SignalPoint) => number | null) => {
       const raw: { x: number; y: number }[] = [];
       const vals: number[] = [];
+      const runningAvg: { x: number; y: number }[] = [];
+      const runningPctByIdx: (number | null)[] = new Array(points.length).fill(null);
+      let cumSum = 0;
+      let cumCount = 0;
       points.forEach((p, i) => {
         const v = getter(p);
         if (v != null) {
           raw.push({ x: xForIdx(i), y: pctToY(v) });
           vals.push(v);
+          cumSum += v;
+          cumCount++;
+        }
+        if (cumCount > 0) {
+          const avg = cumSum / cumCount;
+          runningAvg.push({ x: xForIdx(i), y: pctToY(avg) });
+          runningPctByIdx[i] = avg;
         }
       });
       const avgPct = vals.length > 0 ? vals.reduce((s, n) => s + n, 0) / vals.length : null;
       const avgY = avgPct != null ? pctToY(avgPct) : null;
-      return { raw, avgPct, avgY };
+      return { raw, avgPct, avgY, runningAvg, runningPctByIdx };
     };
     const latency = buildSeries(p => p.latencyPct);
     const waso = buildSeries(p => p.wasoPct);
@@ -858,6 +869,10 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     const buildSeries = (getter: (p: SignalPoint) => number | null, maxVal: number) => {
       const raw: { x: number; y: number }[] = [];
       const pctVals: number[] = [];
+      const runningAvg: { x: number; y: number }[] = [];
+      const runningPctByIdx: (number | null)[] = new Array(points.length).fill(null);
+      let cumSum = 0;
+      let cumCount = 0;
       points.forEach((p, i) => {
         if (i < cutoff) return;
         const v = getter(p);
@@ -865,11 +880,18 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
           const pct = (v / maxVal) * 100;
           raw.push({ x: xForIdx(i), y: pctToY(pct) });
           pctVals.push(pct);
+          cumSum += pct;
+          cumCount++;
+        }
+        if (cumCount > 0) {
+          const avg = cumSum / cumCount;
+          runningAvg.push({ x: xForIdx(i), y: pctToY(avg) });
+          runningPctByIdx[i] = avg;
         }
       });
       const avgPct = pctVals.length > 0 ? pctVals.reduce((s, n) => s + n, 0) / pctVals.length : null;
       const avgY = avgPct != null ? pctToY(avgPct) : null;
-      return { raw, avgPct, avgY };
+      return { raw, avgPct, avgY, runningAvg, runningPctByIdx };
     };
 
     const cs = buildSeries(p => p.readiness, csMax);
@@ -942,6 +964,10 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     const ffmRaw: { x: number; y: number }[] = [];
     const ffmScoreVals: number[] = [];
     const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
+    const ffmRunningAvg: { x: number; y: number }[] = [];
+    const ffmRunningPctByIdx: (number | null)[] = new Array(points.length).fill(null);
+    let ffmCumSum = 0;
+    let ffmCumCount = 0;
     const ffmDailyDebug: { day: string; on: boolean; streak: number; baseline: number; canopy: number; score: number | null }[] = [];
     for (let i = 0; i < points.length; i++) {
       if (i < cutoff) {
@@ -955,6 +981,11 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
       ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
       ffmScoreVals.push(score);
       ffmScoreByIdx[i] = score;
+      ffmCumSum += score;
+      ffmCumCount++;
+      const rAvg = ffmCumSum / ffmCumCount;
+      ffmRunningAvg.push({ x: xForIdx(i), y: pctToY(rAvg) });
+      ffmRunningPctByIdx[i] = rAvg;
       ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], baseline: baselines[i], canopy, score });
     }
     const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
@@ -975,8 +1006,10 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
       cs.avgY, dsf.avgY, ffm.avgY,
     );
 
+    const ffmWithRunning = { ...ffm, runningAvg: ffmRunningAvg, runningPctByIdx: ffmRunningPctByIdx };
+
     return {
-      cs, dsf, ffm, fillLayers, pctToY,
+      cs, dsf, ffm: ffmWithRunning, fillLayers, pctToY,
       csMax, dsfMax,
       debug: {
         csMax, dsfMax,
@@ -1029,13 +1062,25 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
   const crosshairX = selectedIdx != null ? xForIdx(selectedIdx) : null;
   const selectedPoint = selectedIdx != null ? points[selectedIdx] : null;
 
-  const sleepSeason = useMemo(() => {
+  const sleepEra = useMemo(() => {
     return getSleepPlanet(
       disruptionSeries.latency.avgPct,
       disruptionSeries.waso.avgPct,
       disruptionSeries.awakeInBed.avgPct,
     );
   }, [disruptionSeries]);
+
+  const sleepSeason = useMemo(() => {
+    const idx = selectedIdx ?? (N > 0 ? N - 1 : -1);
+    for (let i = idx; i >= 0; i--) {
+      const lPct = disruptionSeries.latency.runningPctByIdx[i];
+      const wPct = disruptionSeries.waso.runningPctByIdx[i];
+      const aPct = disruptionSeries.awakeInBed.runningPctByIdx[i];
+      const result = getSleepPlanet(lPct, wPct, aPct);
+      if (result) return result;
+    }
+    return null;
+  }, [selectedIdx, N, disruptionSeries]);
 
   const sleepPlanet = useMemo(() => {
     const startIdx = selectedIdx ?? (N > 0 ? N - 1 : -1);
@@ -1047,13 +1092,25 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     return null;
   }, [selectedIdx, points, N]);
 
-  const soilSeason = useMemo(() => {
+  const soilEra = useMemo(() => {
     return getHypertrophyForming(
       outputSoilSeries.cs.avgPct,
       outputSoilSeries.dsf.avgPct,
       outputSoilSeries.ffm.avgPct,
     );
   }, [outputSoilSeries]);
+
+  const soilSeason = useMemo(() => {
+    const idx = selectedIdx ?? (N > 0 ? N - 1 : -1);
+    for (let i = idx; i >= 0; i--) {
+      const csPct = outputSoilSeries.cs.runningPctByIdx[i];
+      const dsfPct = outputSoilSeries.dsf.runningPctByIdx[i];
+      const ffmPct = outputSoilSeries.ffm.runningPctByIdx[i];
+      const result = getHypertrophyForming(csPct, dsfPct, ffmPct);
+      if (result) return result;
+    }
+    return null;
+  }, [selectedIdx, N, outputSoilSeries]);
 
   const soilRealm = useMemo(() => {
     const d = outputSoilSeries.debug;
@@ -1218,12 +1275,32 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
               <Path d={buildPath(readinessData)} stroke={C_READINESS} strokeWidth={2.4} fill="none" opacity={1} strokeLinejoin="round" strokeLinecap="round" />
             )}
 
+            {disruptionSeries.latency.runningAvg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.latency.runningAvg)} stroke={C_LATENCY} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {disruptionSeries.waso.runningAvg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.waso.runningAvg)} stroke={C_WASO} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {disruptionSeries.awakeInBed.runningAvg.length > 1 && (
+              <Path d={buildPath(disruptionSeries.awakeInBed.runningAvg)} stroke={C_AWAKE_IN_BED} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={CAPACITY_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
             )}
           </Svg>
         </ChartPanel>
 
+        {sleepEra && (
+          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING ERA:</Text>
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepEra.accent, letterSpacing: 0.8 }}>{sleepEra.code}</Text>
+              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepEra.accent, opacity: 0.85 }}>{sleepEra.name}</Text>
+            </View>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepEra.subtitle}</Text>
+          </View>
+        )}
         {sleepSeason && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
@@ -1303,6 +1380,17 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
             {svData.data.length > 1 && (
               <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
+
+            {outputSoilSeries.cs.runningAvg.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.cs.runningAvg)} stroke={C_OUT_CS} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {outputSoilSeries.dsf.runningAvg.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.dsf.runningAvg)} stroke={C_OUT_DSF} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {outputSoilSeries.ffm.runningAvg.length > 1 && (
+              <Path d={buildPath(outputSoilSeries.ffm.runningAvg)} stroke={C_OUT_FFM} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={OUTPUT_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
             )}
@@ -1322,6 +1410,22 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
           </Svg>
         </ChartPanel>
 
+        {soilEra && (
+          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING ERA:</Text>
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilEra.color, letterSpacing: 0.8 }}>{soilEra.code}</Text>
+              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilEra.color, opacity: 0.85 }}>{soilEra.title}</Text>
+              {soilEra.lowConf && (
+                <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
+              )}
+              {soilEra.ideal && (
+                <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
+              )}
+            </View>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilEra.subtitle}</Text>
+          </View>
+        )}
         {soilSeason && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
