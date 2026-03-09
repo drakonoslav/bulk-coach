@@ -611,6 +611,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const outputStrata = useMemo(() => {
     const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
     const scoreFromDelta = (delta: number, swing: number) => 50 + 50 * clamp(delta / swing, -1, 1);
+    const scoreRaw = (delta: number, swing: number) => 50 + 50 * (delta / swing);
     const scoreToY = (score: number) => PAD_T + ((100 - score) / 100) * (OUTPUT_H - PAD_T - PAD_B);
 
     const rollingAvg = (vals: (number | null)[], window: number): number | null => {
@@ -625,8 +626,11 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const r7 = rollingAvg(readinessVals, 7);
     const r28 = rollingAvg(readinessVals, 28);
     let csScore: number | null = null;
+    let csDelta: number | null = null;
+    let csRaw: number | null = null;
     if (r7 != null && r28 != null && r28 > 0) {
-      const csDelta = (r7 - r28) / r28;
+      csDelta = (r7 - r28) / r28;
+      csRaw = scoreRaw(csDelta, 0.10);
       csScore = scoreFromDelta(csDelta, 0.10);
     }
     const csCount = readinessVals.filter(v => v != null).length;
@@ -634,21 +638,27 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const ds7 = rollingAvg(deepSleepVals, 7);
     const ds28 = rollingAvg(deepSleepVals, 28);
     let dsfScore: number | null = null;
+    let dsfDelta: number | null = null;
+    let dsfRaw: number | null = null;
     if (ds7 != null && ds28 != null && ds28 > 0) {
-      const dsfDelta = (ds7 - ds28) / ds28;
+      dsfDelta = (ds7 - ds28) / ds28;
+      dsfRaw = scoreRaw(dsfDelta, 0.15);
       dsfScore = scoreFromDelta(dsfDelta, 0.15);
     }
     const dsCount = deepSleepVals.filter(v => v != null).length;
 
     const ffmNonNull = ffmVals.map((v, i) => v != null ? { idx: i, val: v } : null).filter((v): v is { idx: number; val: number } => v != null);
     let ffmScore: number | null = null;
+    let ffmVel14d: number | null = null;
+    let ffmRaw: number | null = null;
     const ffmCount = ffmNonNull.length;
     if (ffmNonNull.length >= 2) {
       const recent14 = ffmNonNull.slice(-14);
       if (recent14.length >= 2) {
         const daySpan = Math.max(1, recent14[recent14.length - 1].idx - recent14[0].idx);
-        const vel14 = ((recent14[recent14.length - 1].val - recent14[0].val) / daySpan) * 7;
-        ffmScore = scoreFromDelta(vel14 - 0.20, 0.20);
+        ffmVel14d = ((recent14[recent14.length - 1].val - recent14[0].val) / daySpan) * 7;
+        ffmRaw = scoreRaw(ffmVel14d - 0.20, 0.20);
+        ffmScore = scoreFromDelta(ffmVel14d - 0.20, 0.20);
       }
     }
 
@@ -659,9 +669,16 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       capacitySupport: { score: csVal, y: scoreToY(csVal), lowConf: csCount < 28 || csScore == null },
       deepSleepFertility: { score: dsVal, y: scoreToY(dsVal), lowConf: dsCount < 28 || dsfScore == null },
       ffmMomentum: { score: ffmVal, y: scoreToY(ffmVal), lowConf: ffmCount < 14 || ffmScore == null },
-      csCount,
-      dsCount,
-      ffmCount,
+      csCount, dsCount, ffmCount,
+      debug: {
+        r7, r28, csDelta, csRaw, csClamp: csVal, csY: scoreToY(csVal),
+        ds7, ds28, dsfDelta, dsfRaw, dsfClamp: dsVal, dsfY: scoreToY(dsVal),
+        ffmVel14d, ffmTarget: 0.20, ffmSwing: 0.20, ffmRaw, ffmClamp: ffmVal, ffmY: scoreToY(ffmVal),
+        domainMin: 0, domainMax: 100,
+        strataInScoreSpace: true,
+        sameDomain: true,
+        svOnDifferentScale: true,
+      },
     };
   }, [points]);
 
@@ -941,6 +958,44 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilRealm.subtitle}</Text>
           </View>
         )}
+
+        {/* OUTPUT DEBUG PANEL */}
+        {(() => {
+          const d = outputStrata.debug;
+          const fmt = (v: number | null | undefined, dp = 4) => v == null ? "null" : v.toFixed(dp);
+          const selPt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
+          const svNow = selPt?.strengthVelocity ?? null;
+          const svY = svNow != null ? (PAD_T + ((svData.absMax - svNow) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B)) : null;
+          const sorted = [
+            { k: "D", s: outputStrata.deepSleepFertility.score },
+            { k: "F", s: outputStrata.ffmMomentum.score },
+            { k: "C", s: outputStrata.capacitySupport.score },
+          ].sort((a, b) => b.s - a.s);
+          const orderStr = sorted.map(x => `${x.k}=${fmt(x.s, 1)}`).join(" > ");
+          return (
+            <View style={{ backgroundColor: "rgba(0,0,0,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, padding: 6 }}>
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: "#FF6B6B", letterSpacing: 1.5, marginBottom: 3 }}>OUTPUT DEBUG</Text>
+              <Text style={{ fontSize: 7, color: C_BLEND_LA, fontFamily: "monospace" }}>
+                CS: r7={fmt(d.r7)} r28={fmt(d.r28)} delta={fmt(d.csDelta)} raw={fmt(d.csRaw,1)} clamp={fmt(d.csClamp,1)} y={fmt(d.csY,1)}
+              </Text>
+              <Text style={{ fontSize: 7, color: C_BLEND_LW, fontFamily: "monospace", marginTop: 1 }}>
+                DSF: ds7={fmt(d.ds7)} ds28={fmt(d.ds28)} delta={fmt(d.dsfDelta)} raw={fmt(d.dsfRaw,1)} clamp={fmt(d.dsfClamp,1)} y={fmt(d.dsfY,1)}
+              </Text>
+              <Text style={{ fontSize: 7, color: C_BLEND_WA, fontFamily: "monospace", marginTop: 1 }}>
+                FFM: vel14d={fmt(d.ffmVel14d)} target={fmt(d.ffmTarget)} swing={fmt(d.ffmSwing)} raw={fmt(d.ffmRaw,1)} clamp={fmt(d.ffmClamp,1)} y={fmt(d.ffmY,1)}
+              </Text>
+              <Text style={{ fontSize: 7, color: "#FF2D8A", fontFamily: "monospace", marginTop: 1 }}>
+                SV: now={fmt(svNow)} y={fmt(svY, 1)}
+              </Text>
+              <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 2 }}>
+                order: {soilRealm?.code ?? "?"} [{orderStr}]
+              </Text>
+              <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 1 }}>
+                domain: [{d.domainMin}, {d.domainMax}] scoreSpace={d.strataInScoreSpace ? "YES" : "NO"} sameDomain={d.sameDomain ? "YES" : "NO"} svDiffScale={d.svOnDifferentScale ? "YES" : "NO"}
+              </Text>
+            </View>
+          );
+        })()}
 
         <View style={styles.separator} />
 
