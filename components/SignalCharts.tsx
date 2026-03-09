@@ -868,7 +868,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const cs = buildSeries(p => p.readiness, csMax);
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
 
-    const SLOPE_WINDOW = 7;
+    const SMOOTH_K = 5;
     const ffmSlopeScore = (dailySlope: number): number => {
       const lo = 0.25 / 7;
       const hi = 0.50 / 7;
@@ -878,29 +878,40 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       return Math.max(0, Math.min(100, score));
     };
 
+    const ffmSmooth: (number | null)[] = new Array(points.length).fill(null);
+    for (let i = 0; i < points.length; i++) {
+      const vals: number[] = [];
+      for (let j = Math.max(0, i - SMOOTH_K + 1); j <= i; j++) {
+        if (points[j].ffmLb != null) vals.push(points[j].ffmLb!);
+      }
+      if (vals.length >= 2) {
+        ffmSmooth[i] = vals.reduce((s, v) => s + v, 0) / vals.length;
+      }
+    }
+
     const ffmRaw: { x: number; y: number }[] = [];
     const ffmScoreVals: number[] = [];
     const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
-    const ffmDailyDebug: { day: string; today: number | null; ago7: number | null; slope: number | null; score: number | null }[] = [];
+    const ffmDailyDebug: { day: string; smooth: number | null; prevSmooth: number | null; slope: number | null; score: number | null }[] = [];
     for (let i = 0; i < points.length; i++) {
       if (i < cutoff) {
-        ffmDailyDebug.push({ day: points[i].date, today: points[i].ffmLb, ago7: null, slope: null, score: null });
+        ffmDailyDebug.push({ day: points[i].date, smooth: ffmSmooth[i], prevSmooth: null, slope: null, score: null });
         continue;
       }
-      const today = points[i].ffmLb;
-      let ago7: number | null = null;
-      if (i >= SLOPE_WINDOW) {
-        ago7 = points[i - SLOPE_WINDOW].ffmLb;
+      const cur = ffmSmooth[i];
+      let prev: number | null = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (ffmSmooth[j] != null) { prev = ffmSmooth[j]; break; }
       }
-      if (today != null && ago7 != null) {
-        const slope = (today - ago7) / SLOPE_WINDOW;
+      if (cur != null && prev != null) {
+        const slope = cur - prev;
         const score = ffmSlopeScore(slope);
         ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
         ffmScoreVals.push(score);
         ffmScoreByIdx[i] = score;
-        ffmDailyDebug.push({ day: points[i].date, today, ago7, slope, score });
+        ffmDailyDebug.push({ day: points[i].date, smooth: cur, prevSmooth: prev, slope, score });
       } else {
-        ffmDailyDebug.push({ day: points[i].date, today, ago7, slope: null, score: null });
+        ffmDailyDebug.push({ day: points[i].date, smooth: cur, prevSmooth: prev, slope: null, score: null });
       }
     }
     const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
