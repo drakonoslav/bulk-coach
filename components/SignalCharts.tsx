@@ -614,9 +614,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const scoreRaw = (delta: number, swing: number) => 50 + 50 * (delta / swing);
     const scoreToY = (score: number) => PAD_T + ((100 - score) / 100) * (OUTPUT_H - PAD_T - PAD_B);
 
-    const rollingAvg = (vals: (number | null)[], window: number): number | null => {
+    const CS_SWING = 0.25;
+    const DSF_SWING = 0.15;
+    const FFM_CENTER = 0.10;
+    const FFM_SWING = 0.40;
+
+    const rollingAvg = (vals: (number | null)[], window: number, minFrac = 0.3): number | null => {
       const recent = vals.slice(-window).filter((v): v is number => v != null);
-      return recent.length >= Math.max(1, Math.floor(window * 0.5)) ? recent.reduce((s, n) => s + n, 0) / recent.length : null;
+      return recent.length >= Math.max(1, Math.floor(window * minFrac)) ? recent.reduce((s, n) => s + n, 0) / recent.length : null;
     };
 
     const readinessVals = points.map(p => p.readiness);
@@ -630,22 +635,23 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     let csRaw: number | null = null;
     if (r7 != null && r28 != null && r28 > 0) {
       csDelta = (r7 - r28) / r28;
-      csRaw = scoreRaw(csDelta, 0.10);
-      csScore = scoreFromDelta(csDelta, 0.10);
+      csRaw = scoreRaw(csDelta, CS_SWING);
+      csScore = scoreFromDelta(csDelta, CS_SWING);
     }
     const csCount = readinessVals.filter(v => v != null).length;
 
-    const ds7 = rollingAvg(deepSleepVals, 7);
-    const ds28 = rollingAvg(deepSleepVals, 28);
+    const ds7 = rollingAvg(deepSleepVals, 7, 0.3);
+    const ds28 = rollingAvg(deepSleepVals, 28, 0.1);
     let dsfScore: number | null = null;
     let dsfDelta: number | null = null;
     let dsfRaw: number | null = null;
     if (ds7 != null && ds28 != null && ds28 > 0) {
       dsfDelta = (ds7 - ds28) / ds28;
-      dsfRaw = scoreRaw(dsfDelta, 0.15);
-      dsfScore = scoreFromDelta(dsfDelta, 0.15);
+      dsfRaw = scoreRaw(dsfDelta, DSF_SWING);
+      dsfScore = scoreFromDelta(dsfDelta, DSF_SWING);
     }
     const dsCount = deepSleepVals.filter(v => v != null).length;
+    const dsNonNullDays = deepSleepVals.map((v, i) => v != null ? points[i]?.date ?? `i${i}` : null).filter(Boolean);
 
     const ffmNonNull = ffmVals.map((v, i) => v != null ? { idx: i, val: v } : null).filter((v): v is { idx: number; val: number } => v != null);
     let ffmScore: number | null = null;
@@ -657,8 +663,8 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       if (recent14.length >= 2) {
         const daySpan = Math.max(1, recent14[recent14.length - 1].idx - recent14[0].idx);
         ffmVel14d = ((recent14[recent14.length - 1].val - recent14[0].val) / daySpan) * 7;
-        ffmRaw = scoreRaw(ffmVel14d - 0.20, 0.20);
-        ffmScore = scoreFromDelta(ffmVel14d - 0.20, 0.20);
+        ffmRaw = scoreRaw(ffmVel14d - FFM_CENTER, FFM_SWING);
+        ffmScore = scoreFromDelta(ffmVel14d - FFM_CENTER, FFM_SWING);
       }
     }
 
@@ -667,13 +673,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const ffmVal = ffmScore ?? 50;
     return {
       capacitySupport: { score: csVal, y: scoreToY(csVal), lowConf: csCount < 28 || csScore == null },
-      deepSleepFertility: { score: dsVal, y: scoreToY(dsVal), lowConf: dsCount < 28 || dsfScore == null },
-      ffmMomentum: { score: ffmVal, y: scoreToY(ffmVal), lowConf: ffmCount < 14 || ffmScore == null },
+      deepSleepFertility: { score: dsVal, y: scoreToY(dsVal), lowConf: dsCount < 3 || dsfScore == null },
+      ffmMomentum: { score: ffmVal, y: scoreToY(ffmVal), lowConf: ffmCount < 3 || ffmScore == null },
       csCount, dsCount, ffmCount,
       debug: {
-        r7, r28, csDelta, csRaw, csClamp: csVal, csY: scoreToY(csVal),
-        ds7, ds28, dsfDelta, dsfRaw, dsfClamp: dsVal, dsfY: scoreToY(dsVal),
-        ffmVel14d, ffmTarget: 0.20, ffmSwing: 0.20, ffmRaw, ffmClamp: ffmVal, ffmY: scoreToY(ffmVal),
+        r7, r28, csDelta, csRaw, csSwing: CS_SWING, csClamp: csVal, csY: scoreToY(csVal),
+        ds7, ds28, dsfDelta, dsfRaw, dsfSwing: DSF_SWING, dsfClamp: dsVal, dsfY: scoreToY(dsVal),
+        dsNonNullDays: dsNonNullDays as string[],
+        ffmVel14d, ffmCenter: FFM_CENTER, ffmSwing: FFM_SWING, ffmRaw, ffmClamp: ffmVal, ffmY: scoreToY(ffmVal),
         domainMin: 0, domainMax: 100,
         strataInScoreSpace: true,
         sameDomain: true,
@@ -976,13 +983,16 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
             <View style={{ backgroundColor: "rgba(0,0,0,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, padding: 6 }}>
               <Text style={{ fontSize: 8, fontWeight: "800" as const, color: "#FF6B6B", letterSpacing: 1.5, marginBottom: 3 }}>OUTPUT DEBUG</Text>
               <Text style={{ fontSize: 7, color: C_BLEND_LA, fontFamily: "monospace" }}>
-                CS: r7={fmt(d.r7)} r28={fmt(d.r28)} delta={fmt(d.csDelta)} raw={fmt(d.csRaw,1)} clamp={fmt(d.csClamp,1)} y={fmt(d.csY,1)}
+                CS: r7={fmt(d.r7)} r28={fmt(d.r28)} delta={fmt(d.csDelta)} swing={fmt(d.csSwing)} raw={fmt(d.csRaw,1)} clamp={fmt(d.csClamp,1)} y={fmt(d.csY,1)}
               </Text>
               <Text style={{ fontSize: 7, color: C_BLEND_LW, fontFamily: "monospace", marginTop: 1 }}>
-                DSF: ds7={fmt(d.ds7)} ds28={fmt(d.ds28)} delta={fmt(d.dsfDelta)} raw={fmt(d.dsfRaw,1)} clamp={fmt(d.dsfClamp,1)} y={fmt(d.dsfY,1)}
+                DSF: ds7={fmt(d.ds7)} ds28={fmt(d.ds28)} delta={fmt(d.dsfDelta)} swing={fmt(d.dsfSwing)} raw={fmt(d.dsfRaw,1)} clamp={fmt(d.dsfClamp,1)} y={fmt(d.dsfY,1)}
+              </Text>
+              <Text style={{ fontSize: 7, color: C_BLEND_LW, fontFamily: "monospace", marginTop: 1 }}>
+                DSF src: {outputStrata.dsCount} pts [{(d.dsNonNullDays || []).join(", ") || "none"}]
               </Text>
               <Text style={{ fontSize: 7, color: C_BLEND_WA, fontFamily: "monospace", marginTop: 1 }}>
-                FFM: vel14d={fmt(d.ffmVel14d)} target={fmt(d.ffmTarget)} swing={fmt(d.ffmSwing)} raw={fmt(d.ffmRaw,1)} clamp={fmt(d.ffmClamp,1)} y={fmt(d.ffmY,1)}
+                FFM: vel14d={fmt(d.ffmVel14d)} center={fmt(d.ffmCenter)} swing={fmt(d.ffmSwing)} raw={fmt(d.ffmRaw,1)} clamp={fmt(d.ffmClamp,1)} y={fmt(d.ffmY,1)}
               </Text>
               <Text style={{ fontSize: 7, color: "#FF2D8A", fontFamily: "monospace", marginTop: 1 }}>
                 SV: now={fmt(svNow)} y={fmt(svY, 1)}
