@@ -869,12 +869,6 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
 
     const SMOOTH_K = 5;
-    const ffmEmergenceScore = (ffmTrend: number): number => {
-      const baseline = 0.00;
-      const strong = 0.05;
-      const raw = Math.max(0, ffmTrend - baseline);
-      return Math.max(0, Math.min(100, 100 * raw / (strong - baseline)));
-    };
 
     const ffmSmooth: (number | null)[] = new Array(points.length).fill(null);
     for (let i = 0; i < points.length; i++) {
@@ -887,29 +881,57 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       }
     }
 
-    const ffmRaw: { x: number; y: number }[] = [];
-    const ffmScoreVals: number[] = [];
-    const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
-    const ffmDailyDebug: { day: string; smooth: number | null; prevSmooth: number | null; slope: number | null; score: number | null }[] = [];
+    const ffmOn: boolean[] = new Array(points.length).fill(false);
     for (let i = 0; i < points.length; i++) {
-      if (i < cutoff) {
-        ffmDailyDebug.push({ day: points[i].date, smooth: ffmSmooth[i], prevSmooth: null, slope: null, score: null });
-        continue;
-      }
       const cur = ffmSmooth[i];
       let prev: number | null = null;
       for (let j = i - 1; j >= 0; j--) {
         if (ffmSmooth[j] != null) { prev = ffmSmooth[j]; break; }
       }
-      if (cur != null && prev != null) {
-        const slope = cur - prev;
-        const score = ffmEmergenceScore(slope);
+      if (cur != null && prev != null && cur - prev > 0) {
+        ffmOn[i] = true;
+      }
+    }
+
+    const streaks: number[] = new Array(points.length).fill(0);
+    for (let i = 0; i < points.length; i++) {
+      if (ffmOn[i]) {
+        streaks[i] = (i > 0 ? streaks[i - 1] : 0) + 1;
+      }
+    }
+
+    const completedStreaks: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+      if (streaks[i] > 0 && (i === points.length - 1 || streaks[i + 1] === 0)) {
+        if (streaks[i] >= 2) completedStreaks.push(streaks[i]);
+      }
+    }
+    const DEFAULT_PEAK = 5;
+    const peakStreak = completedStreaks.length > 0
+      ? Math.max(DEFAULT_PEAK, Math.round(completedStreaks.reduce((s, v) => s + v, 0) / completedStreaks.length))
+      : DEFAULT_PEAK;
+
+    const ffmRaw: { x: number; y: number }[] = [];
+    const ffmScoreVals: number[] = [];
+    const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
+    const ffmDailyDebug: { day: string; on: boolean; streak: number; peakStreak: number; score: number | null }[] = [];
+    for (let i = 0; i < points.length; i++) {
+      if (i < cutoff) {
+        ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], peakStreak, score: null });
+        continue;
+      }
+      if (streaks[i] > 0) {
+        const ratio = Math.min(1, streaks[i] / peakStreak);
+        const score = 100 * Math.sin((Math.PI / 2) * ratio);
         ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
         ffmScoreVals.push(score);
         ffmScoreByIdx[i] = score;
-        ffmDailyDebug.push({ day: points[i].date, smooth: cur, prevSmooth: prev, slope, score });
+        ffmDailyDebug.push({ day: points[i].date, on: true, streak: streaks[i], peakStreak, score });
       } else {
-        ffmDailyDebug.push({ day: points[i].date, smooth: cur, prevSmooth: prev, slope: null, score: null });
+        ffmScoreByIdx[i] = 0;
+        ffmRaw.push({ x: xForIdx(i), y: pctToY(0) });
+        ffmScoreVals.push(0);
+        ffmDailyDebug.push({ day: points[i].date, on: false, streak: 0, peakStreak, score: 0 });
       }
     }
     const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
