@@ -1675,7 +1675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const [dailyLog, strengthSets, bridgeSets, sessions] = await Promise.all([
         pool.query(`SELECT day, lift_done, lift_min, lift_working_min, lift_start_time, lift_end_time FROM daily_log WHERE user_id = $1 AND day = $2`, [userId, day]),
-        pool.query(`SELECT id, day, exercise_id, weight_lb, reps, source, created_at FROM strength_sets WHERE user_id = $1 AND day = $2 ORDER BY created_at`, [userId, day]),
+        pool.query(`SELECT s.id, s.day, s.exercise_id, s.weight_lb, s.reps, s.source, s.created_at, s.intel_exercise_id, m.intel_exercise_name, m.biomechanics FROM strength_sets s LEFT JOIN intel_exercise_mapping m ON m.intel_exercise_id = s.intel_exercise_id WHERE s.user_id = $1 AND s.day = $2 ORDER BY s.created_at`, [userId, day]),
         pool.query(`SELECT id, day, session_id, muscle, movement_type, rpe, is_compound, created_at FROM daily_game_bridge_entries WHERE user_id = $1 AND day = $2 ORDER BY created_at`, [userId, day]),
         pool.query(`SELECT session_id, date, start_ts, end_ts, workout_type, duration_minutes, source FROM workout_session WHERE user_id = $1 AND date = $2`, [userId, day]),
       ]);
@@ -4791,26 +4791,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const reps = s.reps != null ? Number(s.reps) : null;
         const rir = s.rir != null ? Number(s.rir) : null;
         const seconds = s.seconds != null ? Number(s.seconds) : null;
+        const intelExId = s.intelExerciseId != null ? Number(s.intelExerciseId) : null;
+
+        let resolvedIntelId: number | null = null;
+        if (intelExId != null) {
+          const check = await client.query(
+            `SELECT intel_exercise_id FROM intel_exercise_mapping
+             WHERE intel_exercise_id = $1 AND local_exercise_id = $2 AND mapped = true`,
+            [intelExId, exerciseId]
+          );
+          if (check.rowCount && check.rowCount > 0) {
+            resolvedIntelId = intelExId;
+          }
+        }
 
         await client.query(
           `INSERT INTO strength_sets (
              id, user_id, day, exercise_id,
              weight_lb, reps, rir, seconds,
-             set_type, is_measured
+             set_type, is_measured, intel_exercise_id
            ) VALUES (
-             $1,$2,$3,$4,$5,$6,$7,$8,'top',TRUE
+             $1,$2,$3,$4,$5,$6,$7,$8,'top',TRUE,$9
            )`,
-          [id, userId, day, exerciseId, weightLb, reps, rir, seconds]
+          [id, userId, day, exerciseId, weightLb, reps, rir, seconds, resolvedIntelId]
         );
       }
 
       await client.query("COMMIT");
 
       const out = await pool.query(
-        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, source, created_at
-         FROM strength_sets
-         WHERE user_id = $1 AND day = $2
-         ORDER BY created_at ASC`,
+        `SELECT s.id, s.user_id, s.day, s.exercise_id, s.weight_lb, s.reps, s.rir, s.seconds,
+                s.set_type, s.is_measured, s.source, s.created_at, s.intel_exercise_id,
+                m.intel_exercise_name, m.biomechanics
+         FROM strength_sets s
+         LEFT JOIN intel_exercise_mapping m ON m.intel_exercise_id = s.intel_exercise_id
+         WHERE s.user_id = $1 AND s.day = $2
+         ORDER BY s.created_at ASC`,
         [userId, day]
       );
 
