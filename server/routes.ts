@@ -4959,6 +4959,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/intel/game/biomechanics-contract", async (_req: Request, res: Response) => {
+    res.set("Cache-Control", "public, max-age=86400");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/biomechanics-contract`);
+      if (!r.ok) return intelProxy(r, res);
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/biomechanics-contract error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.get("/api/intel/game/catalog-proof", async (_req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/catalog-proof`);
+      if (!r.ok) return intelProxy(r, res);
+      const data = await r.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/game/catalog-proof error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
   app.get("/api/intel/game/muscle-state", async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });

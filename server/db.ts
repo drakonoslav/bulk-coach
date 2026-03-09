@@ -1149,6 +1149,21 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE strength_sets
       ADD COLUMN IF NOT EXISTS intel_exercise_id INTEGER;
   `);
+
+  await runMigration('031_batch1_isolation_exercises', `
+    INSERT INTO intel_exercise_mapping (intel_exercise_id, intel_exercise_name, local_exercise_id, mapped) VALUES
+      (93,  'Dumbbell Lateral Raise',      NULL,          false),
+      (94,  'Dumbbell Rear Delt Fly',      'face_pull',   true),
+      (95,  'Dumbbell Hammer Curl',        NULL,          false),
+      (96,  'Incline Dumbbell Curl',       NULL,          false),
+      (97,  'Cable Fly (low-to-high)',     NULL,          false),
+      (98,  'Cable Fly (high-to-low)',     NULL,          false),
+      (99,  'Cable Tricep Pushdown',       NULL,          false),
+      (100, 'Cable Face Pull',             'face_pull',   true),
+      (101, 'Cable Lateral Raise',         NULL,          false),
+      (102, 'Cable Rear Delt Fly',         'face_pull',   true)
+    ON CONFLICT (intel_exercise_id) DO NOTHING;
+  `);
 }
 
 export { pool };
