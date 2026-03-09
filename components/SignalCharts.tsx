@@ -800,7 +800,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       });
       const avgPct = vals.length > 0 ? vals.reduce((s, n) => s + n, 0) / vals.length : null;
       const avgY = avgPct != null ? pctToY(avgPct) : null;
-      return { raw, avgY };
+      return { raw, avgPct, avgY };
     };
     const latency = buildSeries(p => p.latencyPct);
     const waso = buildSeries(p => p.wasoPct);
@@ -975,19 +975,38 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const crosshairX = selectedIdx != null ? xForIdx(selectedIdx) : null;
   const selectedPoint = selectedIdx != null ? points[selectedIdx] : null;
 
+  const sleepSeason = useMemo(() => {
+    return getSleepPlanet(
+      disruptionSeries.latency.avgPct,
+      disruptionSeries.waso.avgPct,
+      disruptionSeries.awakeInBed.avgPct,
+    );
+  }, [disruptionSeries]);
+
   const sleepPlanet = useMemo(() => {
     const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
     if (!pt) return null;
     return getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
   }, [selectedPoint, points, N]);
 
-  const soilRealm = useMemo(() => {
+  const soilSeason = useMemo(() => {
     return getHypertrophyForming(
       outputSoilSeries.cs.avgPct,
       outputSoilSeries.dsf.avgPct,
       outputSoilSeries.ffm.avgPct,
     );
   }, [outputSoilSeries]);
+
+  const soilRealm = useMemo(() => {
+    const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
+    if (!pt) return null;
+    const d = outputSoilSeries.debug;
+    const csPct = pt.readiness != null && d.csMax > 0 ? (pt.readiness / d.csMax) * 100 : null;
+    const dsfPct = pt.deepSleepMin != null && d.dsfMax > 0 ? (pt.deepSleepMin / d.dsfMax) * 100 : null;
+    const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === pt.date);
+    const ffmPct = ffmEntry?.score ?? null;
+    return getHypertrophyForming(csPct, dsfPct, ffmPct);
+  }, [selectedPoint, points, N, outputSoilSeries]);
 
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
@@ -1143,14 +1162,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           </Svg>
         </ChartPanel>
 
-        {sleepPlanet && (
+        {sleepSeason && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING SEASON:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepPlanet.accent, letterSpacing: 0.8 }}>{sleepPlanet.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepPlanet.accent, opacity: 0.85 }}>{sleepPlanet.name}</Text>
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepSeason.accent, letterSpacing: 0.8 }}>{sleepSeason.code}</Text>
+              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepSeason.accent, opacity: 0.85 }}>{sleepSeason.name}</Text>
             </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepPlanet.subtitle}</Text>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepSeason.subtitle}</Text>
           </View>
         )}
         {sleepPlanet && (
@@ -1241,20 +1260,20 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           </Svg>
         </ChartPanel>
 
-        {soilRealm && (
+        {soilSeason && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
               <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING SEASON:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.8 }}>{soilRealm.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilRealm.color, opacity: 0.85 }}>{soilRealm.title}</Text>
-              {soilRealm.lowConf && (
+              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilSeason.color, letterSpacing: 0.8 }}>{soilSeason.code}</Text>
+              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilSeason.color, opacity: 0.85 }}>{soilSeason.title}</Text>
+              {soilSeason.lowConf && (
                 <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
               )}
-              {soilRealm.ideal && (
+              {soilSeason.ideal && (
                 <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
               )}
             </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilRealm.subtitle}</Text>
+            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilSeason.subtitle}</Text>
           </View>
         )}
         {soilRealm && (
