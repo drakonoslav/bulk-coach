@@ -4860,16 +4860,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const exercises: any[] = data.exercises ?? [];
       let updated = 0;
       for (const ex of exercises) {
-        if (!ex.exercise_id) continue;
-        const bio = {
-          primary_muscles: ex.primary_muscles ?? [],
-          compound_or_isolation: ex.compound_or_isolation ?? null,
-          slots: ex.slots ?? [],
-          equipment_tags: ex.equipment_tags ?? [],
-        };
+        if (!ex.exercise_id || !ex.biomechanics) continue;
         const result = await pool.query(
           `UPDATE intel_exercise_mapping SET biomechanics = $1 WHERE intel_exercise_id = $2`,
-          [JSON.stringify(bio), ex.exercise_id]
+          [JSON.stringify(ex.biomechanics), ex.exercise_id]
         );
         if (result.rowCount && result.rowCount > 0) updated++;
       }
