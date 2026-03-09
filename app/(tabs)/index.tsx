@@ -257,7 +257,8 @@ export default function DashboardScreen() {
     try {
       const baseUrl = getApiUrl();
       const url = new URL("/api/signals/chart", baseUrl);
-      url.searchParams.set("days", String(days));
+      const WARMUP_BUFFER = 30;
+      url.searchParams.set("days", String(days + WARMUP_BUFFER));
       const res = await authFetch(url.toString());
       if (res.ok) {
         const data = await res.json();

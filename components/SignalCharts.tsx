@@ -692,11 +692,16 @@ const panelStyles = StyleSheet.create({
   },
 });
 
-export default function SignalCharts({ points, rangeDays, onRangeChange, forecast, svSource = "legacy" }: SignalChartsProps) {
+export default function SignalCharts({ points: allPoints, rangeDays, onRangeChange, forecast, svSource = "legacy" }: SignalChartsProps) {
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const containerRef = useRef<View>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const points = useMemo(() => {
+    if (allPoints.length <= rangeDays) return allPoints;
+    return allPoints.slice(allPoints.length - rangeDays);
+  }, [allPoints, rangeDays]);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setChartWidth(e.nativeEvent.layout.width);
@@ -842,6 +847,8 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const startIdx = points.findIndex(p => p.date >= DATA_START);
     const cutoff = startIdx >= 0 ? startIdx : points.length;
 
+    const warmupOffset = allPoints.length - points.length;
+
     const readinessVals = points.filter((_, i) => i >= cutoff).map(p => p.readiness).filter((v): v is number => v != null);
     const deepSleepVals = points.filter((_, i) => i >= cutoff).map(p => p.deepSleepMin).filter((v): v is number => v != null);
 
@@ -869,30 +876,6 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
 
     const SMOOTH_K = 5;
-
-    const ffmSmooth: (number | null)[] = new Array(points.length).fill(null);
-    for (let i = 0; i < points.length; i++) {
-      const vals: number[] = [];
-      for (let j = Math.max(0, i - SMOOTH_K + 1); j <= i; j++) {
-        if (points[j].ffmLb != null) vals.push(points[j].ffmLb!);
-      }
-      if (vals.length >= 2) {
-        ffmSmooth[i] = vals.reduce((s, v) => s + v, 0) / vals.length;
-      }
-    }
-
-    const ffmDelta: (number | null)[] = new Array(points.length).fill(null);
-    for (let i = 0; i < points.length; i++) {
-      const cur = ffmSmooth[i];
-      let prev: number | null = null;
-      for (let j = i - 1; j >= 0; j--) {
-        if (ffmSmooth[j] != null) { prev = ffmSmooth[j]; break; }
-      }
-      if (cur != null && prev != null) {
-        ffmDelta[i] = cur - prev;
-      }
-    }
-
     const BASELINE_DECAY = 0.9;
     const UP_GAIN = 20;
     const DOWN_LOSS = 20;
@@ -900,33 +883,61 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const CANOPY_CAP = 40;
     const DEFAULT_PEAK = 5;
 
-    const ffmOn: boolean[] = new Array(points.length).fill(false);
-    const streaks: number[] = new Array(points.length).fill(0);
-    const baselines: number[] = new Array(points.length).fill(0);
+    const allN = allPoints.length;
+    const ffmSmoothAll: (number | null)[] = new Array(allN).fill(null);
+    for (let i = 0; i < allN; i++) {
+      const vals: number[] = [];
+      for (let j = Math.max(0, i - SMOOTH_K + 1); j <= i; j++) {
+        if (allPoints[j].ffmLb != null) vals.push(allPoints[j].ffmLb!);
+      }
+      if (vals.length >= 2) {
+        ffmSmoothAll[i] = vals.reduce((s, v) => s + v, 0) / vals.length;
+      }
+    }
 
-    for (let i = 0; i < points.length; i++) {
-      const d = ffmDelta[i];
+    const ffmDeltaAll: (number | null)[] = new Array(allN).fill(null);
+    for (let i = 0; i < allN; i++) {
+      const cur = ffmSmoothAll[i];
+      let prev: number | null = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (ffmSmoothAll[j] != null) { prev = ffmSmoothAll[j]; break; }
+      }
+      if (cur != null && prev != null) {
+        ffmDeltaAll[i] = cur - prev;
+      }
+    }
+
+    const ffmOnAll: boolean[] = new Array(allN).fill(false);
+    const streaksAll: number[] = new Array(allN).fill(0);
+    const baselinesAll: number[] = new Array(allN).fill(0);
+
+    for (let i = 0; i < allN; i++) {
+      const d = ffmDeltaAll[i];
       const up = d != null ? Math.max(0, d) : 0;
       const down = d != null ? Math.max(0, -d) : 0;
 
-      const prevBaseline = i > 0 ? baselines[i - 1] : 0;
-      baselines[i] = Math.max(0, Math.min(BASELINE_CAP, BASELINE_DECAY * prevBaseline + UP_GAIN * up - DOWN_LOSS * down));
+      const prevBaseline = i > 0 ? baselinesAll[i - 1] : 0;
+      baselinesAll[i] = Math.max(0, Math.min(BASELINE_CAP, BASELINE_DECAY * prevBaseline + UP_GAIN * up - DOWN_LOSS * down));
 
       if (d != null && d > 0) {
-        ffmOn[i] = true;
-        streaks[i] = (i > 0 ? streaks[i - 1] : 0) + 1;
+        ffmOnAll[i] = true;
+        streaksAll[i] = (i > 0 ? streaksAll[i - 1] : 0) + 1;
       }
     }
 
     const completedStreaks: number[] = [];
-    for (let i = 0; i < points.length; i++) {
-      if (streaks[i] > 0 && (i === points.length - 1 || streaks[i + 1] === 0)) {
-        if (streaks[i] >= 2) completedStreaks.push(streaks[i]);
+    for (let i = 0; i < allN; i++) {
+      if (streaksAll[i] > 0 && (i === allN - 1 || streaksAll[i + 1] === 0)) {
+        if (streaksAll[i] >= 2) completedStreaks.push(streaksAll[i]);
       }
     }
     const peakStreak = completedStreaks.length > 0
       ? Math.max(DEFAULT_PEAK, Math.round(completedStreaks.reduce((s, v) => s + v, 0) / completedStreaks.length))
       : DEFAULT_PEAK;
+
+    const ffmOn = ffmOnAll.slice(warmupOffset);
+    const streaks = streaksAll.slice(warmupOffset);
+    const baselines = baselinesAll.slice(warmupOffset);
 
     const ffmRaw: { x: number; y: number }[] = [];
     const ffmScoreVals: number[] = [];
@@ -975,7 +986,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         ffmDailyDebug,
       },
     };
-  }, [points, xForIdx]);
+  }, [points, allPoints, xForIdx]);
 
   const recoveryIndex = useMemo(() => {
     const riResult = computeRecoveryIndexPairs(
