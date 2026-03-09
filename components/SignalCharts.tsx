@@ -103,13 +103,15 @@ const SOIL_REALM_MAP: Record<SoilCode, { title: string; subtitle: string; color:
   CDF: { title: "Temperate Growth Basin", subtitle: "Supportive climate with prepared soil; growth still developing", color: "#8B5CF6" },
   CFD: { title: "Aerated Yield Plain", subtitle: "System support leads; growth expresses over thinner restoration", color: "#A78BFA" },
 };
-function getHypertrophyForming(csRatio: number | null, dsfRatio: number | null, ffmRatio: number | null): SoilRealm | null {
-  if (csRatio == null || dsfRatio == null || ffmRatio == null) return null;
+const IDEAL_SOIL: Set<SoilCode> = new Set(["DFC", "FDC", "DCF"]);
+function getHypertrophyForming(csRatio: number | null, dsfRatio: number | null, ffmRatio: number | null): (SoilRealm & { lowConf: boolean; ideal: boolean }) | null {
+  const available = [csRatio, dsfRatio, ffmRatio].filter(v => v != null).length;
+  if (available === 0) return null;
   const eps = 1e-6;
   const items = [
-    { key: "D", value: dsfRatio },
-    { key: "F", value: ffmRatio },
-    { key: "C", value: csRatio },
+    { key: "D", value: dsfRatio ?? 1.0 },
+    { key: "F", value: ffmRatio ?? 1.0 },
+    { key: "C", value: csRatio ?? 1.0 },
   ];
   const tieBreak: Record<string, number> = { D: 0, F: 1, C: 2 };
   items.sort((a, b) => {
@@ -119,7 +121,7 @@ function getHypertrophyForming(csRatio: number | null, dsfRatio: number | null, 
   });
   const code = (items[0].key + items[1].key + items[2].key) as SoilCode;
   const info = SOIL_REALM_MAP[code];
-  return { code, ...info };
+  return { code, ...info, lowConf: available < 3, ideal: IDEAL_SOIL.has(code) };
 }
 
 const C_CROSSHAIR = "rgba(255,255,255,0.22)";
@@ -655,10 +657,13 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       return PAD_T + ((svData.absMax - clamped) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
     };
 
+    const csVal = capacitySupport ?? 1.0;
+    const dsVal = deepSleepFertility ?? 1.0;
+    const ffmVal = ffmMomentum ?? 1.0;
     return {
-      capacitySupport: capacitySupport != null ? { ratio: capacitySupport, y: svToY(capacitySupport), lowConf: csCount < 28 } : null,
-      deepSleepFertility: deepSleepFertility != null ? { ratio: deepSleepFertility, y: svToY(deepSleepFertility), lowConf: dsCount < 28 } : null,
-      ffmMomentum: ffmMomentum != null ? { ratio: ffmMomentum, y: svToY(ffmMomentum), lowConf: ffmCount < 14 } : null,
+      capacitySupport: { ratio: csVal, y: svToY(csVal), lowConf: csCount < 28 || capacitySupport == null },
+      deepSleepFertility: { ratio: dsVal, y: svToY(dsVal), lowConf: dsCount < 28 || deepSleepFertility == null },
+      ffmMomentum: { ratio: ffmVal, y: svToY(ffmVal), lowConf: ffmCount < 14 || ffmMomentum == null },
       csCount,
       dsCount,
       ffmCount,
@@ -895,33 +900,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={v} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={v === 0 ? C_THRESHOLD : C_GRID} strokeWidth={v === 0 ? 1 : 0.5} strokeDasharray={v === 0 ? "4,4" : undefined} />
               );
             })}
-            {outputStrata.capacitySupport && (
-              <>
-                <Line x1={PAD_L} y1={outputStrata.capacitySupport.y} x2={chartWidth - PAD_R} y2={outputStrata.capacitySupport.y} stroke={C_BLEND_LA} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
-                <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {outputStrata.capacitySupport.ratio.toFixed(2)}{outputStrata.capacitySupport.lowConf ? ` (${outputStrata.csCount}d)` : ""}</SvgText>
-                {outputStrata.capacitySupport.lowConf && (
-                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.capacitySupport.y - 3} fontSize={6} fill={C_BLEND_LA} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
-                )}
-              </>
-            )}
-            {outputStrata.deepSleepFertility && (
-              <>
-                <Line x1={PAD_L} y1={outputStrata.deepSleepFertility.y} x2={chartWidth - PAD_R} y2={outputStrata.deepSleepFertility.y} stroke={C_BLEND_LW} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
-                <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {outputStrata.deepSleepFertility.ratio.toFixed(2)}{outputStrata.deepSleepFertility.lowConf ? ` (${outputStrata.dsCount}d)` : ""}</SvgText>
-                {outputStrata.deepSleepFertility.lowConf && (
-                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6} fill={C_BLEND_LW} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
-                )}
-              </>
-            )}
-            {outputStrata.ffmMomentum && (
-              <>
-                <Line x1={PAD_L} y1={outputStrata.ffmMomentum.y} x2={chartWidth - PAD_R} y2={outputStrata.ffmMomentum.y} stroke={C_BLEND_WA} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
-                <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {outputStrata.ffmMomentum.ratio.toFixed(2)}{outputStrata.ffmMomentum.lowConf ? ` (${outputStrata.ffmCount}d)` : ""}</SvgText>
-                {outputStrata.ffmMomentum.lowConf && (
-                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6} fill={C_BLEND_WA} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
-                )}
-              </>
-            )}
+            <Line x1={PAD_L} y1={outputStrata.capacitySupport.y} x2={chartWidth - PAD_R} y2={outputStrata.capacitySupport.y} stroke={C_BLEND_LA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.capacitySupport.lowConf ? 0.4 : 0.7} />
+            <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {outputStrata.capacitySupport.ratio.toFixed(2)}{outputStrata.capacitySupport.lowConf ? " (low)" : ""}</SvgText>
+
+            <Line x1={PAD_L} y1={outputStrata.deepSleepFertility.y} x2={chartWidth - PAD_R} y2={outputStrata.deepSleepFertility.y} stroke={C_BLEND_LW} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.deepSleepFertility.lowConf ? 0.4 : 0.7} />
+            <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {outputStrata.deepSleepFertility.ratio.toFixed(2)}{outputStrata.deepSleepFertility.lowConf ? " (low)" : ""}</SvgText>
+
+            <Line x1={PAD_L} y1={outputStrata.ffmMomentum.y} x2={chartWidth - PAD_R} y2={outputStrata.ffmMomentum.y} stroke={C_BLEND_WA} strokeWidth={1} strokeDasharray="5,4" opacity={outputStrata.ffmMomentum.lowConf ? 0.4 : 0.7} />
+            <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {outputStrata.ffmMomentum.ratio.toFixed(2)}{outputStrata.ffmMomentum.lowConf ? " (low)" : ""}</SvgText>
             {svData.data.length > 1 && (
               <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
@@ -946,10 +932,16 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
 
         {soilRealm && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
               <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING:</Text>
               <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.8 }}>{soilRealm.code}</Text>
               <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilRealm.color, opacity: 0.85 }}>{soilRealm.title}</Text>
+              {soilRealm.lowConf && (
+                <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
+              )}
+              {soilRealm.ideal && (
+                <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
+              )}
             </View>
             <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilRealm.subtitle}</Text>
           </View>
