@@ -869,13 +869,11 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
 
     const SMOOTH_K = 5;
-    const ffmSlopeScore = (dailySlope: number): number => {
-      const lo = 0.25 / 7;
-      const hi = 0.50 / 7;
-      const mid = (lo + hi) / 2;
-      const halfWidth = (hi - lo) / 2;
-      const score = 100 * (1 - Math.abs(dailySlope - mid) / halfWidth);
-      return Math.max(0, Math.min(100, score));
+    const ffmEmergenceScore = (ffmTrend: number): number => {
+      const baseline = 0.00;
+      const strong = 0.05;
+      const raw = Math.max(0, ffmTrend - baseline);
+      return Math.max(0, Math.min(100, 100 * raw / (strong - baseline)));
     };
 
     const ffmSmooth: (number | null)[] = new Array(points.length).fill(null);
@@ -905,7 +903,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       }
       if (cur != null && prev != null) {
         const slope = cur - prev;
-        const score = ffmSlopeScore(slope);
+        const score = ffmEmergenceScore(slope);
         ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
         ffmScoreVals.push(score);
         ffmScoreByIdx[i] = score;
