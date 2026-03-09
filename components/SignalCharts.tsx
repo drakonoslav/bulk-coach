@@ -13,6 +13,18 @@ import Svg, { Path, Rect, Line, Text as SvgText } from "react-native-svg";
 import Colors from "@/constants/colors";
 import type { ForecastSummary, ForecastResult } from "@/lib/forecast-types";
 import { computeRecoveryIndexPairs } from "@/lib/recovery-index";
+import {
+  analyzePermutationRegime,
+  analyzeRegimeMomentum,
+  humanizeBoundaryDriver,
+  humanizeMomentumLabel,
+  momentumArrow,
+  simpleSlope,
+  confidenceTone,
+  adjacentOpacity,
+  RegimeAnalysis,
+  RegimeMomentum,
+} from "@/lib/permutation-regime";
 
 interface SignalPoint {
   date: string;
@@ -1062,70 +1074,196 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
   const crosshairX = selectedIdx != null ? xForIdx(selectedIdx) : null;
   const selectedPoint = selectedIdx != null ? points[selectedIdx] : null;
 
-  const sleepEra = useMemo(() => {
-    return getSleepPlanet(
-      disruptionSeries.latency.avgPct,
-      disruptionSeries.waso.avgPct,
-      disruptionSeries.awakeInBed.avgPct,
-    );
-  }, [disruptionSeries]);
+  const SOMNIO_LABELS: Record<string, { name: string; accent: string }> = {
+    ALW: { name: "Core-Driven Volcanic World", accent: C_AWAKE_IN_BED },
+    AWL: { name: "Exposed Core World", accent: C_BLEND_LA },
+    LAW: { name: "Tectonic Crust World", accent: C_LATENCY },
+    LWA: { name: "Stable Crustal World", accent: C_LATENCY },
+    WAL: { name: "Fragmented Mantle World", accent: C_BLEND_WA },
+    WLA: { name: "Convective Mantle World", accent: C_WASO },
+  };
+  const HYPER_LABELS: Record<string, { title: string; color: string }> = {
+    CDF: { title: "Temperate Growth Basin", color: "#8B5CF6" },
+    CFD: { title: "Aerated Yield Plain", color: "#A78BFA" },
+    DCF: { title: "Irrigated Root Field", color: "#46D98E" },
+    DFC: { title: "Humic Growth Field", color: "#32D17C" },
+    FCD: { title: "Canopy Surge", color: "#FF9F40" },
+    FDC: { title: "Biomass Loam", color: "#FF8A1F" },
+  };
 
-  const sleepSeason = useMemo(() => {
-    const idx = selectedIdx ?? (N > 0 ? N - 1 : -1);
-    for (let i = idx; i >= 0; i--) {
-      const lPct = disruptionSeries.latency.runningPctByIdx[i];
-      const wPct = disruptionSeries.waso.runningPctByIdx[i];
-      const aPct = disruptionSeries.awakeInBed.runningPctByIdx[i];
-      const result = getSleepPlanet(lPct, wPct, aPct);
-      if (result) return result;
-    }
-    return null;
-  }, [selectedIdx, N, disruptionSeries]);
+  const capacityPctSeries = useMemo(() => ({
+    A: points.map(p => p.awakeInBedPct),
+    L: points.map(p => p.latencyPct),
+    W: points.map(p => p.wasoPct),
+    Arun: disruptionSeries.awakeInBed.runningPctByIdx,
+    Lrun: disruptionSeries.latency.runningPctByIdx,
+    Wrun: disruptionSeries.waso.runningPctByIdx,
+  }), [points, disruptionSeries]);
 
-  const sleepPlanet = useMemo(() => {
-    const startIdx = selectedIdx ?? (N > 0 ? N - 1 : -1);
-    for (let i = startIdx; i >= 0; i--) {
-      const pt = points[i];
-      const result = getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
-      if (result) return result;
-    }
-    return null;
-  }, [selectedIdx, points, N]);
-
-  const soilEra = useMemo(() => {
-    return getHypertrophyForming(
-      outputSoilSeries.cs.avgPct,
-      outputSoilSeries.dsf.avgPct,
-      outputSoilSeries.ffm.avgPct,
-    );
-  }, [outputSoilSeries]);
-
-  const soilSeason = useMemo(() => {
-    const idx = selectedIdx ?? (N > 0 ? N - 1 : -1);
-    for (let i = idx; i >= 0; i--) {
-      const csPct = outputSoilSeries.cs.runningPctByIdx[i];
-      const dsfPct = outputSoilSeries.dsf.runningPctByIdx[i];
-      const ffmPct = outputSoilSeries.ffm.runningPctByIdx[i];
-      const result = getHypertrophyForming(csPct, dsfPct, ffmPct);
-      if (result) return result;
-    }
-    return null;
-  }, [selectedIdx, N, outputSoilSeries]);
-
-  const soilRealm = useMemo(() => {
+  const outputPctSeries = useMemo(() => {
     const d = outputSoilSeries.debug;
-    const startIdx = selectedIdx ?? (N > 0 ? N - 1 : -1);
-    for (let i = startIdx; i >= 0; i--) {
-      const pt = points[i];
-      const csPct = pt.readiness != null && d.csMax > 0 ? (pt.readiness / d.csMax) * 100 : null;
-      const dsfPct = pt.deepSleepMin != null && d.dsfMax > 0 ? (pt.deepSleepMin / d.dsfMax) * 100 : null;
-      const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === pt.date);
-      const ffmPct = ffmEntry?.score ?? null;
-      const result = getHypertrophyForming(csPct, dsfPct, ffmPct);
-      if (result) return result;
+    const csSeries = points.map(p => p.readiness != null && d.csMax > 0 ? (p.readiness / d.csMax) * 100 : null);
+    const dsfSeries = points.map(p => p.deepSleepMin != null && d.dsfMax > 0 ? (p.deepSleepMin / d.dsfMax) * 100 : null);
+    const ffmSeries = d.ffmDailyDebug?.map((x: any) => x.score) ?? new Array(points.length).fill(null);
+    return {
+      C: csSeries, D: dsfSeries, F: ffmSeries,
+      Crun: outputSoilSeries.cs.runningPctByIdx,
+      Drun: outputSoilSeries.dsf.runningPctByIdx,
+      Frun: outputSoilSeries.ffm.runningPctByIdx,
+    };
+  }, [points, outputSoilSeries]);
+
+  const resolveIdx = (preferred: number, sA: (number | null | undefined)[], sB: (number | null | undefined)[], sC: (number | null | undefined)[]): number => {
+    for (let i = Math.min(preferred, sA.length - 1); i >= 0; i--) {
+      const a = sA[i], b = sB[i], c = sC[i];
+      if (typeof a === "number" && typeof b === "number" && typeof c === "number") return i;
     }
-    return null;
-  }, [selectedIdx, points, N, outputSoilSeries]);
+    return Math.max(0, sA.length - 1);
+  };
+
+  const preferredIdx = selectedIdx ?? (N > 0 ? N - 1 : 0);
+
+  const capacityEraAnalysis = useMemo(() => analyzePermutationRegime({
+    A: disruptionSeries.awakeInBed.avgPct,
+    L: disruptionSeries.latency.avgPct,
+    W: disruptionSeries.waso.avgPct,
+  }, 20), [disruptionSeries]);
+
+  const capacitySeasonIdx = useMemo(() => resolveIdx(preferredIdx, capacityPctSeries.Arun, capacityPctSeries.Lrun, capacityPctSeries.Wrun), [preferredIdx, capacityPctSeries]);
+  const capacitySeasonAnalysis = useMemo(() => analyzePermutationRegime({
+    A: capacityPctSeries.Arun[capacitySeasonIdx] ?? undefined,
+    L: capacityPctSeries.Lrun[capacitySeasonIdx] ?? undefined,
+    W: capacityPctSeries.Wrun[capacitySeasonIdx] ?? undefined,
+  }, 20), [capacityPctSeries, capacitySeasonIdx]);
+
+  const capacityPeriodIdx = useMemo(() => resolveIdx(preferredIdx, capacityPctSeries.A, capacityPctSeries.L, capacityPctSeries.W), [preferredIdx, capacityPctSeries]);
+  const capacityPeriodAnalysis = useMemo(() => analyzePermutationRegime({
+    A: capacityPctSeries.A[capacityPeriodIdx] ?? undefined,
+    L: capacityPctSeries.L[capacityPeriodIdx] ?? undefined,
+    W: capacityPctSeries.W[capacityPeriodIdx] ?? undefined,
+  }, 20), [capacityPctSeries, capacityPeriodIdx]);
+
+  const capacityPeriodMomentum = useMemo(() => {
+    if (!capacityPeriodAnalysis) return null;
+    const slopes = {
+      A: simpleSlope(capacityPctSeries.A, capacityPeriodIdx),
+      L: simpleSlope(capacityPctSeries.L, capacityPeriodIdx),
+      W: simpleSlope(capacityPctSeries.W, capacityPeriodIdx),
+    };
+    return analyzeRegimeMomentum(capacityPeriodAnalysis.ranked, slopes, capacityPeriodAnalysis.boundaryDriver);
+  }, [capacityPeriodAnalysis, capacityPctSeries, capacityPeriodIdx]);
+
+  const capacitySeasonMomentum = useMemo(() => {
+    if (!capacitySeasonAnalysis) return null;
+    const slopes = {
+      A: simpleSlope(capacityPctSeries.Arun, capacitySeasonIdx),
+      L: simpleSlope(capacityPctSeries.Lrun, capacitySeasonIdx),
+      W: simpleSlope(capacityPctSeries.Wrun, capacitySeasonIdx),
+    };
+    return analyzeRegimeMomentum(capacitySeasonAnalysis.ranked, slopes, capacitySeasonAnalysis.boundaryDriver);
+  }, [capacitySeasonAnalysis, capacityPctSeries, capacitySeasonIdx]);
+
+  const outputEraAnalysis = useMemo(() => analyzePermutationRegime({
+    C: outputSoilSeries.cs.avgPct,
+    D: outputSoilSeries.dsf.avgPct,
+    F: outputSoilSeries.ffm.avgPct,
+  }, 15), [outputSoilSeries]);
+
+  const outputSeasonIdx = useMemo(() => resolveIdx(preferredIdx, outputPctSeries.Crun, outputPctSeries.Drun, outputPctSeries.Frun), [preferredIdx, outputPctSeries]);
+  const outputSeasonAnalysis = useMemo(() => analyzePermutationRegime({
+    C: outputPctSeries.Crun[outputSeasonIdx] ?? undefined,
+    D: outputPctSeries.Drun[outputSeasonIdx] ?? undefined,
+    F: outputPctSeries.Frun[outputSeasonIdx] ?? undefined,
+  }, 15), [outputPctSeries, outputSeasonIdx]);
+
+  const outputPeriodIdx = useMemo(() => resolveIdx(preferredIdx, outputPctSeries.C, outputPctSeries.D, outputPctSeries.F), [preferredIdx, outputPctSeries]);
+  const outputPeriodAnalysis = useMemo(() => analyzePermutationRegime({
+    C: outputPctSeries.C[outputPeriodIdx] ?? undefined,
+    D: outputPctSeries.D[outputPeriodIdx] ?? undefined,
+    F: outputPctSeries.F[outputPeriodIdx] ?? undefined,
+  }, 15), [outputPctSeries, outputPeriodIdx]);
+
+  const outputPeriodMomentum = useMemo(() => {
+    if (!outputPeriodAnalysis) return null;
+    const slopes = {
+      C: simpleSlope(outputPctSeries.C, outputPeriodIdx),
+      D: simpleSlope(outputPctSeries.D, outputPeriodIdx),
+      F: simpleSlope(outputPctSeries.F, outputPeriodIdx),
+    };
+    return analyzeRegimeMomentum(outputPeriodAnalysis.ranked, slopes, outputPeriodAnalysis.boundaryDriver);
+  }, [outputPeriodAnalysis, outputPctSeries, outputPeriodIdx]);
+
+  const outputSeasonMomentum = useMemo(() => {
+    if (!outputSeasonAnalysis) return null;
+    const slopes = {
+      C: simpleSlope(outputPctSeries.Crun, outputSeasonIdx),
+      D: simpleSlope(outputPctSeries.Drun, outputSeasonIdx),
+      F: simpleSlope(outputPctSeries.Frun, outputSeasonIdx),
+    };
+    return analyzeRegimeMomentum(outputSeasonAnalysis.ranked, slopes, outputSeasonAnalysis.boundaryDriver);
+  }, [outputSeasonAnalysis, outputPctSeries, outputSeasonIdx]);
+
+  const withAlpha = (hex: string, alpha: number): string => {
+    const a = Math.max(0, Math.min(255, Math.round(Math.max(0, Math.min(1, alpha)) * 255)));
+    return `${hex}${a.toString(16).padStart(2, "0")}`;
+  };
+
+  const renderRegimeRow = (
+    title: string,
+    analysis: RegimeAnalysis | null,
+    momentum: RegimeMomentum | null,
+    mode: "capacity" | "output",
+  ) => {
+    if (!analysis) return null;
+
+    const somnioInfo = SOMNIO_LABELS[analysis.code];
+    const hyperInfo = HYPER_LABELS[analysis.code];
+    const regimeName = mode === "capacity" ? (somnioInfo?.name ?? analysis.code) : (hyperInfo?.title ?? analysis.code);
+    const accentColor = mode === "capacity" ? (somnioInfo?.accent ?? "#FFFFFF") : (hyperInfo?.color ?? "#FFFFFF");
+
+    const adjCode = analysis.adjacentEvolution;
+    const adjName = adjCode
+      ? (mode === "capacity" ? (SOMNIO_LABELS[adjCode]?.name ?? adjCode) : (HYPER_LABELS[adjCode]?.title ?? adjCode))
+      : null;
+
+    const tone = confidenceTone(analysis.confidencePct);
+    const t = Math.max(0, Math.min(1, analysis.confidencePct / 100));
+    const rowOpacity = 0.45 + 0.55 * t;
+    const adjAlpha = adjacentOpacity(analysis.confidencePct);
+    const showDrift = analysis.confidencePct < 60;
+
+    const toneColor = tone === "high" ? "#8BE28B" : tone === "moderate" ? "#8FD3FF" : "#D8B86B";
+    const driftHighlight = momentum && momentum.direction === "toward" && analysis.confidencePct < 20
+      ? { textShadow: "0px 0px 6px #FFFFFF" } as const
+      : undefined;
+
+    return (
+      <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2, opacity: rowOpacity, borderLeftWidth: 2, borderLeftColor: withAlpha(accentColor, 0.08 + 0.22 * t), borderRadius: 4, marginVertical: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+          <Text style={{ fontSize: 7, fontWeight: "700" as const, color: `rgba(255,255,255,${0.25 + 0.2 * t})`, letterSpacing: 1.2 }}>{title}:</Text>
+          <Text style={{ fontSize: 8, fontWeight: "800" as const, color: accentColor, letterSpacing: 0.8 }}>{analysis.code}</Text>
+          <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: accentColor, opacity: 0.7 + 0.3 * t }}>{regimeName}</Text>
+        </View>
+        <Text style={{ fontSize: 6.5, color: `rgba(255,255,255,${0.25 + 0.25 * t})`, marginTop: 1 }}>
+          Confidence: <Text style={{ fontWeight: "700" as const, color: toneColor }}>{analysis.confidencePct}% ({analysis.confidenceLabel})</Text>
+        </Text>
+        {adjCode && (
+          <Text style={{ fontSize: 6.5, color: `rgba(255,255,255,${0.25 + 0.25 * t})`, opacity: adjAlpha }}>
+            Adjacent Evolution: <Text style={{ fontWeight: "600" as const, color: "rgba(255,255,255,0.6)" }}>{adjCode} — {adjName}</Text>
+          </Text>
+        )}
+        <Text style={{ fontSize: 6.5, color: `rgba(255,255,255,${0.25 + 0.25 * t})` }}>
+          Boundary Driver: <Text style={{ fontWeight: "600" as const, color: "rgba(255,255,255,0.6)" }}>{humanizeBoundaryDriver(analysis.boundaryDriver, mode)}</Text>
+        </Text>
+        {showDrift && momentum && (
+          <Text style={[{ fontSize: 6.5, color: `rgba(255,255,255,${0.25 + 0.25 * t})` }, driftHighlight]}>
+            Boundary Drift: <Text style={{ fontWeight: "800" as const, color: momentum.direction === "toward" ? "#8BE28B" : momentum.direction === "away" ? "#FF9A9A" : "#CFCFE8" }}>{momentumArrow(momentum)}</Text>{" "}
+            <Text style={{ fontWeight: "600" as const, color: "rgba(255,255,255,0.6)" }}>{humanizeMomentumLabel(momentum, analysis.adjacentEvolution)}</Text>
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
@@ -1291,36 +1429,9 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
           </Svg>
         </ChartPanel>
 
-        {sleepEra && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING ERA:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepEra.accent, letterSpacing: 0.8 }}>{sleepEra.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepEra.accent, opacity: 0.85 }}>{sleepEra.name}</Text>
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepEra.subtitle}</Text>
-          </View>
-        )}
-        {sleepSeason && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING SEASON:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepSeason.accent, letterSpacing: 0.8 }}>{sleepSeason.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepSeason.accent, opacity: 0.85 }}>{sleepSeason.name}</Text>
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepSeason.subtitle}</Text>
-          </View>
-        )}
-        {sleepPlanet && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING PERIOD:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepPlanet.accent, letterSpacing: 0.8 }}>{sleepPlanet.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepPlanet.accent, opacity: 0.85 }}>{sleepPlanet.name}</Text>
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{sleepPlanet.subtitle}</Text>
-          </View>
-        )}
+        {renderRegimeRow("SOMNIOFORMING ERA", capacityEraAnalysis, null, "capacity")}
+        {renderRegimeRow("SOMNIOFORMING SEASON", capacitySeasonAnalysis, capacitySeasonMomentum, "capacity")}
+        {renderRegimeRow("SOMNIOFORMING PERIOD", capacityPeriodAnalysis, capacityPeriodMomentum, "capacity")}
 
         <View style={styles.separator} />
 
@@ -1410,54 +1521,9 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
           </Svg>
         </ChartPanel>
 
-        {soilEra && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING ERA:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilEra.color, letterSpacing: 0.8 }}>{soilEra.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilEra.color, opacity: 0.85 }}>{soilEra.title}</Text>
-              {soilEra.lowConf && (
-                <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
-              )}
-              {soilEra.ideal && (
-                <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
-              )}
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilEra.subtitle}</Text>
-          </View>
-        )}
-        {soilSeason && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING SEASON:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilSeason.color, letterSpacing: 0.8 }}>{soilSeason.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilSeason.color, opacity: 0.85 }}>{soilSeason.title}</Text>
-              {soilSeason.lowConf && (
-                <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
-              )}
-              {soilSeason.ideal && (
-                <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
-              )}
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilSeason.subtitle}</Text>
-          </View>
-        )}
-        {soilRealm && (
-          <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING PERIOD:</Text>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.8 }}>{soilRealm.code}</Text>
-              <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilRealm.color, opacity: 0.85 }}>{soilRealm.title}</Text>
-              {soilRealm.lowConf && (
-                <Text style={{ fontSize: 6.5, fontWeight: "600" as const, color: "rgba(255,255,255,0.35)" }}>(low)</Text>
-              )}
-              {soilRealm.ideal && (
-                <Text style={{ fontSize: 6.5, fontWeight: "700" as const, color: "#22C55E" }}>(hypertrophy)</Text>
-              )}
-            </View>
-            <Text style={{ fontSize: 6.5, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{soilRealm.subtitle}</Text>
-          </View>
-        )}
+        {renderRegimeRow("HYPERTROPHYFORMING ERA", outputEraAnalysis, null, "output")}
+        {renderRegimeRow("HYPERTROPHYFORMING SEASON", outputSeasonAnalysis, outputSeasonMomentum, "output")}
+        {renderRegimeRow("HYPERTROPHYFORMING PERIOD", outputPeriodAnalysis, outputPeriodMomentum, "output")}
 
         {(() => {
           const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
