@@ -1146,7 +1146,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         {sleepPlanet && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING:</Text>
+              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>SOMNIOFORMING.:</Text>
               <Text style={{ fontSize: 8, fontWeight: "800" as const, color: sleepPlanet.accent, letterSpacing: 0.8 }}>{sleepPlanet.code}</Text>
               <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: sleepPlanet.accent, opacity: 0.85 }}>{sleepPlanet.name}</Text>
             </View>
@@ -1234,7 +1234,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
         {soilRealm && (
           <View style={{ paddingHorizontal: 8, paddingTop: 1, paddingBottom: 6 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING:</Text>
+              <Text style={{ fontSize: 7, fontWeight: "700" as const, color: "rgba(255,255,255,0.35)", letterSpacing: 1.2 }}>HYPERTROPHYFORMING.:</Text>
               <Text style={{ fontSize: 8, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.8 }}>{soilRealm.code}</Text>
               <Text style={{ fontSize: 7.5, fontWeight: "600" as const, color: soilRealm.color, opacity: 0.85 }}>{soilRealm.title}</Text>
               {soilRealm.lowConf && (
