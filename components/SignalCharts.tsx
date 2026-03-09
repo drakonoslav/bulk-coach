@@ -1248,51 +1248,65 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
           </View>
         )}
 
-        {/* OUTPUT DEBUG PANEL */}
         {(() => {
           const d = outputSoilSeries.debug;
-          const fmt = (v: number | null | undefined, dp = 2) => v == null ? "null" : v.toFixed(dp);
           const selPt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
-          const svNow = selPt?.strengthVelocity ?? null;
-          const svY = svNow != null ? (PAD_T + ((svData.absMax - svNow) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B)) : null;
-          const sorted = [
-            { k: "D", s: d.dsfAvgPct ?? 0 },
-            { k: "F", s: d.ffmAvgPct ?? 0 },
-            { k: "C", s: d.csAvgPct ?? 0 },
-          ].sort((a, b) => b.s - a.s);
-          const orderStr = sorted.map(x => `${x.k}=${fmt(x.s, 1)}`).join(" > ");
+          const selDay = selPt?.date ?? null;
+          const isLive = selectedPoint != null;
+
+          const csVal = selPt?.readiness;
+          const csPct = csVal != null && d.csMax > 0 ? Math.round((csVal / d.csMax) * 100) : null;
+          const dsfVal = selPt?.deepSleepMin;
+          const dsfPct = dsfVal != null && d.dsfMax > 0 ? Math.round((dsfVal / d.dsfMax) * 100) : null;
+
+          const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === selDay);
+          const ffmPct = ffmEntry?.score != null ? Math.round(ffmEntry.score) : null;
+          const svVal = selPt?.strengthVelocity;
+
+          const csDisplay = isLive && csPct != null ? `${csPct}%` : (d.csAvgPct != null ? `${Math.round(d.csAvgPct)}% avg` : "--");
+          const dsfDisplay = isLive && dsfPct != null ? `${dsfPct}%` : (d.dsfAvgPct != null ? `${Math.round(d.dsfAvgPct)}% avg` : "--");
+          const ffmDisplay = isLive && ffmPct != null ? `${ffmPct}` : (d.ffmAvgPct != null ? `${Math.round(d.ffmAvgPct)} avg` : "--");
+          const svDisplay = svVal != null ? (svVal >= 0 ? "+" : "") + svVal.toFixed(2) : "--";
+
+          const dateLabel = selDay ? formatDateShort(selDay) : "";
+
           return (
-            <View style={{ backgroundColor: "rgba(0,0,0,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, padding: 6 }}>
-              <Text style={{ fontSize: 8, fontWeight: "800" as const, color: "#FF6B6B", letterSpacing: 1.5, marginBottom: 3 }}>OUTPUT DEBUG (ratio-to-max)</Text>
-              <Text style={{ fontSize: 7, color: C_OUT_CS, fontFamily: "monospace" }}>
-                CS: max={fmt(d.csMax)} avg%={fmt(d.csAvgPct,1)} avgY={fmt(d.csAvgY,1)} pts={d.csCount}
-              </Text>
-              <Text style={{ fontSize: 7, color: C_OUT_DSF, fontFamily: "monospace", marginTop: 1 }}>
-                DSF: max={fmt(d.dsfMax)} avg%={fmt(d.dsfAvgPct,1)} avgY={fmt(d.dsfAvgY,1)} pts={d.dsfCount}
-              </Text>
-              <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
-                FFM: avg%={fmt(d.ffmAvgPct,1)} avgY={fmt(d.ffmAvgY,1)} pts={d.ffmCount}
-              </Text>
-              {(() => {
-                const selPtDbg = selectedPoint ?? (N > 0 ? points[N - 1] : null);
-                const selDay = selPtDbg?.date;
-                const dd = d.ffmDailyDebug?.find((x: any) => x.day === selDay);
-                if (!dd) return null;
-                return (
-                  <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
-                    FFM 7d: today={fmt(dd.today)} ago7={fmt(dd.ago7)} slope={fmt(dd.slope,4)} score={fmt(dd.score,1)}
-                  </Text>
-                );
-              })()}
-              <Text style={{ fontSize: 7, color: C_SV, fontFamily: "monospace", marginTop: 1 }}>
-                SV: now={fmt(svNow, 4)} y={fmt(svY, 1)} (own scale, absMax={fmt(svData.absMax, 4)})
-              </Text>
-              <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 2 }}>
-                order: {soilRealm?.code ?? "?"} [{orderStr}]
-              </Text>
-              <Text style={{ fontSize: 7, color: "rgba(255,255,255,0.5)", fontFamily: "monospace", marginTop: 1 }}>
-                fills={outputSoilSeries.fillLayers.length} domain=[0,100] svDiffScale=YES
-              </Text>
+            <View style={{ backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", borderRadius: 4, marginHorizontal: 8, marginTop: 4, marginBottom: 4, paddingVertical: 5, paddingHorizontal: 8 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <Text style={{ fontSize: 7.5, fontWeight: "700" as const, color: "rgba(255,255,255,0.5)", letterSpacing: 1.2 }}>
+                  {isLive ? `OUTPUT  ${dateLabel}` : "OUTPUT  window avg"}
+                </Text>
+                {soilRealm && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    <Text style={{ fontSize: 7, fontWeight: "800" as const, color: soilRealm.color, letterSpacing: 0.6 }}>{soilRealm.code}</Text>
+                    {soilRealm.ideal && (
+                      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#22C55E" }} />
+                    )}
+                  </View>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <View style={{ alignItems: "center", flex: 1 }}>
+                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_CS, marginBottom: 2 }} />
+                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_CS }}>{csDisplay}</Text>
+                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>CS</Text>
+                </View>
+                <View style={{ alignItems: "center", flex: 1 }}>
+                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_DSF, marginBottom: 2 }} />
+                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_DSF }}>{dsfDisplay}</Text>
+                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>DSF</Text>
+                </View>
+                <View style={{ alignItems: "center", flex: 1 }}>
+                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_OUT_FFM, marginBottom: 2 }} />
+                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_OUT_FFM }}>{ffmDisplay}</Text>
+                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>FFM</Text>
+                </View>
+                <View style={{ alignItems: "center", flex: 1 }}>
+                  <View style={{ width: 8, height: 3, borderRadius: 1, backgroundColor: C_SV, marginBottom: 2 }} />
+                  <Text style={{ fontSize: 8.5, fontWeight: "700" as const, color: C_SV }}>{svDisplay}</Text>
+                  <Text style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>SV</Text>
+                </View>
+              </View>
             </View>
           );
         })()}
