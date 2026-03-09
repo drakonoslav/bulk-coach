@@ -4655,12 +4655,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const r = await pool.query(
-        `SELECT id, user_id, day, exercise_id, weight_lb, reps, rir, seconds, set_type, is_measured, source, created_at
-         FROM strength_sets
-         WHERE user_id = $1
-           AND day >= $2
-           AND day <= $3
-         ORDER BY day ASC, created_at ASC`,
+        `SELECT s.id, s.user_id, s.day, s.exercise_id, s.weight_lb, s.reps, s.rir, s.seconds,
+                s.set_type, s.is_measured, s.source, s.created_at, s.intel_exercise_id,
+                m.intel_exercise_name, m.biomechanics
+         FROM strength_sets s
+         LEFT JOIN intel_exercise_mapping m ON m.intel_exercise_id = s.intel_exercise_id
+         WHERE s.user_id = $1
+           AND s.day >= $2
+           AND s.day <= $3
+         ORDER BY s.day ASC, s.created_at ASC`,
         [userId, start, end]
       );
 
@@ -4698,10 +4701,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const day = String(req.query.day || "");
       if (!day) return res.status(400).json({ error: "day query param is required (YYYY-MM-DD)" });
       const r = await pool.query(
-        `SELECT id, day, exercise_id, weight_lb, reps, set_type, is_measured, source, created_at
-         FROM strength_sets
-         WHERE user_id = $1 AND day = $2 AND source = 'workout_game'
-         ORDER BY created_at ASC`,
+        `SELECT s.id, s.day, s.exercise_id, s.weight_lb, s.reps, s.set_type,
+                s.is_measured, s.source, s.created_at, s.intel_exercise_id,
+                m.intel_exercise_name, m.biomechanics
+         FROM strength_sets s
+         LEFT JOIN intel_exercise_mapping m ON m.intel_exercise_id = s.intel_exercise_id
+         WHERE s.user_id = $1 AND s.day = $2 AND s.source = 'workout_game'
+         ORDER BY s.created_at ASC`,
         [userId, day]
       );
       return res.json({ sets: r.rows });
@@ -4844,6 +4850,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const INTEL_BASE = process.env.LIFTING_INTEL_BASE_URL || "";
   console.log(`[intel] LIFTING_INTEL_BASE_URL = ${INTEL_BASE || "(not set)"}`);
+
+  async function syncBiomechanicsFromIntel() {
+    if (!INTEL_BASE) return;
+    try {
+      const r = await fetch(`${INTEL_BASE}/game/exercise-catalog`);
+      if (!r.ok) { console.log(`[biomechanics-sync] catalog fetch failed: ${r.status}`); return; }
+      const data: any = await r.json();
+      const exercises: any[] = data.exercises ?? [];
+      let updated = 0;
+      for (const ex of exercises) {
+        if (!ex.exercise_id) continue;
+        const bio = {
+          primary_muscles: ex.primary_muscles ?? [],
+          compound_or_isolation: ex.compound_or_isolation ?? null,
+          slots: ex.slots ?? [],
+          equipment_tags: ex.equipment_tags ?? [],
+        };
+        const result = await pool.query(
+          `UPDATE intel_exercise_mapping SET biomechanics = $1 WHERE intel_exercise_id = $2`,
+          [JSON.stringify(bio), ex.exercise_id]
+        );
+        if (result.rowCount && result.rowCount > 0) updated++;
+      }
+      console.log(`[biomechanics-sync] updated ${updated}/${exercises.length} exercises`);
+    } catch (err: any) {
+      console.error("[biomechanics-sync] error:", err.message);
+    }
+  }
+
+  syncBiomechanicsFromIntel();
+
+  app.post("/api/admin/sync-biomechanics", async (_req: Request, res: Response) => {
+    await syncBiomechanicsFromIntel();
+    const r = await pool.query(`SELECT count(*) AS total, count(biomechanics) AS synced FROM intel_exercise_mapping`);
+    return res.json({ status: "ok", total: r.rows[0].total, synced: r.rows[0].synced });
+  });
 
   async function intelProxy(upstreamResp: globalThis.Response, res: Response) {
     const contentType = upstreamResp.headers.get("content-type") || "";
@@ -5146,7 +5188,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.set("Content-Type", "application/json");
       const receipt = result.rows[0] ?? null;
-      return res.status(200).send(JSON.stringify({ receipt }));
+      let exerciseBiomechanics: Record<number, any> = {};
+      if (receipt && Array.isArray(receipt.set_details)) {
+        const intelIds = [...new Set(receipt.set_details.map((s: any) => s.exercise_id).filter(Boolean))];
+        if (intelIds.length > 0) {
+          const bioResult = await pool.query(
+            `SELECT intel_exercise_id, intel_exercise_name, biomechanics
+             FROM intel_exercise_mapping WHERE intel_exercise_id = ANY($1)`,
+            [intelIds]
+          );
+          for (const row of bioResult.rows) {
+            exerciseBiomechanics[row.intel_exercise_id] = {
+              name: row.intel_exercise_name,
+              biomechanics: row.biomechanics,
+            };
+          }
+        }
+      }
+      return res.status(200).send(JSON.stringify({ receipt, exerciseBiomechanics }));
     } catch (err: any) {
       console.error("GET /api/intel-receipts/:date error:", err);
       return res.status(500).json({ error: "Failed to load intel receipt" });

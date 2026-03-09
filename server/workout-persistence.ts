@@ -144,8 +144,8 @@ export async function persistWorkoutDerivedState(
              SELECT local_exercise_id FROM intel_exercise_mapping
              WHERE intel_exercise_id = $4 AND mapped = true
            )
-           INSERT INTO strength_sets (id, user_id, day, exercise_id, weight_lb, reps, set_type, is_measured, source)
-           SELECT $1, $2, $3, r.local_exercise_id, $5, $6, 'top', TRUE, 'workout_game'
+           INSERT INTO strength_sets (id, user_id, day, exercise_id, weight_lb, reps, set_type, is_measured, source, intel_exercise_id)
+           SELECT $1, $2, $3, r.local_exercise_id, $5, $6, 'top', TRUE, 'workout_game', $4
            FROM resolved r
            ON CONFLICT (id) DO NOTHING`,
           [input.eventId, input.userId, day, input.exerciseId, input.weight, input.reps],

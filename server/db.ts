@@ -1141,6 +1141,14 @@ async function runMigrations(): Promise<void> {
   await runMigration('029_intel_receipts_set_details', `
     ALTER TABLE intel_receipts ADD COLUMN IF NOT EXISTS set_details JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
+
+  await runMigration('030_biomechanics_columns', `
+    ALTER TABLE intel_exercise_mapping
+      ADD COLUMN IF NOT EXISTS biomechanics JSONB;
+
+    ALTER TABLE strength_sets
+      ADD COLUMN IF NOT EXISTS intel_exercise_id INTEGER;
+  `);
 }
 
 export { pool };
