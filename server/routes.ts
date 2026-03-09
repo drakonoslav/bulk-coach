@@ -2188,13 +2188,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const [date, val] of legacySvMap) svMap.set(date, val);
       }
 
-      const logMap = new Map<string, { hrv: number | null; rhr: number | null; latencyMin: number | null; wasoMin: number | null; awakeInBedMin: number | null }>();
+      const deepSleepRes = await pool.query(
+        `SELECT date::text AS day, deep_minutes
+         FROM sleep_summary_daily WHERE user_id = $1 AND date >= $2 AND date <= $3
+         ORDER BY date ASC`,
+        [userId, from, to],
+      ).catch(() => ({ rows: [] }));
+      const deepSleepMap = new Map<string, number>();
+      for (const r of deepSleepRes.rows) {
+        const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
+        if (r.deep_minutes != null) deepSleepMap.set(d, Number(r.deep_minutes));
+      }
+
+      const logMap = new Map<string, { hrv: number | null; rhr: number | null; latencyMin: number | null; wasoMin: number | null; awakeInBedMin: number | null; ffmLb: number | null; deepSleepMin: number | null }>();
       for (const r of vitalsRows.rows) {
         const d = typeof r.day === "string" ? r.day : (r.day as Date).toISOString().slice(0, 10);
         logMap.set(d, {
           hrv: r.hrv_rmssd_ms != null ? Number(r.hrv_rmssd_ms) : null,
           rhr: r.resting_hr_bpm != null ? Number(r.resting_hr_bpm) : null,
           latencyMin: null, wasoMin: null, awakeInBedMin: null,
+          ffmLb: null,
+          deepSleepMin: deepSleepMap.get(d) ?? null,
         });
       }
       for (const r of logRows.rows) {
@@ -2205,7 +2219,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const latencyMin = r.sleep_latency_min != null ? Number(r.sleep_latency_min) : null;
         const wasoMin = r.sleep_waso_min != null ? Number(r.sleep_waso_min) : null;
         const awakeInBedMin = (latencyMin != null && wasoMin != null) ? latencyMin + wasoMin : null;
-        logMap.set(d, { hrv, rhr, latencyMin, wasoMin, awakeInBedMin });
+        const ffmLb = r.fat_free_mass_lb != null ? Number(r.fat_free_mass_lb) : null;
+        const deepFromLog = r.sleep_deep_min != null ? Number(r.sleep_deep_min) : null;
+        const deepSleepMin = deepFromLog ?? existing?.deepSleepMin ?? deepSleepMap.get(d) ?? null;
+        logMap.set(d, { hrv, rhr, latencyMin, wasoMin, awakeInBedMin, ffmLb, deepSleepMin });
       }
 
       const maxLatency = Math.max(1, ...Array.from(logMap.values()).map(v => v.latencyMin ?? 0));
@@ -2237,6 +2254,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           latencyMin: lg?.latencyMin ?? null,
           wasoMin: lg?.wasoMin ?? null,
           awakeInBedMin: lg?.awakeInBedMin ?? null,
+          deepSleepMin: lg?.deepSleepMin ?? null,
+          ffmLb: lg?.ffmLb ?? null,
         };
       });
 

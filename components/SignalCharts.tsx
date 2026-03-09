@@ -28,6 +28,8 @@ interface SignalPoint {
   latencyMin: number | null;
   wasoMin: number | null;
   awakeInBedMin: number | null;
+  deepSleepMin: number | null;
+  ffmLb: number | null;
 }
 
 interface SignalChartsProps {
@@ -575,6 +577,65 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     return PAD_T + (svData.absMax / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
   }, [svData.absMax]);
 
+  const outputStrata = useMemo(() => {
+    const rollingAvg = (vals: (number | null)[], window: number): number | null => {
+      const recent = vals.slice(-window).filter((v): v is number => v != null);
+      return recent.length >= Math.max(1, Math.floor(window * 0.5)) ? recent.reduce((s, n) => s + n, 0) / recent.length : null;
+    };
+
+    const readinessVals = points.map(p => p.readiness);
+    const deepSleepVals = points.map(p => p.deepSleepMin);
+    const ffmVals = points.map(p => p.ffmLb);
+
+    const r7 = rollingAvg(readinessVals, 7);
+    const r28 = rollingAvg(readinessVals, 28);
+    const capacitySupport = (r7 != null && r28 != null && r28 > 0) ? r7 / r28 : null;
+    const csCount = readinessVals.filter(v => v != null).length;
+
+    const ds7 = rollingAvg(deepSleepVals, 7);
+    const ds28 = rollingAvg(deepSleepVals, 28);
+    const deepSleepFertility = (ds7 != null && ds28 != null && ds28 > 0) ? ds7 / ds28 : null;
+    const dsCount = deepSleepVals.filter(v => v != null).length;
+
+    const ffmNonNull = ffmVals.map((v, i) => v != null ? { idx: i, val: v } : null).filter((v): v is { idx: number; val: number } => v != null);
+    let ffmMomentum: number | null = null;
+    let ffmCount = ffmNonNull.length;
+    if (ffmNonNull.length >= 3) {
+      const recent14 = ffmNonNull.slice(-14);
+      const allWindows: number[] = [];
+      for (let start = 0; start <= ffmNonNull.length - 2; start++) {
+        const windowSlice = ffmNonNull.slice(start, start + Math.min(14, ffmNonNull.length - start));
+        if (windowSlice.length >= 2) {
+          const first = windowSlice[0].val;
+          const last = windowSlice[windowSlice.length - 1].val;
+          allWindows.push(last - first);
+        }
+      }
+      if (recent14.length >= 2) {
+        const vel14 = recent14[recent14.length - 1].val - recent14[0].val;
+        const bestVel = allWindows.length > 0 ? Math.max(...allWindows) : null;
+        if (bestVel != null && bestVel > 0) {
+          ffmMomentum = vel14 / bestVel;
+        }
+      }
+    }
+
+    const svToY = (ratio: number) => {
+      const scaled = (ratio - 1.0) * svData.absMax * 5;
+      const clamped = Math.max(-svData.absMax, Math.min(svData.absMax, scaled));
+      return PAD_T + ((svData.absMax - clamped) / (2 * svData.absMax)) * (OUTPUT_H - PAD_T - PAD_B);
+    };
+
+    return {
+      capacitySupport: capacitySupport != null ? { ratio: capacitySupport, y: svToY(capacitySupport), lowConf: csCount < 28 } : null,
+      deepSleepFertility: deepSleepFertility != null ? { ratio: deepSleepFertility, y: svToY(deepSleepFertility), lowConf: dsCount < 28 } : null,
+      ffmMomentum: ffmMomentum != null ? { ratio: ffmMomentum, y: svToY(ffmMomentum), lowConf: ffmCount < 14 } : null,
+      csCount,
+      dsCount,
+      ffmCount,
+    };
+  }, [points, svData.absMax]);
+
   const recoveryIndex = useMemo(() => {
     const riResult = computeRecoveryIndexPairs(
       points.map(p => ({ hrv: p.hrv ?? undefined, rhr: p.rhr ?? undefined }))
@@ -797,6 +858,33 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 <Line key={v} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={v === 0 ? C_THRESHOLD : C_GRID} strokeWidth={v === 0 ? 1 : 0.5} strokeDasharray={v === 0 ? "4,4" : undefined} />
               );
             })}
+            {outputStrata.capacitySupport && (
+              <>
+                <Line x1={PAD_L} y1={outputStrata.capacitySupport.y} x2={chartWidth - PAD_R} y2={outputStrata.capacitySupport.y} stroke={C_BLEND_LA} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
+                <SvgText x={PAD_L + 2} y={outputStrata.capacitySupport.y - 3} fontSize={6.5} fill={C_BLEND_LA} opacity={0.8} fontFamily="Rubik_400Regular">CS {outputStrata.capacitySupport.ratio.toFixed(2)}{outputStrata.capacitySupport.lowConf ? ` (${outputStrata.csCount}d)` : ""}</SvgText>
+                {outputStrata.capacitySupport.lowConf && (
+                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.capacitySupport.y - 3} fontSize={6} fill={C_BLEND_LA} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
+                )}
+              </>
+            )}
+            {outputStrata.deepSleepFertility && (
+              <>
+                <Line x1={PAD_L} y1={outputStrata.deepSleepFertility.y} x2={chartWidth - PAD_R} y2={outputStrata.deepSleepFertility.y} stroke={C_BLEND_LW} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
+                <SvgText x={PAD_L + 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6.5} fill={C_BLEND_LW} opacity={0.8} fontFamily="Rubik_400Regular">DSF {outputStrata.deepSleepFertility.ratio.toFixed(2)}{outputStrata.deepSleepFertility.lowConf ? ` (${outputStrata.dsCount}d)` : ""}</SvgText>
+                {outputStrata.deepSleepFertility.lowConf && (
+                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.deepSleepFertility.y - 3} fontSize={6} fill={C_BLEND_LW} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
+                )}
+              </>
+            )}
+            {outputStrata.ffmMomentum && (
+              <>
+                <Line x1={PAD_L} y1={outputStrata.ffmMomentum.y} x2={chartWidth - PAD_R} y2={outputStrata.ffmMomentum.y} stroke={C_BLEND_WA} strokeWidth={1} strokeDasharray="5,4" opacity={0.7} />
+                <SvgText x={PAD_L + 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6.5} fill={C_BLEND_WA} opacity={0.8} fontFamily="Rubik_400Regular">FFM {outputStrata.ffmMomentum.ratio.toFixed(2)}{outputStrata.ffmMomentum.lowConf ? ` (${outputStrata.ffmCount}d)` : ""}</SvgText>
+                {outputStrata.ffmMomentum.lowConf && (
+                  <SvgText x={chartWidth - PAD_R - 2} y={outputStrata.ffmMomentum.y - 3} fontSize={6} fill={C_BLEND_WA} opacity={0.5} fontFamily="Rubik_400Regular" textAnchor="end">(low)</SvgText>
+                )}
+              </>
+            )}
             {svData.data.length > 1 && (
               <Path d={buildPath(svData.data)} stroke={C_SV} strokeWidth={2.4} fill="none" />
             )}
