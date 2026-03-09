@@ -863,45 +863,46 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const cs = buildSeries(p => p.readiness, csMax);
     const dsf = buildSeries(p => p.deepSleepMin, dsfMax);
 
-    const ffmDeltaScore = (dailyDeltaLb: number): number => {
+    const SLOPE_WINDOW = 7;
+    const ffmSlopeScore = (dailySlope: number): number => {
       const lo = 0.25 / 7;
       const hi = 0.50 / 7;
       const mid = (lo + hi) / 2;
       const halfWidth = (hi - lo) / 2;
-      const score = 100 * (1 - Math.abs(dailyDeltaLb - mid) / halfWidth);
+      const score = 100 * (1 - Math.abs(dailySlope - mid) / halfWidth);
       return Math.max(0, Math.min(100, score));
     };
 
     const ffmRaw: { x: number; y: number }[] = [];
     const ffmScoreVals: number[] = [];
-    const ffmDailyDebug: { day: string; today: number | null; yesterday: number | null; delta: number | null; score: number | null }[] = [];
+    const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
+    const ffmDailyDebug: { day: string; today: number | null; ago7: number | null; slope: number | null; score: number | null }[] = [];
     for (let i = 0; i < points.length; i++) {
       const today = points[i].ffmLb;
-      const yesterday = i > 0 ? points[i - 1].ffmLb : null;
-      if (today != null && yesterday != null) {
-        const delta = today - yesterday;
-        const score = ffmDeltaScore(delta);
+      let ago7: number | null = null;
+      if (i >= SLOPE_WINDOW) {
+        ago7 = points[i - SLOPE_WINDOW].ffmLb;
+      }
+      if (today != null && ago7 != null) {
+        const slope = (today - ago7) / SLOPE_WINDOW;
+        const score = ffmSlopeScore(slope);
         ffmRaw.push({ x: xForIdx(i), y: pctToY(score) });
         ffmScoreVals.push(score);
-        ffmDailyDebug.push({ day: points[i].date, today, yesterday, delta, score });
+        ffmScoreByIdx[i] = score;
+        ffmDailyDebug.push({ day: points[i].date, today, ago7, slope, score });
       } else {
-        ffmDailyDebug.push({ day: points[i].date, today, yesterday, delta: null, score: null });
+        ffmDailyDebug.push({ day: points[i].date, today, ago7, slope: null, score: null });
       }
     }
     const ffmAvgPct = ffmScoreVals.length > 0 ? ffmScoreVals.reduce((s, n) => s + n, 0) / ffmScoreVals.length : null;
     const ffmAvgY = ffmAvgPct != null ? pctToY(ffmAvgPct) : null;
     const ffm = { raw: ffmRaw, avgPct: ffmAvgPct, avgY: ffmAvgY };
 
-    const soilPoints = points.map((p, i) => {
-      const today = p.ffmLb;
-      const yesterday = i > 0 ? points[i - 1].ffmLb : null;
-      const ffmPct = (today != null && yesterday != null) ? ffmDeltaScore(today - yesterday) : null;
-      return {
-        csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
-        dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
-        ffmPct,
-      };
-    });
+    const soilPoints = points.map((p, i) => ({
+      csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
+      dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
+      ffmPct: ffmScoreByIdx[i],
+    }));
 
     const fillLayers = buildOutputFillLayers(
       soilPoints, xForIdx, pctToY,
@@ -1267,7 +1268,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
                 if (!dd) return null;
                 return (
                   <Text style={{ fontSize: 7, color: C_OUT_FFM, fontFamily: "monospace", marginTop: 1 }}>
-                    FFM day: today={fmt(dd.today)} yest={fmt(dd.yesterday)} delta={fmt(dd.delta,4)} score={fmt(dd.score,1)}
+                    FFM 7d: today={fmt(dd.today)} ago7={fmt(dd.ago7)} slope={fmt(dd.slope,4)} score={fmt(dd.score,1)}
                   </Text>
                 );
               })()}
