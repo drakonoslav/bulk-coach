@@ -838,8 +838,12 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   const outputSoilSeries = useMemo(() => {
     const pctToY = (pct: number) => PAD_T + ((100 - pct) / 100) * (OUTPUT_H - PAD_T - PAD_B);
 
-    const readinessVals = points.map(p => p.readiness).filter((v): v is number => v != null);
-    const deepSleepVals = points.map(p => p.deepSleepMin).filter((v): v is number => v != null);
+    const DATA_START = "2026-02-19";
+    const startIdx = points.findIndex(p => p.date >= DATA_START);
+    const cutoff = startIdx >= 0 ? startIdx : points.length;
+
+    const readinessVals = points.filter((_, i) => i >= cutoff).map(p => p.readiness).filter((v): v is number => v != null);
+    const deepSleepVals = points.filter((_, i) => i >= cutoff).map(p => p.deepSleepMin).filter((v): v is number => v != null);
 
     const csMax = readinessVals.length > 0 ? Math.max(...readinessVals) : 1;
     const dsfMax = deepSleepVals.length > 0 ? Math.max(...deepSleepVals) : 1;
@@ -848,6 +852,7 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
       const raw: { x: number; y: number }[] = [];
       const pctVals: number[] = [];
       points.forEach((p, i) => {
+        if (i < cutoff) return;
         const v = getter(p);
         if (v != null && maxVal > 0) {
           const pct = (v / maxVal) * 100;
@@ -878,6 +883,10 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const ffmScoreByIdx: (number | null)[] = new Array(points.length).fill(null);
     const ffmDailyDebug: { day: string; today: number | null; ago7: number | null; slope: number | null; score: number | null }[] = [];
     for (let i = 0; i < points.length; i++) {
+      if (i < cutoff) {
+        ffmDailyDebug.push({ day: points[i].date, today: points[i].ffmLb, ago7: null, slope: null, score: null });
+        continue;
+      }
       const today = points[i].ffmLb;
       let ago7: number | null = null;
       if (i >= SLOPE_WINDOW) {
@@ -898,11 +907,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
     const ffmAvgY = ffmAvgPct != null ? pctToY(ffmAvgPct) : null;
     const ffm = { raw: ffmRaw, avgPct: ffmAvgPct, avgY: ffmAvgY };
 
-    const soilPoints = points.map((p, i) => ({
-      csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
-      dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
-      ffmPct: ffmScoreByIdx[i],
-    }));
+    const soilPoints = points.map((p, i) => {
+      if (i < cutoff) return { csPct: null, dsfPct: null, ffmPct: null };
+      return {
+        csPct: p.readiness != null && csMax > 0 ? (p.readiness / csMax) * 100 : null,
+        dsfPct: p.deepSleepMin != null && dsfMax > 0 ? (p.deepSleepMin / dsfMax) * 100 : null,
+        ffmPct: ffmScoreByIdx[i],
+      };
+    });
 
     const fillLayers = buildOutputFillLayers(
       soilPoints, xForIdx, pctToY,
