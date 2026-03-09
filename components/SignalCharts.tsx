@@ -984,10 +984,14 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   }, [disruptionSeries]);
 
   const sleepPlanet = useMemo(() => {
-    const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
-    if (!pt) return null;
-    return getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
-  }, [selectedPoint, points, N]);
+    const startIdx = selectedIdx ?? (N > 0 ? N - 1 : -1);
+    for (let i = startIdx; i >= 0; i--) {
+      const pt = points[i];
+      const result = getSleepPlanet(pt.latencyPct, pt.wasoPct, pt.awakeInBedPct);
+      if (result) return result;
+    }
+    return null;
+  }, [selectedIdx, points, N]);
 
   const soilSeason = useMemo(() => {
     return getHypertrophyForming(
@@ -998,15 +1002,19 @@ export default function SignalCharts({ points, rangeDays, onRangeChange, forecas
   }, [outputSoilSeries]);
 
   const soilRealm = useMemo(() => {
-    const pt = selectedPoint ?? (N > 0 ? points[N - 1] : null);
-    if (!pt) return null;
     const d = outputSoilSeries.debug;
-    const csPct = pt.readiness != null && d.csMax > 0 ? (pt.readiness / d.csMax) * 100 : null;
-    const dsfPct = pt.deepSleepMin != null && d.dsfMax > 0 ? (pt.deepSleepMin / d.dsfMax) * 100 : null;
-    const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === pt.date);
-    const ffmPct = ffmEntry?.score ?? null;
-    return getHypertrophyForming(csPct, dsfPct, ffmPct);
-  }, [selectedPoint, points, N, outputSoilSeries]);
+    const startIdx = selectedIdx ?? (N > 0 ? N - 1 : -1);
+    for (let i = startIdx; i >= 0; i--) {
+      const pt = points[i];
+      const csPct = pt.readiness != null && d.csMax > 0 ? (pt.readiness / d.csMax) * 100 : null;
+      const dsfPct = pt.deepSleepMin != null && d.dsfMax > 0 ? (pt.deepSleepMin / d.dsfMax) * 100 : null;
+      const ffmEntry = d.ffmDailyDebug?.find((x: any) => x.day === pt.date);
+      const ffmPct = ffmEntry?.score ?? null;
+      const result = getHypertrophyForming(csPct, dsfPct, ffmPct);
+      if (result) return result;
+    }
+    return null;
+  }, [selectedIdx, points, N, outputSoilSeries]);
 
   const dateLabels = useMemo(() => {
     if (N < 2 || chartWidth <= 0) return [];
