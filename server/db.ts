@@ -1164,6 +1164,34 @@ async function runMigrations(): Promise<void> {
       (102, 'Cable Rear Delt Fly',         'face_pull',   true)
     ON CONFLICT (intel_exercise_id) DO NOTHING;
   `);
+
+  await runMigration('032_batch2_exercises', `
+    INSERT INTO intel_exercise_mapping (intel_exercise_id, intel_exercise_name, local_exercise_id, mapped) VALUES
+      -- Batch 2A: Dumbbell/Cable/Band isolation
+      (103, 'Dumbbell Front Raise',                NULL,                    false),
+      (104, 'Dumbbell Overhead Tricep Extension',   NULL,                    false),
+      (105, 'Dumbbell Fly',                         NULL,                    false),
+      (106, 'Incline Dumbbell Fly',                 NULL,                    false),
+      (107, 'Dumbbell Shrug',                       NULL,                    false),
+      (108, 'Cable Curl',                           NULL,                    false),
+      (109, 'Cable Overhead Tricep Extension',      NULL,                    false),
+      (110, 'Band Pull-Apart',                      'face_pull',             true),
+      (111, 'Band Face Pull',                       'face_pull',             true),
+      (112, 'Band Lateral Raise',                   NULL,                    false),
+      -- Batch 2B: Band & Kettlebell
+      (113, 'Band Curl',                            NULL,                    false),
+      (114, 'Band Pushdown',                        NULL,                    false),
+      (115, 'Band Pallof Press',                    NULL,                    false),
+      (116, 'Kettlebell Goblet Squat',              'back_squat',            true),
+      (117, 'Kettlebell Press',                     'ohp',                   true),
+      (118, 'Kettlebell Row',                       'chest_supported_row',   true),
+      (119, 'Kettlebell Swing',                     'rdl',                   true),
+      -- Batch 2C: Advanced kettlebell
+      (120, 'Kettlebell Clean',                     NULL,                    false),
+      (121, 'Kettlebell Snatch',                    NULL,                    false),
+      (122, 'Turkish Get-Up',                       NULL,                    false)
+    ON CONFLICT (intel_exercise_id) DO NOTHING;
+  `);
 }
 
 export { pool };
