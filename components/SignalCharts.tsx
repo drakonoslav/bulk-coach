@@ -779,8 +779,8 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     const hrvdVals = points.map(p => p.hrvDeltaPct).filter((v): v is number => v != null);
     const hrvdMax = hrvdVals.length > 0 ? Math.max(...hrvdVals.map(Math.abs)) : 1;
 
-    const hrvVals = points.map(p => p.hrv).filter((v): v is number => v != null);
-    const hrvMax = hrvVals.length > 0 ? Math.max(...hrvVals) : 1;
+    const hpaVals = points.map(p => p.hpa).filter((v): v is number => v != null);
+    const hpaMax = hpaVals.length > 0 ? Math.max(...hpaVals) : 1;
 
     const buildSeries = (getter: (p: SignalPoint) => number | null, maxVal: number) => {
       const raw: { x: number; y: number }[] = [];
@@ -835,9 +835,9 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     const hrvDeltaAvgY = hrvDeltaAvgPct != null ? pctToY(hrvDeltaAvgPct) : null;
     const hrvDelta = { raw: hrvDeltaRaw, avgPct: hrvDeltaAvgPct, avgY: hrvDeltaAvgY, runningAvg: hrvDeltaRunning, runningPctByIdx: hrvDeltaRunningPctByIdx };
 
-    const hrv = buildSeries(p => p.hrv, hrvMax);
+    const hpa = buildSeries(p => p.hpa, hpaMax);
 
-    return { proxy, hrvDelta, hrv };
+    return { proxy, hrvDelta, hpa };
   }, [points, xForIdx]);
 
   const readinessData = useMemo(() => {
@@ -1369,7 +1369,7 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
         <ChartPanel height={STRESS_H} label="STRESS" subtitle="androgen proxy / autonomic tone" chartWidth={chartWidth} legendRows={[[
             { text: "PROXY", color: C_STRESS_PROXY },
             { text: "HRV\u0394", color: C_STRESS_HRVD },
-            { text: "HRV", color: C_STRESS_HRV },
+            { text: "HPA", color: C_STRESS_HRV },
           ]]}>
           <Svg width={chartWidth} height={STRESS_H}>
             {stressZoneBands.map((z, i) => (
@@ -1388,8 +1388,8 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
             {stressSeries.hrvDelta.raw.length > 1 && (
               <Path d={buildPath(stressSeries.hrvDelta.raw)} stroke={C_STRESS_HRVD} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
-            {stressSeries.hrv.raw.length > 1 && (
-              <Path d={buildPath(stressSeries.hrv.raw)} stroke={C_STRESS_HRV} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
+            {stressSeries.hpa.raw.length > 1 && (
+              <Path d={buildPath(stressSeries.hpa.raw)} stroke={C_STRESS_HRV} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
 
             {stressSeries.proxy.avgY != null && (
@@ -1398,8 +1398,8 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
             {stressSeries.hrvDelta.avgY != null && (
               <Line x1={PAD_L} y1={stressSeries.hrvDelta.avgY} x2={chartWidth - PAD_R} y2={stressSeries.hrvDelta.avgY} stroke={C_STRESS_HRVD} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
             )}
-            {stressSeries.hrv.avgY != null && (
-              <Line x1={PAD_L} y1={stressSeries.hrv.avgY} x2={chartWidth - PAD_R} y2={stressSeries.hrv.avgY} stroke={C_STRESS_HRV} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            {stressSeries.hpa.avgY != null && (
+              <Line x1={PAD_L} y1={stressSeries.hpa.avgY} x2={chartWidth - PAD_R} y2={stressSeries.hpa.avgY} stroke={C_STRESS_HRV} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
             )}
 
             {stressSeries.proxy.runningAvg.length > 1 && (
@@ -1408,8 +1408,8 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
             {stressSeries.hrvDelta.runningAvg.length > 1 && (
               <Path d={buildPath(stressSeries.hrvDelta.runningAvg)} stroke={C_STRESS_HRVD} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
             )}
-            {stressSeries.hrv.runningAvg.length > 1 && (
-              <Path d={buildPath(stressSeries.hrv.runningAvg)} stroke={C_STRESS_HRV} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            {stressSeries.hpa.runningAvg.length > 1 && (
+              <Path d={buildPath(stressSeries.hpa.runningAvg)} stroke={C_STRESS_HRV} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
             )}
 
             {crosshairX != null && (
@@ -1661,8 +1661,8 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_STRESS_HRV }} />
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HRV</Text>
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hrv != null ? Math.round(pt.hrv) : "--"}</Text>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HPA</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hpa != null ? pt.hpa : "--"}</Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_READINESS }} />
