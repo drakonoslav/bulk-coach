@@ -1462,11 +1462,27 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
           ]]}
         >
           <Svg width={chartWidth} height={OUTPUT_H}>
-            {outputSoilSeries.fillLayers.map((layer, li) => (
-              <React.Fragment key={`of-${li}`}>
-                <Path d={layer.d} fill={layer.color} opacity={layer.opacity * 0.35} />
-                <Path d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={layer.opacity * 0.6} />
-              </React.Fragment>
+            {outputSoilSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`out-base-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            {outputSoilSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`out-base-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+            ))}
+            {outputSoilSeries.fillLayers.filter(l => !l.isComposite).map((layer, li) => (
+              <Path key={`out-base-edge-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.82} strokeLinejoin="miter" strokeLinecap="round" />
+            ))}
+
+            {outputSoilSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`out-comp-glow-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.glowRadius} opacity={layer.glowOpacity} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            {outputSoilSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`out-comp-fill-${li}`} d={layer.d} fill={layer.color} stroke="none" opacity={layer.opacity} />
+            ))}
+            {outputSoilSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`out-comp-edge-${li}`} d={layer.d} fill="none" stroke={C_BLEND_WHITE} strokeWidth={0.9} opacity={0.30} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            {outputSoilSeries.fillLayers.filter(l => l.isComposite).map((layer, li) => (
+              <Path key={`out-comp-cap-${li}`} d={layer.d} fill="none" stroke={layer.strokeColor} strokeWidth={layer.strokeWidth} opacity={0.96} strokeLinejoin="round" strokeLinecap="round" />
             ))}
 
             {outputSoilSeries.dsf.raw.length > 1 && (
