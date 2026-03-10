@@ -42,6 +42,7 @@ interface SignalPoint {
   awakeInBedMin: number | null;
   deepSleepMin: number | null;
   ffmLb: number | null;
+  androgenProxy: number | null;
 }
 
 interface SignalChartsProps {
@@ -61,6 +62,9 @@ const PAD_B = 18;
 const C_HPA = "#D97706";
 const C_HPA_HIGH = "#DC2626";
 const C_HRV = "#FBBF24";
+const C_STRESS_PROXY = "#00ffff";
+const C_STRESS_HRVD = "#ff00ff";
+const C_STRESS_HRV = "#ffff00";
 const C_READINESS = "#5CF2FF";
 const C_SV = "#FF69B4";
 const C_RECOVERY = "#5CF2FF";
@@ -766,30 +770,74 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
   const OUTPUT_H = 110;
   const RECOVERY_H = 110;
 
-  const hpaData = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    points.forEach((p, i) => {
-      if (p.hpa != null) {
-        const y = PAD_T + ((100 - p.hpa) / 100) * (STRESS_H - PAD_T - PAD_B);
-        out.push({ x: xForIdx(i), y });
-      }
-    });
-    return out;
-  }, [points, xForIdx]);
+  const stressSeries = useMemo(() => {
+    const pctToY = (pct: number) => PAD_T + ((100 - pct) / 100) * (STRESS_H - PAD_T - PAD_B);
 
-  const hrvData = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    const vals = points.filter(p => p.hrvDeltaPct != null).map(p => p.hrvDeltaPct!);
-    const minV = vals.length > 0 ? Math.min(...vals, -15) : -15;
-    const maxV = vals.length > 0 ? Math.max(...vals, 15) : 15;
-    const range = maxV - minV || 1;
+    const proxyVals = points.map(p => p.androgenProxy).filter((v): v is number => v != null);
+    const proxyMax = proxyVals.length > 0 ? Math.max(...proxyVals) : 1;
+
+    const hrvdVals = points.map(p => p.hrvDeltaPct).filter((v): v is number => v != null);
+    const hrvdMax = hrvdVals.length > 0 ? Math.max(...hrvdVals.map(Math.abs)) : 1;
+
+    const hrvVals = points.map(p => p.hrv).filter((v): v is number => v != null);
+    const hrvMax = hrvVals.length > 0 ? Math.max(...hrvVals) : 1;
+
+    const buildSeries = (getter: (p: SignalPoint) => number | null, maxVal: number) => {
+      const raw: { x: number; y: number }[] = [];
+      const pctVals: number[] = [];
+      const runningAvg: { x: number; y: number }[] = [];
+      const runningPctByIdx: (number | null)[] = new Array(points.length).fill(null);
+      let cumSum = 0;
+      let cumCount = 0;
+      points.forEach((p, i) => {
+        const v = getter(p);
+        if (v != null && maxVal > 0) {
+          const pct = (v / maxVal) * 100;
+          raw.push({ x: xForIdx(i), y: pctToY(pct) });
+          pctVals.push(pct);
+          cumSum += pct;
+          cumCount++;
+        }
+        if (cumCount > 0) {
+          const avg = cumSum / cumCount;
+          runningAvg.push({ x: xForIdx(i), y: pctToY(avg) });
+          runningPctByIdx[i] = avg;
+        }
+      });
+      const avgPct = pctVals.length > 0 ? pctVals.reduce((s, n) => s + n, 0) / pctVals.length : null;
+      const avgY = avgPct != null ? pctToY(avgPct) : null;
+      return { raw, avgPct, avgY, runningAvg, runningPctByIdx };
+    };
+
+    const proxy = buildSeries(p => p.androgenProxy, proxyMax);
+
+    const hrvDeltaRaw: { x: number; y: number }[] = [];
+    const hrvDeltaPctVals: number[] = [];
+    const hrvDeltaRunning: { x: number; y: number }[] = [];
+    const hrvDeltaRunningPctByIdx: (number | null)[] = new Array(points.length).fill(null);
+    let hrvdCumSum = 0;
+    let hrvdCumCount = 0;
     points.forEach((p, i) => {
-      if (p.hrvDeltaPct != null) {
-        const y = PAD_T + ((maxV - p.hrvDeltaPct) / range) * (STRESS_H - PAD_T - PAD_B);
-        out.push({ x: xForIdx(i), y });
+      if (p.hrvDeltaPct != null && hrvdMax > 0) {
+        const pct = (p.hrvDeltaPct / hrvdMax) * 50 + 50;
+        hrvDeltaRaw.push({ x: xForIdx(i), y: pctToY(pct) });
+        hrvDeltaPctVals.push(pct);
+        hrvdCumSum += pct;
+        hrvdCumCount++;
+      }
+      if (hrvdCumCount > 0) {
+        const avg = hrvdCumSum / hrvdCumCount;
+        hrvDeltaRunning.push({ x: xForIdx(i), y: pctToY(avg) });
+        hrvDeltaRunningPctByIdx[i] = avg;
       }
     });
-    return out;
+    const hrvDeltaAvgPct = hrvDeltaPctVals.length > 0 ? hrvDeltaPctVals.reduce((s, n) => s + n, 0) / hrvDeltaPctVals.length : null;
+    const hrvDeltaAvgY = hrvDeltaAvgPct != null ? pctToY(hrvDeltaAvgPct) : null;
+    const hrvDelta = { raw: hrvDeltaRaw, avgPct: hrvDeltaAvgPct, avgY: hrvDeltaAvgY, runningAvg: hrvDeltaRunning, runningPctByIdx: hrvDeltaRunningPctByIdx };
+
+    const hrv = buildSeries(p => p.hrv, hrvMax);
+
+    return { proxy, hrvDelta, hrv };
   }, [points, xForIdx]);
 
   const readinessData = useMemo(() => {
@@ -1318,7 +1366,11 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
       </View>
 
       <View onLayout={onLayout} style={styles.chartArea} {...panResponder.panHandlers}>
-        <ChartPanel height={STRESS_H} label="STRESS" subtitle="HPA axis / autonomic load" chartWidth={chartWidth}>
+        <ChartPanel height={STRESS_H} label="STRESS" subtitle="androgen proxy / autonomic tone" chartWidth={chartWidth} legendRows={[[
+            { text: "PROXY", color: C_STRESS_PROXY },
+            { text: "HRV\u0394", color: C_STRESS_HRVD },
+            { text: "HRV", color: C_STRESS_HRV },
+          ]]}>
           <Svg width={chartWidth} height={STRESS_H}>
             {stressZoneBands.map((z, i) => (
               <Rect key={i} x={PAD_L} y={z.y} width={plotW} height={z.height} fill={z.fill} />
@@ -1329,15 +1381,51 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
                 <Line key={v} x1={PAD_L} y1={y} x2={chartWidth - PAD_R} y2={y} stroke={C_GRID} strokeWidth={0.5} />
               );
             })}
-            {hrvData.length > 1 && (
-              <Path d={buildPath(hrvData)} stroke={C_HRV} strokeWidth={1} fill="none" opacity={0.5} />
+
+            {stressSeries.proxy.raw.length > 1 && (
+              <Path d={buildPath(stressSeries.proxy.raw)} stroke={C_STRESS_PROXY} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
-            {hpaData.length > 1 && (
-              <Path d={buildPath(hpaData)} stroke={C_HPA} strokeWidth={2} fill="none" />
+            {stressSeries.hrvDelta.raw.length > 1 && (
+              <Path d={buildPath(stressSeries.hrvDelta.raw)} stroke={C_STRESS_HRVD} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
             )}
+            {stressSeries.hrv.raw.length > 1 && (
+              <Path d={buildPath(stressSeries.hrv.raw)} stroke={C_STRESS_HRV} strokeWidth={1.3} fill="none" opacity={0.92} strokeLinejoin="round" strokeLinecap="round" />
+            )}
+
+            {stressSeries.proxy.avgY != null && (
+              <Line x1={PAD_L} y1={stressSeries.proxy.avgY} x2={chartWidth - PAD_R} y2={stressSeries.proxy.avgY} stroke={C_STRESS_PROXY} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+            {stressSeries.hrvDelta.avgY != null && (
+              <Line x1={PAD_L} y1={stressSeries.hrvDelta.avgY} x2={chartWidth - PAD_R} y2={stressSeries.hrvDelta.avgY} stroke={C_STRESS_HRVD} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+            {stressSeries.hrv.avgY != null && (
+              <Line x1={PAD_L} y1={stressSeries.hrv.avgY} x2={chartWidth - PAD_R} y2={stressSeries.hrv.avgY} stroke={C_STRESS_HRV} strokeWidth={1.0} opacity={0.85} strokeDasharray="5,4" />
+            )}
+
+            {stressSeries.proxy.runningAvg.length > 1 && (
+              <Path d={buildPath(stressSeries.proxy.runningAvg)} stroke={C_STRESS_PROXY} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {stressSeries.hrvDelta.runningAvg.length > 1 && (
+              <Path d={buildPath(stressSeries.hrvDelta.runningAvg)} stroke={C_STRESS_HRVD} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {stressSeries.hrv.runningAvg.length > 1 && (
+              <Path d={buildPath(stressSeries.hrv.runningAvg)} stroke={C_STRESS_HRV} strokeWidth={1.0} fill="none" opacity={0.45} strokeDasharray="4,3" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+
             {crosshairX != null && (
               <Line x1={crosshairX} y1={0} x2={crosshairX} y2={STRESS_H} stroke={C_CROSSHAIR} strokeWidth={1} strokeDasharray="3,3" />
             )}
+            {dateLabels.map((lbl, i) => (
+              <SvgText
+                key={i}
+                x={lbl.x}
+                y={STRESS_H - 2}
+                fontSize={8}
+                fill="rgba(255,255,255,0.25)"
+                textAnchor="middle"
+                fontFamily="Rubik_400Regular"
+              >{lbl.text}</SvgText>
+            ))}
           </Svg>
         </ChartPanel>
 
@@ -1562,14 +1650,19 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
             <View style={{ backgroundColor: "rgba(10,10,18,0.92)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", borderRadius: 6, marginHorizontal: 8, marginTop: 4, marginBottom: 4, paddingVertical: 8, paddingHorizontal: 10 }}>
               <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>{pt.date}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_HPA }} />
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HPA</Text>
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hpa != null ? pt.hpa : "--"}</Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_STRESS_PROXY }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>Proxy</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.androgenProxy != null ? Math.round(pt.androgenProxy * 10) / 10 : "--"}</Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_HRV }} />
-                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HRV</Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_STRESS_HRVD }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>{`HRV\u0394`}</Text>
                 <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hrvDeltaPct != null ? fmtDelta(pt.hrvDeltaPct, 0, "%") : "--"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_STRESS_HRV }} />
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.45)", flex: 1 }}>HRV</Text>
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_500Medium", color: "rgba(255,255,255,0.8)" }}>{pt.hrv != null ? Math.round(pt.hrv) : "--"}</Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C_READINESS }} />

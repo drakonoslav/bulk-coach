@@ -2106,7 +2106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .catch(() => null)
         : Promise.resolve(null);
 
-      const [hpaRows, readinessRows, logRows, sbRes, intelTrendData, vitalsRows] = await Promise.all([
+      const [hpaRows, readinessRows, logRows, sbRes, intelTrendData, vitalsRows, androgenRows] = await Promise.all([
         getHpaRange(from, to, userId),
         getReadinessRange(from, to, userId),
         pool.query(
@@ -2126,6 +2126,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pool.query(
           `SELECT date::text AS day, hrv_rmssd_ms, resting_hr_bpm
            FROM vitals_daily WHERE user_id = $1 AND date >= $2 AND date <= $3
+           ORDER BY date ASC`,
+          [userId, from, to],
+        ).catch(() => ({ rows: [] })),
+        pool.query(
+          `SELECT date::text AS day, proxy_score
+           FROM androgen_proxy_daily WHERE user_id = $1 AND date >= $2::date AND date <= $3::date
            ORDER BY date ASC`,
           [userId, from, to],
         ).catch(() => ({ rows: [] })),
@@ -2162,6 +2168,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const svOverTime = strengthVelocityOverTime(entries, strengthBaselines);
 
       const hpaMap = new Map(hpaRows.map(h => [h.date, h.hpaScore]));
+      const androgenMap = new Map<string, number>();
+      for (const r of androgenRows.rows) {
+        if (r.proxy_score != null) androgenMap.set(r.day, Number(r.proxy_score));
+      }
       const readinessMap = new Map(readinessRows.map((r: any) => [r.date, {
         score: r.readinessScore,
         hrvDelta: r.hrvDelta,
@@ -2256,6 +2266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           awakeInBedMin: lg?.awakeInBedMin ?? null,
           deepSleepMin: lg?.deepSleepMin ?? null,
           ffmLb: lg?.ffmLb ?? null,
+          androgenProxy: androgenMap.get(date) ?? null,
         };
       });
 
