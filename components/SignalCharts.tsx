@@ -981,8 +981,20 @@ export default function SignalCharts({ points: allPoints, rangeDays, onRangeChan
     let ffmCumSum = 0;
     let ffmCumCount = 0;
     const ffmDailyDebug: { day: string; on: boolean; streak: number; baseline: number; canopy: number; score: number | null }[] = [];
+    const ffmFirstDeltaAll = (() => {
+      for (let k = 0; k < allN; k++) {
+        if (ffmDeltaAll[k] != null) return k;
+      }
+      return allN;
+    })();
+
     for (let i = 0; i < points.length; i++) {
       if (i < cutoff) {
+        ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], baseline: baselines[i], canopy: 0, score: null });
+        continue;
+      }
+      const allIdx = warmupOffset + i;
+      if (allIdx < ffmFirstDeltaAll) {
         ffmDailyDebug.push({ day: points[i].date, on: ffmOn[i], streak: streaks[i], baseline: baselines[i], canopy: 0, score: null });
         continue;
       }
