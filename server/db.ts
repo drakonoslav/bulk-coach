@@ -1225,6 +1225,110 @@ async function runMigrations(): Promise<void> {
     );
   `);
 
+  // 034: user_vitals_baseline, nutrition_day_target, cardio_session, lift_session
+  // user_vitals_baseline stores personal constants per user (hrv_year_avg, rhr_year_avg,
+  // weight/waist setpoints, protein/fat floors, default kcal). Pre-seeded for local_default.
+  // nutrition_day_target caches daily macro assignments with full meal-timing breakdown.
+  // cardio_session and lift_session provide session-level tracking for future routing.
+  await runMigration('034_vitals_v1_tables', `
+    CREATE TABLE IF NOT EXISTS user_vitals_baseline (
+      user_id                  VARCHAR NOT NULL PRIMARY KEY,
+      hrv_year_avg             REAL,
+      rhr_year_avg             REAL,
+      body_weight_setpoint_lb  REAL,
+      waist_setpoint_in        REAL,
+      protein_floor_g          REAL NOT NULL DEFAULT 170,
+      fat_floor_avg_g          REAL NOT NULL DEFAULT 55,
+      default_kcal             REAL NOT NULL DEFAULT 2695,
+      created_at               TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at               TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Pre-seed personal constants for local_default user
+    INSERT INTO user_vitals_baseline
+      (user_id, hrv_year_avg, rhr_year_avg, body_weight_setpoint_lb, waist_setpoint_in,
+       protein_floor_g, fat_floor_avg_g, default_kcal)
+    VALUES
+      ('local_default', 36, 60, 156, 31.5, 170, 55, 2695)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS nutrition_day_target (
+      id                  SERIAL PRIMARY KEY,
+      user_id             VARCHAR NOT NULL,
+      date                DATE NOT NULL,
+      macro_day_type      VARCHAR NOT NULL,
+      kcal_target         REAL NOT NULL,
+      protein_g_target    REAL NOT NULL,
+      carbs_g_target      REAL NOT NULL,
+      fat_g_target        REAL NOT NULL,
+      pre_cardio_carbs_g  REAL,
+      post_cardio_protein_g REAL,
+      post_cardio_carbs_g REAL,
+      post_cardio_fat_g   REAL,
+      meal2_protein_g     REAL,
+      meal2_carbs_g       REAL,
+      meal2_fat_g         REAL,
+      pre_lift_protein_g  REAL,
+      pre_lift_carbs_g    REAL,
+      pre_lift_fat_g      REAL,
+      post_lift_protein_g REAL,
+      post_lift_carbs_g   REAL,
+      post_lift_fat_g     REAL,
+      final_meal_protein_g REAL,
+      final_meal_carbs_g  REAL,
+      final_meal_fat_g    REAL,
+      created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE(user_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS cardio_session (
+      id              SERIAL PRIMARY KEY,
+      user_id         VARCHAR NOT NULL,
+      date            DATE NOT NULL,
+      start_time      TIMESTAMP WITH TIME ZONE,
+      end_time        TIMESTAMP WITH TIME ZONE,
+      duration_min    REAL,
+      avg_hr_bpm      REAL,
+      max_hr_bpm      REAL,
+      zone2_min       REAL,
+      zone3_min       REAL,
+      mode            VARCHAR NOT NULL,
+      strain_score    REAL,
+      source          VARCHAR NOT NULL DEFAULT 'manual',
+      notes           TEXT,
+      created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS lift_session (
+      id                          SERIAL PRIMARY KEY,
+      user_id                     VARCHAR NOT NULL,
+      date                        DATE NOT NULL,
+      start_time                  TIMESTAMP WITH TIME ZONE,
+      end_time                    TIMESTAMP WITH TIME ZONE,
+      duration_min                REAL,
+      planned_lift_mode           VARCHAR,
+      completed_lift_mode         VARCHAR,
+      lift_readiness_self_score   INTEGER,
+      top_set_load_index          REAL,
+      top_set_rpe                 REAL,
+      strength_output_index       REAL,
+      session_density_score       REAL,
+      pump_quality_score          INTEGER,
+      rep_speed_subjective_score  INTEGER,
+      lift_strain_score           REAL,
+      notes                       TEXT,
+      created_at                  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Add oscillator score cache columns to oscillator_state if missing
+    ALTER TABLE oscillator_state ADD COLUMN IF NOT EXISTS cycle_week_type VARCHAR;
+    ALTER TABLE oscillator_state ADD COLUMN IF NOT EXISTS reasoning       TEXT;
+    ALTER TABLE oscillator_state ADD COLUMN IF NOT EXISTS breakdown_acute  TEXT;
+    ALTER TABLE oscillator_state ADD COLUMN IF NOT EXISTS breakdown_resource TEXT;
+    ALTER TABLE oscillator_state ADD COLUMN IF NOT EXISTS breakdown_seasonal TEXT;
+  `);
+
   await runMigration('032_batch2_exercises', `
     INSERT INTO intel_exercise_mapping (intel_exercise_id, intel_exercise_name, local_exercise_id, mapped) VALUES
       -- Batch 2A: Dumbbell/Cable/Band isolation

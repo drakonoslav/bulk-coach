@@ -10,6 +10,7 @@ import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import { classifyDayRange } from "./day-classifier";
 import { computeOscillator } from "./oscillator-engine";
+import vitalsRouter from "./vitals/vitals.routes";
 import { computeScheduleStability } from "./schedule-stability";
 import {
   validateSleepSummaryInput,
@@ -2038,6 +2039,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // Vitals v1 API — dashboard, recommendation, baseline (spec section 14+15)
+  app.use("/api/vitals", vitalsRouter);
 
   app.get("/api/hpa", async (req: Request, res: Response) => {
     try {

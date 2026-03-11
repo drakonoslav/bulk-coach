@@ -61,6 +61,14 @@ const MEASURED_COLOR = "#34D399";
 const IMPUTED_COLOR = "#FBBF24";
 
 // ─── Androgen Oscillator types (v1 spec) ─────────────────────────────────────
+interface BreakdownItem {
+  key: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  note: string;
+}
+
 interface MealTiming {
   preCardioC: number;
   postCardioP: number; postCardioC: number; postCardioF: number;
@@ -132,6 +140,12 @@ interface OscillatorData {
   easyCount7d: number;
   explanationText: string;
   dataQuality: "full" | "partial" | "insufficient";
+  breakdowns?: {
+    acute: BreakdownItem[];
+    resource: BreakdownItem[];
+    seasonal: BreakdownItem[];
+  };
+  reasoning?: string[];
 }
 
 // ─── Tier config (v1 OCS bands: 85+/70–84/55–69/40–54/<40) ──────────────────
@@ -150,17 +164,20 @@ function layerColor(score: number | null): string {
   return "#F87171";
 }
 
-function ScoreBar({ pts, max, color, label }: { pts: number; max: number; color: string; label: string }) {
+function ScoreBar({ pts, max, color, label, note }: { pts: number; max: number; color: string; label: string; note?: string }) {
   const pct = Math.min(100, Math.round((pts / max) * 100));
   return (
-    <View style={{ marginBottom: 5 }}>
+    <View style={{ marginBottom: 6 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
-        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.5)", letterSpacing: 0.3 }}>{label}</Text>
+        <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.5)", letterSpacing: 0.3, flex: 1, marginRight: 8 }}>{label}</Text>
         <Text style={{ fontSize: 10, fontFamily: "Rubik_500Medium", color }}>{pts}/{max}</Text>
       </View>
       <View style={{ height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.08)" }}>
         <View style={{ height: 4, borderRadius: 2, width: `${pct}%` as any, backgroundColor: color, opacity: 0.85 }} />
       </View>
+      {!!note && (
+        <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.28)", marginTop: 2, lineHeight: 13 }}>{note}</Text>
+      )}
     </View>
   );
 }
@@ -189,6 +206,9 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
   const rc = data.resourceComponents;
   const sc = data.seasonalComponents;
   const mt = rx.mealTiming;
+  const abd = data.breakdowns?.acute ?? [];
+  const rbd = data.breakdowns?.resource ?? [];
+  const sbd = data.breakdowns?.seasonal ?? [];
 
   const acuteColor = layerColor(data.acute);
   const resourceColor = layerColor(data.resource);
@@ -274,12 +294,23 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
 
       {/* Explanation text */}
       {data.explanationText ? (
-        <View style={{ marginBottom: 12, paddingHorizontal: 4 }}>
+        <View style={{ marginBottom: 8, paddingHorizontal: 4 }}>
           <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.38)", lineHeight: 15, fontStyle: "italic" }}>
             {data.explanationText}
           </Text>
         </View>
       ) : null}
+
+      {/* Reasoning bullets from oscillator engine */}
+      {data.reasoning && data.reasoning.length > 0 && (
+        <View style={{ marginBottom: 12, paddingHorizontal: 4, gap: 2 }}>
+          {data.reasoning.map((line, i) => (
+            <Text key={i} style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.28)", lineHeight: 14 }}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      )}
 
       {/* 3-layer cells */}
       <View style={oscStyles.layerRow}>
@@ -318,23 +349,32 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
         <View style={oscStyles.expandedPanel}>
           <Text style={oscStyles.expandedTitle}>ACUTE READINESS — v1 SPEC (100 pts total)</Text>
           <ScoreBar pts={ac.hrvPts} max={22} color={acuteColor}
-            label={`HRV ratio${ac.hrvRatio != null ? " (" + ac.hrvRatio.toFixed(2) + "× 7d" + (ac.hrvYearRatio != null ? ", " + ac.hrvYearRatio.toFixed(2) + "× yr" : "") + ")" : " — no data"}`} />
+            label={`HRV ratio${ac.hrvRatio != null ? " (" + ac.hrvRatio.toFixed(2) + "× 7d" + (ac.hrvYearRatio != null ? ", " + ac.hrvYearRatio.toFixed(2) + "× yr" : "") + ")" : " — no data"}`}
+            note={abd[0]?.note} />
           <ScoreBar pts={ac.rhrPts} max={18} color={acuteColor}
-            label={`RHR delta${ac.rhrDelta != null ? " (" + (ac.rhrDelta >= 0 ? "+" : "") + ac.rhrDelta.toFixed(1) + " bpm vs 7d)" : " — no data"}`} />
+            label={`RHR delta${ac.rhrDelta != null ? " (" + (ac.rhrDelta >= 0 ? "+" : "") + ac.rhrDelta.toFixed(1) + " bpm vs 7d)" : " — no data"}`}
+            note={abd[1]?.note} />
           <ScoreBar pts={ac.sleepPts} max={15} color={acuteColor}
-            label={`Sleep quantity${ac.sleepMin != null ? " (" + Math.floor(ac.sleepMin / 60) + "h " + Math.round(ac.sleepMin % 60) + "m)" : " — no data"}`} />
+            label={`Sleep quantity${ac.sleepMin != null ? " (" + Math.floor(ac.sleepMin / 60) + "h " + Math.round(ac.sleepMin % 60) + "m)" : " — no data"}`}
+            note={abd[2]?.note} />
           <ScoreBar pts={ac.regularityPts} max={8} color={acuteColor}
-            label={`Sleep regularity${ac.sleepMidpointShiftMin != null ? " (midpoint ±" + Math.round(ac.sleepMidpointShiftMin) + "min)" : " — no midpoint"}`} />
+            label={`Sleep regularity${ac.sleepMidpointShiftMin != null ? " (midpoint ±" + Math.round(ac.sleepMidpointShiftMin) + "min)" : " — no midpoint"}`}
+            note={abd[3]?.note} />
           <ScoreBar pts={ac.bwStabilityPts} max={5} color={acuteColor}
-            label={`BW stability${ac.bwDeltaPct != null ? " (±" + ac.bwDeltaPct.toFixed(1) + "% vs 7d)" : " — no data"}`} />
+            label={`BW stability${ac.bwDeltaPct != null ? " (±" + ac.bwDeltaPct.toFixed(1) + "% vs 7d)" : " — no data"}`}
+            note={abd[4]?.note} />
           <ScoreBar pts={ac.subjectiveDrivePts} max={10} color={acuteColor}
-            label={`Drive / Libido${ac.hasSubjective ? "" : " (default neutral — add libido/motivation to log)"}`} />
+            label={`Drive / Libido${ac.hasSubjective ? "" : " (default neutral — add libido/motivation to log)"}`}
+            note={abd[5]?.note} />
           <ScoreBar pts={ac.jointSorenessPts} max={10} color={acuteColor}
-            label="Joint / Soreness (pain_0_10 proxy until soreness_score field added)" />
+            label="Joint / Soreness (pain_0_10 proxy until soreness_score field added)"
+            note={abd[6]?.note} />
           <ScoreBar pts={ac.yesterdayLiftPts} max={7} color={acuteColor}
-            label="Yesterday lift strain (training_load proxy)" />
+            label="Yesterday lift strain (training_load proxy)"
+            note={abd[7]?.note} />
           <ScoreBar pts={ac.yesterdayCardioPts} max={5} color={acuteColor}
-            label="Yesterday cardio strain (zone3_min proxy)" />
+            label="Yesterday cardio strain (zone3_min proxy)"
+            note={abd[8]?.note} />
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.25)", marginTop: 8, lineHeight: 14 }}>
             {"Future inputs (schema ready, not in log form yet):\n• libido_score · morning_erection_score · motivation_score\n• mental_drive_score · joint_friction_score · soreness_score · stress_load_score"}
           </Text>
@@ -346,23 +386,32 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
         <View style={oscStyles.expandedPanel}>
           <Text style={oscStyles.expandedTitle}>TISSUE-RESOURCE — v1 SPEC (100 pts total)</Text>
           <ScoreBar pts={rc.caloriePts} max={10} color={resourceColor}
-            label={`Calorie adherence 7d${rc.avgCalories7d != null ? " (" + Math.round(rc.avgCalories7d) + " kcal avg)" : " — no data"}`} />
+            label={`Calorie adherence 7d${rc.avgCalories7d != null ? " (" + Math.round(rc.avgCalories7d) + " kcal avg)" : " — no data"}`}
+            note={rbd[0]?.note} />
           <ScoreBar pts={rc.proteinPts} max={12} color={resourceColor}
-            label={`Protein adequacy 7d${rc.avgProtein7d != null ? " (" + Math.round(rc.avgProtein7d) + "g avg)" : " — log protein_g_actual to unlock"}`} />
+            label={`Protein adequacy 7d${rc.avgProtein7d != null ? " (" + Math.round(rc.avgProtein7d) + "g avg)" : " — log protein_g_actual to unlock"}`}
+            note={rbd[1]?.note} />
           <ScoreBar pts={rc.fatFloorPts} max={12} color={resourceColor}
-            label={`Fat floor + oscillation${rc.avgFat7d != null ? " (" + Math.round(rc.avgFat7d) + "g avg)" : " — log fat_g_actual to unlock"}`} />
+            label={`Fat floor + oscillation${rc.avgFat7d != null ? " (" + Math.round(rc.avgFat7d) + "g avg)" : " — log fat_g_actual to unlock"}`}
+            note={rbd[2]?.note} />
           <ScoreBar pts={rc.carbTimingPts} max={10} color={resourceColor}
-            label="Carb timing (proxied from dietary adherence until per-meal logging)" />
+            label="Carb timing (proxied from dietary adherence until per-meal logging)"
+            note={rbd[3]?.note} />
           <ScoreBar pts={rc.weightTrendPts} max={10} color={resourceColor}
-            label={`14d BW trend${rc.bwTrend14dLbPerWk != null ? " (" + (rc.bwTrend14dLbPerWk >= 0 ? "+" : "") + rc.bwTrend14dLbPerWk.toFixed(2) + " lb/wk)" : " — insufficient BW data"}`} />
+            label={`14d BW trend${rc.bwTrend14dLbPerWk != null ? " (" + (rc.bwTrend14dLbPerWk >= 0 ? "+" : "") + rc.bwTrend14dLbPerWk.toFixed(2) + " lb/wk)" : " — insufficient BW data"}`}
+            note={rbd[4]?.note} />
           <ScoreBar pts={rc.waistTrendPts} max={12} color={resourceColor}
-            label={`14d Waist trend${rc.waistTrend14dInOver14d != null ? " (" + (rc.waistTrend14dInOver14d >= 0 ? "+" : "") + rc.waistTrend14dInOver14d.toFixed(3) + " in/14d)" : " — no waist data"}`} />
+            label={`14d Waist trend${rc.waistTrend14dInOver14d != null ? " (" + (rc.waistTrend14dInOver14d >= 0 ? "+" : "") + rc.waistTrend14dInOver14d.toFixed(3) + " in/14d)" : " — no waist data"}`}
+            note={rbd[5]?.note} />
           <ScoreBar pts={rc.ffmTrendPts} max={12} color={resourceColor}
-            label={`14d FFM trend${rc.ffmTrend14dLbPerWk != null ? " (" + (rc.ffmTrend14dLbPerWk >= 0 ? "+" : "") + rc.ffmTrend14dLbPerWk.toFixed(2) + " lb/wk)" : " — no FFM data"}`} />
+            label={`14d FFM trend${rc.ffmTrend14dLbPerWk != null ? " (" + (rc.ffmTrend14dLbPerWk >= 0 ? "+" : "") + rc.ffmTrend14dLbPerWk.toFixed(2) + " lb/wk)" : " — no FFM data"}`}
+            note={rbd[6]?.note} />
           <ScoreBar pts={rc.strengthTrendPts} max={12} color={resourceColor}
-            label={`Strength trend (bench+OHP)${rc.strengthTrendPct != null ? " (" + (rc.strengthTrendPct >= 0 ? "+" : "") + (rc.strengthTrendPct * 100).toFixed(1) + "%)" : " — no lift data"}`} />
+            label={`Strength trend (bench+OHP)${rc.strengthTrendPct != null ? " (" + (rc.strengthTrendPct >= 0 ? "+" : "") + (rc.strengthTrendPct * 100).toFixed(1) + "%)" : " — no lift data"}`}
+            note={rbd[7]?.note} />
           <ScoreBar pts={rc.cardioMonotonyPts} max={10} color={resourceColor}
-            label={`Cardio variety 7d (Z2 ${rc.zone2Days7d} / Z3 ${rc.zone3Days7d} / easy ${rc.easyDays7d})`} />
+            label={`Cardio variety 7d (Z2 ${rc.zone2Days7d} / Z3 ${rc.zone3Days7d} / easy ${rc.easyDays7d})`}
+            note={rbd[8]?.note} />
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.25)", marginTop: 8, lineHeight: 14 }}>
             {"Future inputs (schema ready, not in log form yet):\n• protein_g_actual · carbs_g_actual · fat_g_actual · kcal_target\n• Per-meal carb timing · pump_quality_score"}
           </Text>
@@ -374,23 +423,32 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
         <View style={oscStyles.expandedPanel}>
           <Text style={oscStyles.expandedTitle}>ENDOCRINE-SEASONAL — v1 SPEC (100 pts total)</Text>
           <ScoreBar pts={sc.hrv28Pts} max={18} color={seasonalColor}
-            label={`28d HRV trend${sc.hrv28PctChange != null ? " (" + (sc.hrv28PctChange >= 0 ? "+" : "") + (sc.hrv28PctChange * 100).toFixed(1) + "% vs prior 28d)" : " — insufficient history"}`} />
+            label={`28d HRV trend${sc.hrv28PctChange != null ? " (" + (sc.hrv28PctChange >= 0 ? "+" : "") + (sc.hrv28PctChange * 100).toFixed(1) + "% vs prior 28d)" : " — insufficient history"}`}
+            note={sbd[0]?.note} />
           <ScoreBar pts={sc.rhr28Pts} max={14} color={seasonalColor}
-            label={`28d RHR trend${sc.rhr28DeltaBpm != null ? " (" + (sc.rhr28DeltaBpm >= 0 ? "+" : "") + sc.rhr28DeltaBpm.toFixed(1) + " bpm vs prior 28d)" : " — insufficient history"}`} />
+            label={`28d RHR trend${sc.rhr28DeltaBpm != null ? " (" + (sc.rhr28DeltaBpm >= 0 ? "+" : "") + sc.rhr28DeltaBpm.toFixed(1) + " bpm vs prior 28d)" : " — insufficient history"}`}
+            note={sbd[1]?.note} />
           <ScoreBar pts={sc.sleepReg28Pts} max={10} color={seasonalColor}
-            label="28d Sleep regularity trend (default neutral — needs 56d history)" />
+            label="28d Sleep regularity trend (default neutral — needs 56d history)"
+            note={sbd[2]?.note} />
           <ScoreBar pts={sc.waistWeightRelPts} max={12} color={seasonalColor}
-            label={`Waist:weight relationship${sc.waistChange28d != null ? " (waist " + (sc.waistChange28d >= 0 ? "+" : "") + sc.waistChange28d.toFixed(2) + "in / BW " + (sc.weightChange28d != null && sc.weightChange28d >= 0 ? "+" : "") + (sc.weightChange28d ?? 0).toFixed(1) + "lb)" : " — no data"}`} />
+            label={`Waist:weight relationship${sc.waistChange28d != null ? " (waist " + (sc.waistChange28d >= 0 ? "+" : "") + sc.waistChange28d.toFixed(2) + "in / BW " + (sc.weightChange28d != null && sc.weightChange28d >= 0 ? "+" : "") + (sc.weightChange28d ?? 0).toFixed(1) + "lb)" : " — no data"}`}
+            note={sbd[3]?.note} />
           <ScoreBar pts={sc.ffm28Pts} max={14} color={seasonalColor}
-            label={`28d FFM trend${sc.ffm28dChange != null ? " (" + (sc.ffm28dChange >= 0 ? "+" : "") + sc.ffm28dChange.toFixed(1) + " lb vs prior 28d)" : " — insufficient FFM history"}`} />
+            label={`28d FFM trend${sc.ffm28dChange != null ? " (" + (sc.ffm28dChange >= 0 ? "+" : "") + sc.ffm28dChange.toFixed(1) + " lb vs prior 28d)" : " — insufficient FFM history"}`}
+            note={sbd[4]?.note} />
           <ScoreBar pts={sc.deloadPts} max={10} color={seasonalColor}
-            label="Deload compliance (detects lift-skipped windows in last 28d)" />
+            label="Deload compliance (detects lift-skipped windows in last 28d)"
+            note={sbd[5]?.note} />
           <ScoreBar pts={sc.monotonyPts} max={8} color={seasonalColor}
-            label="Training monotony index (28d Z2/Z3 variety)" />
+            label="Training monotony index (28d Z2/Z3 variety)"
+            note={sbd[6]?.note} />
           <ScoreBar pts={sc.lightPts} max={6} color={seasonalColor}
-            label="Light / outdoor (default 3/6 — sunlight_min field not yet tracked)" />
+            label="Light / outdoor (default 3/6 — sunlight_min field not yet tracked)"
+            note={sbd[7]?.note} />
           <ScoreBar pts={sc.motivationPts} max={8} color={seasonalColor}
-            label="Motivation / virility trend (default 4/8 — subjective fields not yet in log)" />
+            label="Motivation / virility trend (default 4/8 — subjective fields not yet in log)"
+            note={sbd[8]?.note} />
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.25)", marginTop: 8, lineHeight: 14 }}>
             {"Future inputs (schema ready, not in log form yet):\n• libido/motivation 28d trends · sunlight_min (outdoor exposure)\n• deload week detection improves as history grows"}
           </Text>

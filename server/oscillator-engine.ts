@@ -1,4 +1,7 @@
-import pool from "./db.js";
+import { pool } from "./db.js";
+import type { ScoreBreakdownItem } from "./vitals/interfaces.js";
+import { MEAL_TIMING_TEMPLATES, MACRO_TEMPLATES } from "./vitals/macro-templates.js";
+import { MacroDayType, CardioMode, LiftMode } from "./vitals/enums.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BulkCoach Androgen Oscillator — v1 System Spec Implementation
@@ -105,18 +108,21 @@ export interface SeasonalComponents {
 export interface DayPrescription {
   dayType: "SURGE" | "BUILD" | "RESET" | "RESENSITIZE";
   cardioMode: "Zone 3" | "Zone 2" | "Walk / Easy";
+  cardioModeEnum: string;
   liftExpression: "Neural / Tension" | "Hypertrophy / Build" | "Pump / Moderate" | "Recovery / Mobility" | "Off";
+  liftModeEnum: string;
+  macroDayTypeEnum: string;
   macroProteinG: number;
-  macroCarbG: [number, number];
-  macroFatG: [number, number];
+  macroCarbG: number;
+  macroFatG: number;
   macroKcalApprox: number;
   mealTiming: {
     preCardioC: number;
     postCardioP: number; postCardioC: number; postCardioF: number;
     meal2P: number; meal2C: number; meal2F: number;
-    preLiftP: number; preLiftC: number;
-    postLiftP: number; postLiftC: number;
-    finalP: number; finalC: string; finalF: string;
+    preLiftP: number; preLiftC: number; preLiftF: number;
+    postLiftP: number; postLiftC: number; postLiftF: number;
+    finalP: number; finalC: number; finalF: number;
   };
 }
 
@@ -140,7 +146,13 @@ export interface OscillatorResult {
   zone3Count7d: number;
   easyCount7d: number;
   explanationText: string;
+  reasoning: string[];
   dataQuality: "full" | "partial" | "insufficient";
+  breakdowns: {
+    acute: ScoreBreakdownItem[];
+    resource: ScoreBreakdownItem[];
+    seasonal: ScoreBreakdownItem[];
+  };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -208,11 +220,27 @@ async function computeAcute(date: string, userId: string): Promise<{ score: numb
        WHERE user_id=$1 AND date BETWEEN ($2::date-interval '7 days') AND ($2::date-interval '1 day')`,
       [userId, date]),
     pool.query(
-      `SELECT total_sleep_minutes, sleep_midpoint_minutes FROM sleep_summary_daily
+      `SELECT total_sleep_minutes,
+              CASE WHEN sleep_start IS NOT NULL AND sleep_end IS NOT NULL THEN
+                (EXTRACT(HOUR FROM sleep_start::time)::int * 60 + EXTRACT(MINUTE FROM sleep_start::time)::int
+                + CASE WHEN (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int)
+                            < (EXTRACT(HOUR FROM sleep_start::time)::int * 60 + EXTRACT(MINUTE FROM sleep_start::time)::int)
+                       THEN (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int) + 1440
+                       ELSE (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int)
+                  END) / 2
+              END AS sleep_midpoint_minutes
+       FROM sleep_summary_daily
        WHERE user_id=$1 AND date=$2::date LIMIT 1`, [userId, date]),
     pool.query(
       `SELECT AVG(total_sleep_minutes)::numeric as sleep7,
-              AVG(sleep_midpoint_minutes)::numeric as mid7
+              AVG(CASE WHEN sleep_start IS NOT NULL AND sleep_end IS NOT NULL THEN
+                (EXTRACT(HOUR FROM sleep_start::time)::int * 60 + EXTRACT(MINUTE FROM sleep_start::time)::int
+                + CASE WHEN (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int)
+                            < (EXTRACT(HOUR FROM sleep_start::time)::int * 60 + EXTRACT(MINUTE FROM sleep_start::time)::int)
+                       THEN (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int) + 1440
+                       ELSE (EXTRACT(HOUR FROM sleep_end::time)::int * 60 + EXTRACT(MINUTE FROM sleep_end::time)::int)
+                  END) / 2
+              END)::numeric as mid7
        FROM sleep_summary_daily
        WHERE user_id=$1 AND date BETWEEN ($2::date-interval '7 days') AND ($2::date-interval '1 day')`,
       [userId, date]),
@@ -220,14 +248,14 @@ async function computeAcute(date: string, userId: string): Promise<{ score: numb
       `SELECT morning_weight_lb, actual_bed_time, pain_0_10,
               libido_score, motivation_score, mood_stability_score,
               mental_drive_score, joint_friction_score, soreness_score
-       FROM daily_log WHERE user_id=$1 AND day=$2::date LIMIT 1`, [userId, date]),
+       FROM daily_log WHERE user_id=$1 AND day::date=$2::date LIMIT 1`, [userId, date]),
     pool.query(
       `SELECT morning_weight_lb FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '7 days') AND ($2::date-interval '1 day')
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '7 days') AND ($2::date-interval '1 day')
          AND morning_weight_lb IS NOT NULL`, [userId, date]),
     pool.query(
       `SELECT training_load, zone2_min, zone3_min, lift_skipped, cardio_skipped
-       FROM daily_log WHERE user_id=$1 AND day=$2::date LIMIT 1`, [userId, yesterday]),
+       FROM daily_log WHERE user_id=$1 AND day::date=$2::date LIMIT 1`, [userId, yesterday]),
   ]);
 
   const hrv = vitalsToday.rows[0]?.hrv_rmssd_ms != null ? Number(vitalsToday.rows[0].hrv_rmssd_ms) : null;
@@ -428,28 +456,28 @@ async function computeResource(date: string, userId: string): Promise<{ score: n
       `SELECT calories_in, adherence, protein_g_actual, carbs_g_actual, fat_g_actual,
               protein_g_target, carbs_g_target, fat_g_target, kcal_target
        FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '6 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '6 days') AND $2::date
        ORDER BY day`, [userId, date]),
     pool.query(
       `SELECT morning_weight_lb FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '13 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '13 days') AND $2::date
          AND morning_weight_lb IS NOT NULL ORDER BY day`, [userId, date]),
     pool.query(
       `SELECT waist_in FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '13 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '13 days') AND $2::date
          AND waist_in IS NOT NULL ORDER BY day`, [userId, date]),
     pool.query(
       `SELECT fat_free_mass_lb FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '13 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '13 days') AND $2::date
          AND fat_free_mass_lb IS NOT NULL ORDER BY day`, [userId, date]),
     pool.query(
       `SELECT bench_weight_lb, ohp_weight_lb, day::text FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '27 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '27 days') AND $2::date
          AND (bench_weight_lb IS NOT NULL OR ohp_weight_lb IS NOT NULL)
        ORDER BY day`, [userId, date]),
     pool.query(
       `SELECT zone2_min, zone3_min, cardio_skipped FROM daily_log
-       WHERE user_id=$1 AND day BETWEEN ($2::date-interval '6 days') AND $2::date
+       WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '6 days') AND $2::date
        ORDER BY day`, [userId, date]),
   ]);
 
@@ -620,20 +648,20 @@ async function computeSeasonal(date: string, userId: string): Promise<{ score: n
       [userId, date]),
     pool.query(`SELECT AVG(morning_weight_lb)::numeric as bw, AVG(waist_in)::numeric as waist
                 FROM daily_log WHERE user_id=$1
-                  AND day BETWEEN ($2::date-interval '28 days') AND $2::date`, [userId, date]),
+                  AND day::date BETWEEN ($2::date-interval '28 days') AND $2::date`, [userId, date]),
     pool.query(`SELECT AVG(morning_weight_lb)::numeric as bw, AVG(waist_in)::numeric as waist
                 FROM daily_log WHERE user_id=$1
-                  AND day BETWEEN ($2::date-interval '56 days') AND ($2::date-interval '29 days')`, [userId, date]),
+                  AND day::date BETWEEN ($2::date-interval '56 days') AND ($2::date-interval '29 days')`, [userId, date]),
     pool.query(`SELECT fat_free_mass_lb FROM daily_log
-                WHERE user_id=$1 AND day BETWEEN ($2::date-interval '28 days') AND $2::date
+                WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '28 days') AND $2::date
                   AND fat_free_mass_lb IS NOT NULL ORDER BY day`, [userId, date]),
     pool.query(`SELECT fat_free_mass_lb FROM daily_log
-                WHERE user_id=$1 AND day BETWEEN ($2::date-interval '56 days') AND ($2::date-interval '29 days')
+                WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '56 days') AND ($2::date-interval '29 days')
                   AND fat_free_mass_lb IS NOT NULL ORDER BY day`, [userId, date]),
     pool.query(`SELECT lift_skipped, zone3_min, zone2_min FROM daily_log
-                WHERE user_id=$1 AND day BETWEEN ($2::date-interval '27 days') AND $2::date`, [userId, date]),
+                WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '27 days') AND $2::date`, [userId, date]),
     pool.query(`SELECT zone2_min, zone3_min FROM daily_log
-                WHERE user_id=$1 AND day BETWEEN ($2::date-interval '27 days') AND $2::date
+                WHERE user_id=$1 AND day::date BETWEEN ($2::date-interval '27 days') AND $2::date
                   AND (zone2_min > 0 OR zone3_min > 0)`, [userId, date]),
   ]);
 
@@ -822,42 +850,33 @@ function selectCardioMode(
   return "Walk / Easy";
 }
 
-// ─── Prescription mapping ─────────────────────────────────────────────────────
+// ─── Prescription mapping (meal timing per spec v1) ─────────────────────────
 
-const MEAL_TEMPLATES: Record<string, DayPrescription["mealTiming"]> = {
-  SURGE: {
-    preCardioC: 30,
-    postCardioP: 40, postCardioC: 90,  postCardioF: 10,
-    meal2P: 30,      meal2C: 60,        meal2F: 10,
-    preLiftP: 25,    preLiftC: 80,
-    postLiftP: 45,   postLiftC: 110,
-    finalP: 35,      finalC: "20",      finalF: "10",
-  },
-  BUILD: {
-    preCardioC: 30,
-    postCardioP: 40, postCardioC: 75,  postCardioF: 10,
-    meal2P: 30,      meal2C: 55,        meal2F: 10,
-    preLiftP: 25,    preLiftC: 65,
-    postLiftP: 45,   postLiftC: 85,
-    finalP: 35,      finalC: "rem",     finalF: "rem",
-  },
-  RESET: {
-    preCardioC: 22,
-    postCardioP: 40, postCardioC: 60,  postCardioF: 15,
-    meal2P: 30,      meal2C: 45,        meal2F: 15,
-    preLiftP: 25,    preLiftC: 45,
-    postLiftP: 45,   postLiftC: 55,
-    finalP: 35,      finalC: "30–40",  finalF: "30+",
-  },
-  RESENSITIZE: {
-    preCardioC: 0,
-    postCardioP: 40, postCardioC: 45,  postCardioF: 15,
-    meal2P: 30,      meal2C: 35,        meal2F: 20,
-    preLiftP: 20,    preLiftC: 30,
-    postLiftP: 40,   postLiftC: 40,
-    finalP: 45,      finalC: "20–25",  finalF: "40+",
-  },
-};
+function mealTimingFromSpec(dayType: "SURGE" | "BUILD" | "RESET" | "RESENSITIZE"): DayPrescription["mealTiming"] {
+  const t = MEAL_TIMING_TEMPLATES[dayType.toLowerCase() as MacroDayType];
+  return {
+    preCardioC:   t.preCardioCarbsG,
+    postCardioP:  t.postCardioProteinG,
+    postCardioC:  t.postCardioCarbsG,
+    postCardioF:  t.postCardioFatG,
+    meal2P:       t.meal2ProteinG,
+    meal2C:       t.meal2CarbsG,
+    meal2F:       t.meal2FatG,
+    preLiftP:     t.preLiftProteinG,
+    preLiftC:     t.preLiftCarbsG,
+    preLiftF:     t.preLiftFatG,
+    postLiftP:    t.postLiftProteinG,
+    postLiftC:    t.postLiftCarbsG,
+    postLiftF:    t.postLiftFatG,
+    finalP:       t.finalMealProteinG,
+    finalC:       t.finalMealCarbsG,
+    finalF:       t.finalMealFatG,
+  };
+}
+
+function cardioModeToEnum(cm: "Zone 3" | "Zone 2" | "Walk / Easy"): string {
+  return cm === "Zone 3" ? "zone_3" : cm === "Zone 2" ? "zone_2" : "recovery_walk";
+}
 
 function buildPrescription(
   composite: number,
@@ -868,37 +887,45 @@ function buildPrescription(
 ): DayPrescription {
   let dayType: DayPrescription["dayType"];
   let liftExpression: DayPrescription["liftExpression"];
+  let liftModeEnum: string;
 
   if (hardStop || composite < 40) {
     dayType = "RESENSITIZE";
     liftExpression = "Off";
+    liftModeEnum = "off";
   } else if (composite < 55) {
     dayType = "RESET";
     liftExpression = "Recovery / Mobility";
+    liftModeEnum = "recovery_patterning";
   } else if (composite < 70) {
     dayType = acuteRhr > 2 || acuteSoreness <= 3 ? "RESET" : "BUILD";
     liftExpression = "Pump / Moderate";
+    liftModeEnum = "pump";
   } else if (composite < 85) {
     dayType = "BUILD";
     liftExpression = "Hypertrophy / Build";
+    liftModeEnum = "hypertrophy_build";
   } else {
     dayType = "SURGE";
     liftExpression = "Neural / Tension";
+    liftModeEnum = "neural_tension";
   }
 
-  const templates: Record<DayPrescription["dayType"], Omit<DayPrescription, "dayType" | "cardioMode" | "liftExpression" | "mealTiming">> = {
-    SURGE:        { macroProteinG: 175, macroCarbG: [385, 395], macroFatG: [38, 42], macroKcalApprox: 2700 },
-    BUILD:        { macroProteinG: 175, macroCarbG: [340, 355], macroFatG: [53, 57], macroKcalApprox: 2640 },
-    RESET:        { macroProteinG: 175, macroCarbG: [285, 295], macroFatG: [78, 82], macroKcalApprox: 2640 },
-    RESENSITIZE:  { macroProteinG: 175, macroCarbG: [245, 255], macroFatG: [88, 92], macroKcalApprox: 2580 },
-  };
+  const macroKey = dayType.toLowerCase() as MacroDayType;
+  const macroT = MACRO_TEMPLATES[macroKey];
 
   return {
     dayType,
     cardioMode,
+    cardioModeEnum: cardioModeToEnum(cardioMode),
     liftExpression,
-    ...templates[dayType],
-    mealTiming: MEAL_TEMPLATES[dayType],
+    liftModeEnum,
+    macroDayTypeEnum: macroKey,
+    macroProteinG: macroT.proteinG,
+    macroCarbG: macroT.carbsG,
+    macroFatG: macroT.fatG,
+    macroKcalApprox: macroT.kcal,
+    mealTiming: mealTimingFromSpec(dayType),
   };
 }
 
@@ -950,6 +977,208 @@ function ocsClass(composite: number): "Peak" | "Strong Build" | "Controlled Buil
   if (composite >= 55) return "Controlled Build";
   if (composite >= 40) return "Reset";
   return "Resensitize";
+}
+
+// ─── Score Breakdown Builders ─────────────────────────────────────────────────
+// Convert already-computed component values to ScoreBreakdownItem[] per spec
+
+function buildAcuteBreakdowns(c: AcuteComponents): ScoreBreakdownItem[] {
+  const r = (v: number | null, d = 2) => v != null ? Math.round(v * Math.pow(10, d)) / Math.pow(10, d) : null;
+  return [
+    {
+      key: "hrv_state", label: "HRV State", score: c.hrvPts, maxScore: 22,
+      note: c.hrvRatio != null
+        ? `HRV ratio vs 7d avg: ${r(c.hrvRatio)}`
+        : "Missing HRV data",
+    },
+    {
+      key: "rhr_state", label: "RHR State", score: c.rhrPts, maxScore: 18,
+      note: c.rhrDelta != null
+        ? `RHR delta vs 7d avg: ${r(c.rhrDelta, 1)} bpm`
+        : "Missing RHR data",
+    },
+    {
+      key: "sleep_quantity", label: "Sleep Quantity", score: c.sleepPts, maxScore: 15,
+      note: c.sleepMin != null
+        ? `${c.sleepMin} min (${r(c.sleepMin / 60, 1)}h)`
+        : "Missing sleep data",
+    },
+    {
+      key: "sleep_regularity", label: "Sleep Regularity", score: c.regularityPts, maxScore: 8,
+      note: c.sleepMidpointShiftMin != null
+        ? `Midpoint shift: ${r(c.sleepMidpointShiftMin, 0)} min`
+        : "Missing midpoint data",
+    },
+    {
+      key: "bodyweight_stability", label: "Bodyweight Stability", score: c.bwStabilityPts, maxScore: 5,
+      note: c.bwDeltaPct != null
+        ? `BW delta vs 7d avg: ${r(c.bwDeltaPct, 2)}%`
+        : "Missing weight data",
+    },
+    {
+      key: "subjective_drive", label: "Subjective Drive", score: c.subjectiveDrivePts, maxScore: 10,
+      note: c.hasSubjective
+        ? `Drive/libido avg: ${c.subjectiveDrivePts}/10`
+        : "Defaults neutral — log libido/motivation/drive to activate",
+    },
+    {
+      key: "joint_soreness", label: "Joint / Soreness State", score: c.jointSorenessPts, maxScore: 10,
+      note: c.jointSorenessPts === 5
+        ? "Defaults neutral — log soreness & joint_friction to activate"
+        : `Recovery comfort: ${c.jointSorenessPts}/10`,
+    },
+    {
+      key: "yesterday_lift_strain", label: "Yesterday Lift Strain", score: c.yesterdayLiftPts, maxScore: 7,
+      note: c.yesterdayLiftPts === 4
+        ? "No yesterday training load available"
+        : `Yesterday lift strain → ${c.yesterdayLiftPts}/7 pts`,
+    },
+    {
+      key: "yesterday_cardio_strain", label: "Yesterday Cardio", score: c.yesterdayCardioPts, maxScore: 5,
+      note: `Yesterday cardio → ${c.yesterdayCardioPts}/5 pts`,
+    },
+  ];
+}
+
+function buildResourceBreakdowns(c: ResourceComponents): ScoreBreakdownItem[] {
+  const r = (v: number | null, d = 2) => v != null ? Math.round(v * Math.pow(10, d)) / Math.pow(10, d) : null;
+  return [
+    {
+      key: "calorie_adherence_7d", label: "Calorie Adherence 7d", score: c.caloriePts, maxScore: 10,
+      note: c.avgCalories7d != null
+        ? `7d avg: ${r(c.avgCalories7d, 0)} kcal`
+        : "Missing calorie data",
+    },
+    {
+      key: "protein_adequacy_7d", label: "Protein Adequacy 7d", score: c.proteinPts, maxScore: 12,
+      note: c.avgProtein7d != null
+        ? `7d avg: ${r(c.avgProtein7d, 1)} g/day`
+        : "Log protein_g_actual to activate",
+    },
+    {
+      key: "fat_floor_7d", label: "Fat Floor / Oscillation 7d", score: c.fatFloorPts, maxScore: 12,
+      note: c.avgFat7d != null
+        ? `7d avg: ${r(c.avgFat7d, 1)} g/day`
+        : "Log fat_g_actual to activate",
+    },
+    {
+      key: "carb_adequacy_training", label: "Carb Adequacy Around Training", score: c.carbTimingPts, maxScore: 10,
+      note: "Proxied from dietary adherence score until per-meal carb tracking active",
+    },
+    {
+      key: "weight_trend", label: "Weight Trend 14d", score: c.weightTrendPts, maxScore: 10,
+      note: c.bwTrend14dLbPerWk != null
+        ? `${r(c.bwTrend14dLbPerWk, 2)} lb/week`
+        : "Need ≥3 weight entries over 14d",
+    },
+    {
+      key: "waist_trend", label: "Waist Trend 14d", score: c.waistTrendPts, maxScore: 12,
+      note: c.waistTrend14dInOver14d != null
+        ? `${r(c.waistTrend14dInOver14d, 2)} in over 14d`
+        : "Need ≥3 waist entries over 14d",
+    },
+    {
+      key: "ffm_trend", label: "FFM Trend 14d", score: c.ffmTrendPts, maxScore: 12,
+      note: c.ffmTrend14dLbPerWk != null
+        ? `${r(c.ffmTrend14dLbPerWk, 2)} lb/week`
+        : "Need ≥3 FFM entries over 14d",
+    },
+    {
+      key: "strength_trend", label: "Strength Trend 14d", score: c.strengthTrendPts, maxScore: 12,
+      note: c.strengthTrendPct != null
+        ? `${r(c.strengthTrendPct * 100, 1)}%`
+        : "Need ≥4 bench/OHP entries over 14d",
+    },
+    {
+      key: "cardio_monotony", label: "Cardio Distribution 7d", score: c.cardioMonotonyPts, maxScore: 10,
+      note: `Z2:${c.zone2Days7d} Z3:${c.zone3Days7d} Easy:${c.easyDays7d}`,
+    },
+  ];
+}
+
+function buildSeasonalBreakdowns(c: SeasonalComponents): ScoreBreakdownItem[] {
+  const r = (v: number | null, d = 2) => v != null ? Math.round(v * Math.pow(10, d)) / Math.pow(10, d) : null;
+  return [
+    {
+      key: "hrv_28d_trend", label: "HRV 28d Trend", score: c.hrv28Pts, maxScore: 18,
+      note: c.hrv28PctChange != null
+        ? `${r(c.hrv28PctChange * 100, 1)}% vs prior 28d block`
+        : "Need ≥28d HRV history",
+    },
+    {
+      key: "rhr_28d_trend", label: "RHR 28d Trend", score: c.rhr28Pts, maxScore: 14,
+      note: c.rhr28DeltaBpm != null
+        ? `${r(c.rhr28DeltaBpm, 1)} bpm vs prior 28d block`
+        : "Need ≥28d RHR history",
+    },
+    {
+      key: "sleep_regularity_28d", label: "Sleep Regularity 28d", score: c.sleepReg28Pts, maxScore: 10,
+      note: "Defaults neutral until 56d midpoint deviation history accumulates",
+    },
+    {
+      key: "waist_weight_relationship", label: "Waist:Weight Relationship", score: c.waistWeightRelPts, maxScore: 12,
+      note: c.waistChange28d != null && c.weightChange28d != null
+        ? `BW: ${r(c.weightChange28d, 1)} lb · Waist: ${r(c.waistChange28d, 2)} in (28d)`
+        : "Need 28d & 56d BW + waist data",
+    },
+    {
+      key: "ffm_28d_trend", label: "FFM 28d Trend", score: c.ffm28Pts, maxScore: 14,
+      note: c.ffm28dChange != null
+        ? `${r(c.ffm28dChange, 2)} lb vs prior 28d mean`
+        : "Need ≥28d FFM history",
+    },
+    {
+      key: "deload_compliance", label: "Deload Compliance", score: c.deloadPts, maxScore: 10,
+      note: c.deloadPts >= 10
+        ? "Deload / resensitize block detected in last 28d"
+        : c.deloadPts >= 6 ? "Partial deload detected" : "No deload block found in last 28d",
+    },
+    {
+      key: "training_variation", label: "Training Variation 28d", score: c.monotonyPts, maxScore: 8,
+      note: `Zone distribution over 28d drives score`,
+    },
+    {
+      key: "light_consistency", label: "Light / Outdoor Consistency", score: c.lightPts, maxScore: 6,
+      note: "Defaults neutral — future: sunlight_min field",
+    },
+    {
+      key: "virility_trend", label: "Virility / Motivation Trend", score: c.motivationPts, maxScore: 8,
+      note: "Defaults neutral — log libido/motivation over 28d to activate",
+    },
+  ];
+}
+
+// ─── Reasoning builder ────────────────────────────────────────────────────────
+
+function buildReasoning(
+  composite: number,
+  acute: number,
+  resource: number,
+  seasonal: number,
+  ocsLabel: string,
+  prescription: DayPrescription,
+  hardStop: boolean,
+  hardStopReasons: string[],
+  cycleDay: number,
+  cycleWeek: string,
+  zone3Count7d: number,
+): string[] {
+  const reasons: string[] = [];
+  reasons.push(`Composite score ${composite} (${ocsLabel}).`);
+  reasons.push(`Acute ${acute}, Resource ${resource}, Seasonal ${seasonal}.`);
+  if (hardStop) {
+    reasons.push(`Hard stop triggered: ${hardStopReasons.join("; ")}.`);
+  }
+  if (cycleDay >= 22) {
+    reasons.push("Monthly cycle is in resensitize week (days 22–28).");
+  }
+  if (zone3Count7d >= 3) {
+    reasons.push(`Zone 3 count this week: ${zone3Count7d} — capped to Zone 2.`);
+  }
+  reasons.push(`Assigned cardio: ${prescription.cardioMode}.`);
+  reasons.push(`Assigned lift: ${prescription.liftExpression}.`);
+  reasons.push(`Assigned macro day: ${prescription.dayType} (${prescription.macroProteinG}P / ${prescription.macroCarbG}C / ${prescription.macroFatG}F / ${prescription.macroKcalApprox} kcal).`);
+  return reasons;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -1015,13 +1244,27 @@ export async function computeOscillator(date: string, userId: string): Promise<O
     hasPhysio && hasBody && hasSeasonal ? "full" :
     hasPhysio || hasBody ? "partial" : "insufficient";
 
+  const ocsLabel = ocsClass(composite);
+
+  const reasoning = buildReasoning(
+    composite, acute, resource, seasonal,
+    ocsLabel, prescription, hardStopFatigue, hardStopReasons,
+    cycleDay28, cycleWeek, zone3Count7d,
+  );
+
+  const breakdowns = {
+    acute: buildAcuteBreakdowns(acuteResult.components),
+    resource: buildResourceBreakdowns(resourceResult.components),
+    seasonal: buildSeasonalBreakdowns(seasonalResult.components),
+  };
+
   return {
     date,
     cycleDay28,
     cycleWeek,
     composite,
-    ocs_class: ocsClass(composite),
-    tier: ocsClass(composite),
+    ocs_class: ocsLabel,
+    tier: ocsLabel,
     acute,
     resource,
     seasonal,
@@ -1035,6 +1278,8 @@ export async function computeOscillator(date: string, userId: string): Promise<O
     zone3Count7d,
     easyCount7d,
     explanationText,
+    reasoning,
     dataQuality,
+    breakdowns,
   };
 }
