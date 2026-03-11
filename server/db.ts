@@ -1165,6 +1165,66 @@ async function runMigrations(): Promise<void> {
     ON CONFLICT (intel_exercise_id) DO NOTHING;
   `);
 
+  // ─── Oscillator v1 Schema Additions ───────────────────────────────────────
+  // Adds nullable spec fields to daily_log and creates oscillator_state table.
+  // None of these are exposed in the daily log form yet — they are ready for
+  // future input wiring.  Subjective fields use 1–5 scale (reverse-coded where
+  // noted).  Macro actuals / targets will be populated once per-meal tracking
+  // is added.  oscillator_state stores daily computed composite outputs so the
+  // engine can run in batch or on-demand without re-querying the full 56-day
+  // lookback every time a screen loads.
+  await runMigration('033_oscillator_v1_schema', `
+    -- Subjective readiness fields (spec section 2.4)
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS libido_score        INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS morning_erection_score INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS motivation_score    INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS mood_stability_score INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS joint_friction_score INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS soreness_score      INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS mental_drive_score  INTEGER;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS stress_load_score   INTEGER;
+
+    -- Macro actuals / targets (spec section 2.6)
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS protein_g_actual    REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS carbs_g_actual      REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS fat_g_actual        REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS protein_g_target    REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS carbs_g_target      REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS fat_g_target        REAL;
+    ALTER TABLE daily_log ADD COLUMN IF NOT EXISTS kcal_target         INTEGER;
+
+    -- Oscillator computed output cache (spec section 14.5)
+    CREATE TABLE IF NOT EXISTS oscillator_state (
+      id                        SERIAL PRIMARY KEY,
+      user_id                   VARCHAR NOT NULL,
+      date                      DATE NOT NULL,
+      cycle_day_28              INTEGER,
+      acute_score               REAL,
+      acute_class               VARCHAR,
+      resource_score            REAL,
+      resource_class            VARCHAR,
+      seasonal_score            REAL,
+      seasonal_class            VARCHAR,
+      oscillator_composite_score REAL,
+      oscillator_class          VARCHAR,
+      recommended_cardio_mode   VARCHAR,
+      recommended_lift_mode     VARCHAR,
+      recommended_macro_day     VARCHAR,
+      explanation_text          TEXT,
+      rolling_zone2_count_7d    INTEGER,
+      rolling_zone3_count_7d    INTEGER,
+      rolling_recovery_count_7d INTEGER,
+      rolling_neural_lift_count_7d INTEGER,
+      rolling_reset_day_count_28d INTEGER,
+      fatigue_flag              BOOLEAN DEFAULT FALSE,
+      monotony_flag             BOOLEAN DEFAULT FALSE,
+      deload_compliance_flag    BOOLEAN DEFAULT FALSE,
+      created_at                TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at                TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE(user_id, date)
+    );
+  `);
+
   await runMigration('032_batch2_exercises', `
     INSERT INTO intel_exercise_mapping (intel_exercise_id, intel_exercise_name, local_exercise_id, mapped) VALUES
       -- Batch 2A: Dumbbell/Cable/Band isolation
