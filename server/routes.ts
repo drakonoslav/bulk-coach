@@ -9,6 +9,7 @@ import { recomputeRange, backfillDashboardCacheForUser, backfillReadinessForUser
 import { importFitbitCSV } from "./fitbit-import";
 import { importFitbitTakeout, getDiagnosticsFromDB } from "./fitbit-takeout";
 import { classifyDayRange } from "./day-classifier";
+import { computeOscillator } from "./oscillator-engine";
 import { computeScheduleStability } from "./schedule-stability";
 import {
   validateSleepSummaryInput,
@@ -2022,6 +2023,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true });
     } catch (err: unknown) {
       console.error("template update error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/oscillator", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const result = await computeOscillator(date, userId);
+      res.json(result);
+    } catch (err: unknown) {
+      console.error("oscillator error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
