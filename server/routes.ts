@@ -758,7 +758,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
               });
-              console.log(`[intel-sync] ${b.day} → ${r.status}`);
+              if (r.status >= 400) {
+                const errBody = await r.text();
+                console.error(`[intel-sync] ${b.day} → ${r.status} payload=${JSON.stringify(payload)} resp=${errBody}`);
+              } else {
+                console.log(`[intel-sync] ${b.day} → ${r.status}`);
+              }
             }
           } catch (e) {
             console.error("[intel-sync] fire-and-forget error:", e);
@@ -5081,7 +5086,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return diff;
     }
     if (row.sleep_minutes != null) payload.sleep_duration_min = row.sleep_minutes;
-    if (row.sleep_efficiency != null) payload.sleep_efficiency_pct = row.sleep_efficiency;
+    if (row.sleep_efficiency != null) {
+      const eff = parseFloat(row.sleep_efficiency);
+      payload.sleep_efficiency_pct = eff <= 1 ? Math.round(eff * 100) : Math.round(eff);
+    }
     if (row.actual_bed_time) {
       const bedHour = parseInt(row.actual_bed_time.split(":")[0], 10);
       payload.bedtime_local = timeToIso(row.day, row.actual_bed_time, bedHour >= 12);
@@ -5147,6 +5155,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body: JSON.stringify(req.body),
       });
       const data = await r.json();
+      if (r.status >= 400) {
+        console.error(`[intel-proxy] POST /vitals/daily-log → ${r.status}`, JSON.stringify(req.body), JSON.stringify(data));
+      }
       return res.status(r.status).json(data);
     } catch (err: any) {
       console.error("POST /api/intel/vitals/daily-log error:", err);
@@ -5174,7 +5185,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             body: JSON.stringify(payload),
           });
           results.push({ day: row.day, status: r.status });
-          console.log(`[intel-backfill] ${row.day} → ${r.status}`);
+          if (r.status >= 400) {
+            const errBody = await r.text();
+            console.error(`[intel-backfill] ${row.day} → ${r.status} payload=${JSON.stringify(payload)} resp=${errBody}`);
+          } else {
+            console.log(`[intel-backfill] ${row.day} → ${r.status}`);
+          }
         } catch (e: any) {
           results.push({ day: row.day, status: `error: ${e.message}` });
         }
