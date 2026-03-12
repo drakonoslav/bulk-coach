@@ -465,6 +465,72 @@ function AdjustmentCard({ adjustments, kcalChange }: { adjustments: AdjustmentIt
   );
 }
 
+function IntelMacroCard({
+  adjs,
+  macroIntent,
+}: {
+  adjs: IntelIngredientAdjustment[];
+  macroIntent?: { kcalChange: string; splitChange: string; description: string; applyFrom?: string; applyFromNote?: string };
+}) {
+  const kcalTag = macroIntent?.kcalChange === "stable" ? "Iso-caloric" :
+    macroIntent?.kcalChange === "increase" ? "+kcal" :
+    macroIntent?.kcalChange === "decrease" ? "-kcal" : "Rebalance";
+
+  return (
+    <View style={[styles.adjustCard, { borderColor: "#8B5CF630", backgroundColor: "#8B5CF608" }]}>
+      <View style={styles.adjustHeader}>
+        <Ionicons name="pulse" size={20} color="#8B5CF6" />
+        <Text style={[styles.adjustTitle, { color: "#8B5CF6" }]}>Intel Macro Rebalance</Text>
+        <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, backgroundColor: "#8B5CF620" }}>
+          <Text style={{ fontSize: 9, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6" }}>{kcalTag}</Text>
+        </View>
+      </View>
+      {macroIntent?.description ? (
+        <Text style={styles.adjustSubtitle}>{macroIntent.description}</Text>
+      ) : null}
+      {macroIntent?.splitChange ? (
+        <Text style={[styles.adjustSubtitle, { color: "#A78BFA", marginTop: 2 }]}>{macroIntent.splitChange}</Text>
+      ) : null}
+      {macroIntent?.applyFromNote ? (
+        <Text style={[styles.adjustSubtitle, { color: Colors.textTertiary, fontSize: 10, marginTop: 2 }]}>
+          {macroIntent.applyFromNote}
+        </Text>
+      ) : null}
+      <View style={styles.tweakList}>
+        {adjs.map((adj) => {
+          const sign = adj.action === "increase" ? "+" : "-";
+          const kcalVal = adj.kcalPerPrimaryUnit != null
+            ? Math.round(adj.qty * adj.kcalPerPrimaryUnit)
+            : null;
+          return (
+            <View key={adj.ingredient} style={styles.tweakRow}>
+              <View style={styles.tweakLeft}>
+                <MaterialCommunityIcons name="food-apple-outline" size={16} color={Colors.textSecondary} />
+                <Text style={styles.tweakName}>{adj.ingredient}</Text>
+                {adj.protectedMealWindows && adj.protectedMealWindows.length > 0 ? (
+                  <View style={{ paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, backgroundColor: "#F59E0B15" }}>
+                    <Text style={{ fontSize: 8, fontFamily: "Rubik_600SemiBold", color: "#F59E0B" }}>🔒 post-lift</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.tweakRight}>
+                <Text style={[styles.tweakAmount, { color: adj.action === "increase" ? Colors.success : Colors.danger }]}>
+                  {sign}{adj.qty}g
+                </Text>
+                {kcalVal != null ? (
+                  <Text style={styles.tweakKcal}>
+                    ({adj.action === "increase" ? "+" : "-"}{kcalVal} kcal)
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function MealAdjustmentGuide({ adjustments, kcalChange }: { adjustments: AdjustmentItem[]; kcalChange: number }) {
   const allMeals = distributeDeltasToMeals(adjustments);
   const visibleMeals = allMeals.filter((m) => m.ingredients.length > 0);
@@ -928,6 +994,7 @@ export default function ReportScreen() {
   };
 
   const intelIngredientAdjs = intelRecToday?.cycles?.resource_14d?.output?.ingredientAdjustments;
+  const macroIntent = intelRecToday?.cycles?.resource_14d?.output?.macroIntent;
 
   const adjustments: AdjustmentItem[] = (() => {
     if (intelIngredientAdjs && intelIngredientAdjs.length > 0) {
@@ -936,8 +1003,14 @@ export default function ReportScreen() {
         .map(a => {
           const key = INTEL_INGREDIENT_KEY[a.ingredient];
           const delta = a.action === "increase" ? a.qty : -a.qty;
-          const kcalPerUnit = KCAL_PER_G[key] ?? 0;
-          return { item: key, deltaAmount: delta, achievedKcal: delta * kcalPerUnit };
+          const kcalPerUnit = a.kcalPerPrimaryUnit ?? KCAL_PER_G[key] ?? 0;
+          return {
+            item: key,
+            deltaAmount: delta,
+            achievedKcal: delta * kcalPerUnit,
+            protectedMealWindows: a.protectedMealWindows,
+            preferredReductionWindow: a.preferredReductionWindow,
+          };
         });
     }
     return finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
@@ -2690,17 +2763,23 @@ export default function ReportScreen() {
                 Insight: {modeInsight.length ? modeInsight : "No additional insight (need more data)."}
               </Text>
 
-              {adjustments.length > 0 ? (
-                <View style={{ marginTop: 12 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                    <Text style={styles.sectionTitle}>Suggested Tweaks</Text>
-                    {intelIngredientAdjs && intelIngredientAdjs.length > 0 && (
+              {intelIngredientAdjs && intelIngredientAdjs.length > 0 ? (
+                <View style={{ marginTop: 12, gap: 10 }}>
+                  <AdjustmentCard adjustments={[]} kcalChange={finalKcal.delta} />
+                  <View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <Text style={styles.sectionTitle}>Macro Rebalance</Text>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#8B5CF615", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
                         <Ionicons name="pulse" size={10} color="#8B5CF6" />
                         <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 9, color: "#8B5CF6" }}>Intel</Text>
                       </View>
-                    )}
+                    </View>
+                    <IntelMacroCard adjs={intelIngredientAdjs} macroIntent={macroIntent} />
                   </View>
+                </View>
+              ) : adjustments.length > 0 ? (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 8 }]}>Suggested Tweaks</Text>
                   <AdjustmentCard adjustments={adjustments} kcalChange={finalKcal.delta} />
                 </View>
               ) : (

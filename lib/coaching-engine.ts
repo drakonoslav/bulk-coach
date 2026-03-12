@@ -156,9 +156,9 @@ export const DAILY_CHECKLIST: ChecklistItem[] = [
 
 export const KCAL_PER_G: Record<string, number> = {
   oats_g: 4.0,
-  dextrin_g: 3.87,
-  whey_g: 3.76,
-  mct_g: 7.0,
+  dextrin_g: 4.0,
+  whey_g: 4.0,
+  mct_g: 9.0,
   flax_g: 3.24,
   bananas: 104.0,
   eggs: 77.5,
@@ -314,6 +314,8 @@ export interface AdjustmentItem {
   item: string;
   deltaAmount: number;
   achievedKcal: number;
+  protectedMealWindows?: string[];
+  preferredReductionWindow?: string;
 }
 
 const WHOLE_FOODS = new Set(["bananas", "eggs", "yogurt_cups"]);
@@ -760,16 +762,17 @@ export interface MealSlot {
   label: string;
   ingredients: Record<string, number>;
   prepZone: "prep" | "home";
+  windowKey?: string;
 }
 
 export const MEAL_SLOTS: MealSlot[] = [
-  { time: "05:30", label: "Pre-cardio", ingredients: { bananas: 1 }, prepZone: "home" },
-  { time: "06:45", label: "Post-cardio shake", ingredients: { oats_g: 120, whey_g: 25, mct_g: 10 }, prepZone: "home" },
-  { time: "11:30-12:00", label: "Mid-morning shake", ingredients: { yogurt_cups: 1, flax_g: 30, whey_g: 15 }, prepZone: "prep" },
-  { time: "15:45-16:00", label: "Pre-lift shake", ingredients: { dextrin_g: 80, whey_g: 20 }, prepZone: "prep" },
-  { time: "18:20-18:35", label: "Post-lift shake", ingredients: { dextrin_g: 40, whey_g: 30 }, prepZone: "home" },
-  { time: "20:00-20:15", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home" },
-  { time: "21:30", label: "Evening protein", ingredients: { whey_g: 0 }, prepZone: "home" },
+  { time: "05:30", label: "Pre-cardio", ingredients: { bananas: 1 }, prepZone: "home", windowKey: "pre_cardio" },
+  { time: "06:45", label: "Post-cardio shake", ingredients: { oats_g: 120, whey_g: 25, mct_g: 10 }, prepZone: "home", windowKey: "post_cardio" },
+  { time: "11:30-12:00", label: "Mid-morning shake", ingredients: { yogurt_cups: 1, flax_g: 30, whey_g: 15 }, prepZone: "prep", windowKey: "midday" },
+  { time: "15:45-16:00", label: "Pre-lift shake", ingredients: { dextrin_g: 80, whey_g: 20 }, prepZone: "prep", windowKey: "pre_lift" },
+  { time: "18:20-18:35", label: "Post-lift shake", ingredients: { dextrin_g: 40, whey_g: 30 }, prepZone: "home", windowKey: "post_lift" },
+  { time: "20:00-20:15", label: "Evening recovery meal", ingredients: { oats_g: 124, flax_g: 30, mct_g: 20, eggs: 2, bananas: 1 }, prepZone: "home", windowKey: "evening" },
+  { time: "21:30", label: "Evening protein", ingredients: { whey_g: 0 }, prepZone: "home", windowKey: "wind_down" },
 ];
 
 export interface MealIngredientLine {
@@ -815,9 +818,19 @@ export function distributeDeltasToMeals(adjustments: AdjustmentItem[]): MealGuid
       continue;
     }
 
-    const slotsWithItem = MEAL_SLOTS
+    const protectedWindows = new Set(adj.protectedMealWindows ?? []);
+    const preferredWindow = adj.preferredReductionWindow;
+
+    let slotsWithItem = MEAL_SLOTS
       .map((s, idx) => ({ slot: s, idx }))
-      .filter((x) => x.slot.ingredients[adj.item] != null && x.slot.time !== "21:30");
+      .filter((x) => x.slot.ingredients[adj.item] != null && x.slot.time !== "21:30")
+      .filter((x) => !protectedWindows.has(x.slot.windowKey ?? ""));
+
+    if (slotsWithItem.length === 0) continue;
+
+    if (preferredWindow && slotsWithItem.some((x) => x.slot.windowKey === preferredWindow)) {
+      slotsWithItem = slotsWithItem.filter((x) => x.slot.windowKey === preferredWindow);
+    }
 
     if (slotsWithItem.length === 0) continue;
 

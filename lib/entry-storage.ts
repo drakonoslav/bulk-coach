@@ -452,6 +452,10 @@ export interface IntelIngredientAdjustment {
   action: "increase" | "decrease";
   qty: number;
   display: string;
+  kcalPerPrimaryUnit?: number;
+  protectedMealWindows?: string[];
+  preferredReductionWindow?: string;
+  distributionNote?: string;
 }
 
 export interface IntelCycles {
@@ -471,6 +475,13 @@ export interface IntelCycles {
       macroDay: string;
       macroDelta?: { carbsDeltaG: number; fatDeltaG: number };
       ingredientAdjustments?: IntelIngredientAdjustment[];
+      macroIntent?: {
+        kcalChange: string;
+        splitChange: string;
+        description: string;
+        applyFrom?: string;
+        applyFromNote?: string;
+      };
     };
   };
   seasonal_28d?: {

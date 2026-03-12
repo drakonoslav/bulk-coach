@@ -36,6 +36,7 @@ import {
   type GameBridgeEntry,
   type IntelReceipt,
   type IntelRecommendation,
+  type IntelIngredientAdjustment,
 } from "@/lib/entry-storage";
 import { USE_INTEL_STRENGTH } from "@/lib/intel-strength";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
@@ -65,6 +66,9 @@ const MEAL_MACROS: Record<string, { p: number; c: number; f: number }> = {
   evening:    { p: 35, c: 40, f: 30 },
 };
 
+const LOCKED_BASELINE_MACROS = { p: 173.9, c: 330.9, f: 54.4 };
+const CORE_MEAL_KEYS = ["preCardio", "postCardio", "midday", "preLift", "postLift", "evening"];
+
 const INGREDIENT_MACRO_FACTORS: Record<string, { p: number; c: number; f: number }> = {
   dextrin:      { p: 0, c: 1.0, f: 0   },
   dextrose:     { p: 0, c: 1.0, f: 0   },
@@ -84,12 +88,19 @@ function computeMealMacros(
   checklist: Record<string, boolean>,
   adjs?: IntelIngredientAdjustment[],
 ): { p: number; c: number; f: number } {
+  const allCoreChecked = adjs && adjs.length > 0 && CORE_MEAL_KEYS.every(k => !!checklist[k]);
   let p = 0, c = 0, f = 0;
-  for (const [key, checked] of Object.entries(checklist)) {
-    if (checked && MEAL_MACROS[key]) {
-      p += MEAL_MACROS[key].p;
-      c += MEAL_MACROS[key].c;
-      f += MEAL_MACROS[key].f;
+  if (allCoreChecked) {
+    p = LOCKED_BASELINE_MACROS.p;
+    c = LOCKED_BASELINE_MACROS.c;
+    f = LOCKED_BASELINE_MACROS.f;
+  } else {
+    for (const [key, checked] of Object.entries(checklist)) {
+      if (checked && MEAL_MACROS[key]) {
+        p += MEAL_MACROS[key].p;
+        c += MEAL_MACROS[key].c;
+        f += MEAL_MACROS[key].f;
+      }
     }
   }
   if (adjs && adjs.length > 0) {
@@ -103,7 +114,7 @@ function computeMealMacros(
       f = Math.max(0, f + Math.round(sign * adj.qty * factors.f));
     }
   }
-  return { p, c, f };
+  return { p: Math.round(p), c: Math.round(c), f: Math.round(f) };
 }
 
 function parseMinuteInput(raw: string): string {
