@@ -29,6 +29,7 @@ import {
   loadGameExerciseSets,
   saveStrengthSets,
   loadIntelReceipt,
+  saveIntelRecommendation,
   type StrengthExercise,
   type StrengthSet,
   type GameBridgeEntry,
@@ -326,6 +327,14 @@ export default function LogScreen() {
   const [firmnessAvg, setFirmnessAvg] = useState("");
   const [yesterdayAndrogenDuration, setYesterdayAndrogenDuration] = useState<number | null>(null);
   const [pain010, setPain010] = useState<number | null>(null);
+  const [libidoScore, setLibidoScore] = useState<number | null>(null);
+  const [motivationScore, setMotivationScore] = useState<number | null>(null);
+  const [moodStabilityScore, setMoodStabilityScore] = useState<number | null>(null);
+  const [mentalDriveScore, setMentalDriveScore] = useState<number | null>(null);
+  const [jointFrictionScore, setJointFrictionScore] = useState<number | null>(null);
+  const [proteinGActual, setProteinGActual] = useState("");
+  const [carbsGActual, setCarbsGActual] = useState("");
+  const [fatGActual, setFatGActual] = useState("");
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
 
   const [intelReceipt, setIntelReceipt] = useState<IntelReceipt | null>(null);
@@ -560,6 +569,14 @@ export default function LogScreen() {
       setAdherence(existing.adherence ?? null);
       setNotes(existing.notes || "");
       setPain010(existing.pain010 != null ? Number(existing.pain010) : null);
+      setLibidoScore(existing.libidoScore != null ? Number(existing.libidoScore) : null);
+      setMotivationScore(existing.motivationScore != null ? Number(existing.motivationScore) : null);
+      setMoodStabilityScore(existing.moodStabilityScore != null ? Number(existing.moodStabilityScore) : null);
+      setMentalDriveScore(existing.mentalDriveScore != null ? Number(existing.mentalDriveScore) : null);
+      setJointFrictionScore(existing.jointFrictionScore != null ? Number(existing.jointFrictionScore) : null);
+      setProteinGActual(existing.proteinGActual?.toString() || "");
+      setCarbsGActual(existing.carbsGActual?.toString() || "");
+      setFatGActual(existing.fatGActual?.toString() || "");
       setMealChecklist(existing.mealChecklist ?? {
         preCardio: false, postCardio: false, midday: false,
         preLift: false, postLift: false, evening: false,
@@ -941,6 +958,14 @@ export default function LogScreen() {
     setNocturnalDuration("");
     setFirmnessAvg("");
     setPain010(null);
+    setLibidoScore(null);
+    setMotivationScore(null);
+    setMoodStabilityScore(null);
+    setMentalDriveScore(null);
+    setJointFrictionScore(null);
+    setProteinGActual("");
+    setCarbsGActual("");
+    setFatGActual("");
     setMealChecklist({
       preCardio: false, postCardio: false, midday: false,
       preLift: false, postLift: false, evening: false,
@@ -1037,6 +1062,14 @@ export default function LogScreen() {
         mealChecklist: Object.values(mealChecklist).some(v => v) ? mealChecklist : undefined,
         cardioSkipped: cardioSkipped || undefined,
         liftSkipped: liftSkipped || undefined,
+        libidoScore: libidoScore ?? undefined,
+        motivationScore: motivationScore ?? undefined,
+        moodStabilityScore: moodStabilityScore ?? undefined,
+        mentalDriveScore: mentalDriveScore ?? undefined,
+        jointFrictionScore: jointFrictionScore ?? undefined,
+        proteinGActual: proteinGActual ? parseFloat(proteinGActual) : undefined,
+        carbsGActual: carbsGActual ? parseFloat(carbsGActual) : undefined,
+        fatGActual: fatGActual ? parseFloat(fatGActual) : undefined,
       };
 
       await saveEntry(entry);
@@ -1056,6 +1089,99 @@ export default function LogScreen() {
           });
         } catch {}
       }
+      try {
+        const baseUrl = getApiUrl();
+        const noctCount = nocturnalCount ? parseInt(nocturnalCount, 10) : 0;
+        const firmness = firmnessAvg ? parseFloat(firmnessAvg) : 0;
+        const erectionScore = noctCount === 0 ? 0 : noctCount >= 2 ? 3 : firmness >= 5 ? 2 : 1;
+        const liftModeMap: Record<string, string> = {
+          light: "recovery_patterning",
+          moderate: "pump",
+          hard: "hypertrophy_build",
+        };
+        const completedLiftMode = liftSkipped ? undefined
+          : deloadWeek ? "mobility"
+          : liftDone ? "neural_tension"
+          : trainingLoad && liftModeMap[trainingLoad] ? liftModeMap[trainingLoad]
+          : undefined;
+        function timeToIso(date: string, hhmm: string, previousDay = false): string {
+          const d = new Date(date + "T12:00:00");
+          if (previousDay) d.setDate(d.getDate() - 1);
+          return `${d.toISOString().slice(0, 10)}T${hhmm}:00`;
+        }
+        function hhmmDiffMin(start: string, end: string): number {
+          const [sh, sm] = start.split(":").map(Number);
+          const [eh, em] = end.split(":").map(Number);
+          let diff = (eh * 60 + em) - (sh * 60 + sm);
+          if (diff < 0) diff += 24 * 60;
+          return diff;
+        }
+        const intelPayload: Record<string, unknown> = {
+          expo_user_id: "local_default",
+          date: selectedDate,
+        };
+        if (entry.sleepMinutes) intelPayload.sleep_duration_min = entry.sleepMinutes;
+        if (entry.actualBedTime) {
+          const bedHour = parseInt(entry.actualBedTime.split(":")[0], 10);
+          intelPayload.bedtime_local = timeToIso(selectedDate, entry.actualBedTime, bedHour >= 12);
+        }
+        if (entry.actualWakeTime) intelPayload.waketime_local = timeToIso(selectedDate, entry.actualWakeTime);
+        if (entry.hrv) intelPayload.hrv_ms = entry.hrv;
+        if (entry.restingHr) intelPayload.resting_hr_bpm = entry.restingHr;
+        if (entry.morningWeightLb) intelPayload.body_weight_lb = entry.morningWeightLb;
+        const bfPct = bfMorningAvg ?? entry.bfMorningPct;
+        if (bfPct) intelPayload.body_fat_pct = bfPct;
+        if (entry.fatFreeMassLb) intelPayload.fat_free_mass_lb = entry.fatFreeMassLb;
+        if (entry.waistIn) intelPayload.waist_at_navel_in = entry.waistIn;
+        if (entry.steps) intelPayload.step_count = entry.steps;
+        if (!cardioSkipped) {
+          if (cardioStartTime && cardioEndTime) {
+            intelPayload.cardio_start_time = timeToIso(selectedDate, cardioStartTime);
+            intelPayload.cardio_end_time = timeToIso(selectedDate, cardioEndTime);
+            intelPayload.cardio_duration_min = hhmmDiffMin(cardioStartTime, cardioEndTime);
+          }
+          if (zone2) intelPayload.cardio_zone2_min = parseFloat(zone2);
+          if (zone3) intelPayload.cardio_zone3_min = parseFloat(zone3);
+        }
+        if (!liftSkipped) {
+          if (liftStartTime && liftEndTime) {
+            intelPayload.lift_start_time = timeToIso(selectedDate, liftStartTime);
+            intelPayload.lift_end_time = timeToIso(selectedDate, liftEndTime);
+            intelPayload.lift_duration_min = hhmmDiffMin(liftStartTime, liftEndTime);
+          }
+          if (entry.liftWorkingMin) intelPayload.lift_working_time_min = entry.liftWorkingMin;
+          if (completedLiftMode) intelPayload.completed_lift_mode = completedLiftMode;
+        }
+        if (entry.caloriesIn) intelPayload.kcal_actual = entry.caloriesIn;
+        if (entry.proteinGActual) intelPayload.protein_g_actual = entry.proteinGActual;
+        if (entry.carbsGActual) intelPayload.carbs_g_actual = entry.carbsGActual;
+        if (entry.fatGActual) intelPayload.fat_g_actual = entry.fatGActual;
+        if (nocturnalCount) intelPayload.morning_erection_score = erectionScore;
+        if (entry.libidoScore) intelPayload.libido_score = entry.libidoScore;
+        if (entry.motivationScore) intelPayload.motivation_score = entry.motivationScore;
+        if (entry.moodStabilityScore) intelPayload.mood_stability_score = entry.moodStabilityScore;
+        if (entry.mentalDriveScore) intelPayload.mental_drive_score = entry.mentalDriveScore;
+        if (entry.jointFrictionScore) intelPayload.joint_friction_score = entry.jointFrictionScore;
+        if (entry.pain010 != null) {
+          intelPayload.soreness_score = Math.min(5, Math.max(1, Math.round(entry.pain010 / 2) + 1));
+        }
+        const intelRes = await authFetch(new URL("/api/intel/vitals/daily-log", baseUrl).toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(intelPayload),
+        });
+        if (intelRes.ok) {
+          const intelData = await intelRes.json();
+          if (intelData.ok && intelData.recommendation) {
+            await saveIntelRecommendation("local_default", selectedDate, {
+              date: intelData.date || selectedDate,
+              ...intelData.recommendation,
+              scoreBreakdowns: intelData.scoreBreakdowns,
+            });
+          }
+        }
+      } catch {}
+
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setHasExisting(true);
       setSaved(true);
@@ -2710,6 +2836,44 @@ export default function LogScreen() {
             iconColor="#F59E0B"
             suffix="kcal"
           />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <InputField
+                label="Protein"
+                value={proteinGActual}
+                onChangeText={setProteinGActual}
+                placeholder="—"
+                keyboardType="number-pad"
+                icon="fish-outline"
+                iconColor="#34D399"
+                suffix="g"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <InputField
+                label="Carbs"
+                value={carbsGActual}
+                onChangeText={setCarbsGActual}
+                placeholder="—"
+                keyboardType="number-pad"
+                icon="leaf-outline"
+                iconColor="#FBBF24"
+                suffix="g"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <InputField
+                label="Fat"
+                value={fatGActual}
+                onChangeText={setFatGActual}
+                placeholder="—"
+                keyboardType="number-pad"
+                icon="water-outline"
+                iconColor="#F87171"
+                suffix="g"
+              />
+            </View>
+          </View>
           <InputField
             label="Water (extra)"
             value={water}
@@ -2825,6 +2989,54 @@ export default function LogScreen() {
           </View>
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 4 }}>
             {pain010 == null ? "Tap a level to log pain/injury" : pain010 >= 4 ? "Contributes +20 to HPA stress score" : "Below HPA threshold (4+)"}
+          </Text>
+        </View>
+
+        <View style={[styles.sectionCard, { borderColor: "#00D4AA20" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <Ionicons name="pulse-outline" size={16} color="#00D4AA" />
+            <Text style={[styles.sectionLabel, { marginBottom: 0, color: "#00D4AA" }]}>Wellbeing</Text>
+            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginLeft: "auto" }}>1 low · 5 high</Text>
+          </View>
+          {([
+            { key: "libido", label: "Libido", state: libidoScore, set: setLibidoScore as (v: number | null) => void, color: "#A78BFA" },
+            { key: "motivation", label: "Motivation", state: motivationScore, set: setMotivationScore as (v: number | null) => void, color: "#00D4AA" },
+            { key: "mood", label: "Mood", state: moodStabilityScore, set: setMoodStabilityScore as (v: number | null) => void, color: "#60A5FA" },
+            { key: "drive", label: "Mental Drive", state: mentalDriveScore, set: setMentalDriveScore as (v: number | null) => void, color: "#34D399" },
+            { key: "joints", label: "Joint Friction", state: jointFrictionScore, set: setJointFrictionScore as (v: number | null) => void, color: "#FBBF24" },
+          ]).map(({ key, label, state, set, color }) => (
+            <View key={key} style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+              <Text style={{ width: 90, fontSize: 12, fontFamily: "Rubik_500Medium", color: Colors.textSecondary }}>{label}</Text>
+              <View style={{ flex: 1, flexDirection: "row", justifyContent: "space-between" }}>
+                {[1, 2, 3, 4, 5].map((v) => (
+                  <Pressable
+                    key={v}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      set(v === state ? null : v);
+                    }}
+                    style={{
+                      width: 38, height: 30, borderRadius: 6,
+                      alignItems: "center", justifyContent: "center",
+                      backgroundColor: state != null && v <= state
+                        ? color + (v === state ? "40" : "20")
+                        : Colors.border,
+                      borderWidth: v === state ? 1 : 0,
+                      borderColor: color,
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 12,
+                      fontFamily: v === state ? "Rubik_700Bold" : "Rubik_400Regular",
+                      color: state != null && v <= state ? color : Colors.textTertiary,
+                    }}>{v}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+          <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: Colors.textTertiary }}>
+            Feeds subjective drive & joint scores into oscillator · skip any to use neutral defaults
           </Text>
         </View>
 

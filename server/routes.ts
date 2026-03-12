@@ -448,9 +448,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           meal_checklist,
           cardio_skipped,
           lift_skipped,
+          libido_score,
+          motivation_score,
+          mood_stability_score,
+          mental_drive_score,
+          joint_friction_score,
+          protein_g_actual,
+          carbs_g_actual,
+          fat_g_actual,
           updated_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,NOW()
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74,$75,$76,$77,$78,$79,NOW()
         )
         ON CONFLICT (user_id, day) DO UPDATE SET
           morning_weight_lb = EXCLUDED.morning_weight_lb,
@@ -522,6 +530,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           meal_checklist = COALESCE(EXCLUDED.meal_checklist, daily_log.meal_checklist),
           cardio_skipped = EXCLUDED.cardio_skipped,
           lift_skipped = EXCLUDED.lift_skipped,
+          libido_score = COALESCE(EXCLUDED.libido_score, daily_log.libido_score),
+          motivation_score = COALESCE(EXCLUDED.motivation_score, daily_log.motivation_score),
+          mood_stability_score = COALESCE(EXCLUDED.mood_stability_score, daily_log.mood_stability_score),
+          mental_drive_score = COALESCE(EXCLUDED.mental_drive_score, daily_log.mental_drive_score),
+          joint_friction_score = COALESCE(EXCLUDED.joint_friction_score, daily_log.joint_friction_score),
+          protein_g_actual = COALESCE(EXCLUDED.protein_g_actual, daily_log.protein_g_actual),
+          carbs_g_actual = COALESCE(EXCLUDED.carbs_g_actual, daily_log.carbs_g_actual),
+          fat_g_actual = COALESCE(EXCLUDED.fat_g_actual, daily_log.fat_g_actual),
           updated_at = NOW()`,
         [
           userId,
@@ -595,6 +611,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           b.mealChecklist ? JSON.stringify(b.mealChecklist) : null,
           b.cardioSkipped ?? false,
           b.liftSkipped ?? false,
+          b.libidoScore ?? null,
+          b.motivationScore ?? null,
+          b.moodStabilityScore ?? null,
+          b.mentalDriveScore ?? null,
+          b.jointFrictionScore ?? null,
+          b.proteinGActual ?? null,
+          b.carbsGActual ?? null,
+          b.fatGActual ?? null,
         ],
       );
 
@@ -5011,6 +5035,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(data);
     } catch (err: any) {
       console.error("GET /api/intel/game/catalog-proof error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.post("/api/intel/vitals/daily-log", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const r = await fetch(`${INTEL_BASE}/vitals/daily-log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const data = await r.json();
+      return res.status(r.status).json(data);
+    } catch (err: any) {
+      console.error("POST /api/intel/vitals/daily-log error:", err);
       return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
     }
   });

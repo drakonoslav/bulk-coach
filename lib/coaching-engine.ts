@@ -75,6 +75,14 @@ export interface DailyEntry {
   mealChecklist?: Record<string, boolean>;
   cardioSkipped?: boolean;
   liftSkipped?: boolean;
+  libidoScore?: number;
+  motivationScore?: number;
+  moodStabilityScore?: number;
+  mentalDriveScore?: number;
+  jointFrictionScore?: number;
+  proteinGActual?: number;
+  carbsGActual?: number;
+  fatGActual?: number;
 }
 
 export interface CardioFuel {

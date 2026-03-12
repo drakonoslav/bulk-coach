@@ -437,3 +437,49 @@ export async function loadIntelReceipt(date: string): Promise<IntelReceipt | nul
   const data = await res.json();
   return data?.receipt ?? null;
 }
+
+export interface IntelRecommendation {
+  date: string;
+  cycleDay28: number;
+  cycleWeekType: string;
+  scores: {
+    acuteScore: number;
+    resourceScore: number;
+    seasonalScore: number;
+    compositeScore: number;
+    oscillatorClass: string;
+  };
+  flags: {
+    hardStopFatigue: boolean;
+    suppressedHrv: boolean;
+    elevatedRhr: boolean;
+    lowSleep: boolean;
+    monthlyResensitizeOverride: boolean;
+    cardioMonotony: boolean;
+  };
+  recommendedCardioMode: string;
+  recommendedLiftMode: string;
+  recommendedMacroDayType: string;
+  macroTargets: { kcal: number; proteinG: number; carbsG: number; fatG: number };
+  macroDelta: { proteinDeltaG: number; carbsDeltaG: number; fatDeltaG: number; kcalDelta: number };
+  reasoning: string[];
+  scoreBreakdowns?: {
+    acute?: unknown[];
+    resource?: unknown[];
+    seasonal?: unknown[];
+  };
+}
+
+export async function saveIntelRecommendation(userId: string, date: string, rec: IntelRecommendation): Promise<void> {
+  await AsyncStorage.setItem(`intel_recommendation_${userId}_${date}`, JSON.stringify(rec));
+}
+
+export async function loadIntelRecommendation(userId: string, date: string): Promise<IntelRecommendation | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`intel_recommendation_${userId}_${date}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as IntelRecommendation;
+  } catch {
+    return null;
+  }
+}
