@@ -5090,11 +5090,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eff = parseFloat(row.sleep_efficiency);
       payload.sleep_efficiency_pct = eff <= 1 ? Math.round(eff * 100) : Math.round(eff);
     }
-    if (row.actual_bed_time) {
-      const bedHour = parseInt(row.actual_bed_time.split(":")[0], 10);
-      payload.bedtime_local = timeToIso(row.day, row.actual_bed_time, bedHour >= 12);
+    const bedHhmm = row.actual_bed_time || row.sleep_start || null;
+    const wakeHhmm = row.actual_wake_time || row.sleep_end || null;
+    if (bedHhmm) {
+      const bedHour = parseInt(bedHhmm.split(":")[0], 10);
+      payload.bedtime_local = timeToIso(row.day, bedHhmm, bedHour >= 12);
     }
-    if (row.actual_wake_time) payload.waketime_local = timeToIso(row.day, row.actual_wake_time);
+    if (wakeHhmm) payload.waketime_local = timeToIso(row.day, wakeHhmm);
     if (row.hrv != null) payload.hrv_ms = row.hrv;
     if (row.resting_hr != null) payload.resting_hr_bpm = row.resting_hr;
     if (row.morning_weight_lb != null) payload.body_weight_lb = row.morning_weight_lb;

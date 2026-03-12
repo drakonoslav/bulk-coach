@@ -1181,11 +1181,13 @@ export default function LogScreen() {
           date: selectedDate,
         };
         if (entry.sleepMinutes) intelPayload.sleep_duration_min = entry.sleepMinutes;
-        if (entry.actualBedTime) {
-          const bedHour = parseInt(entry.actualBedTime.split(":")[0], 10);
-          intelPayload.bedtime_local = timeToIso(selectedDate, entry.actualBedTime, bedHour >= 12);
+        const bedHhmm = entry.actualBedTime || sleepStart || null;
+        const wakeHhmm = entry.actualWakeTime || sleepEnd || null;
+        if (bedHhmm) {
+          const bedHour = parseInt(bedHhmm.split(":")[0], 10);
+          intelPayload.bedtime_local = timeToIso(selectedDate, bedHhmm, bedHour >= 12);
         }
-        if (entry.actualWakeTime) intelPayload.waketime_local = timeToIso(selectedDate, entry.actualWakeTime);
+        if (wakeHhmm) intelPayload.waketime_local = timeToIso(selectedDate, wakeHhmm);
         if (entry.hrv) intelPayload.hrv_ms = entry.hrv;
         if (entry.restingHr) intelPayload.resting_hr_bpm = entry.restingHr;
         if (entry.morningWeightLb) intelPayload.body_weight_lb = entry.morningWeightLb;
