@@ -30,6 +30,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "waveform.path.ecg", selected: "waveform.path.ecg" }} />
         <Label>Vitals</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="tracker">
+        <Icon sf={{ default: "square.and.pencil", selected: "square.and.pencil" }} />
+        <Label>Track</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -106,6 +110,15 @@ function ClassicTabLayout() {
           title: "Vitals",
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="pulse" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="tracker"
+        options={{
+          title: "Track",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="pencil-outline" size={size} color={color} />
           ),
         }}
       />
