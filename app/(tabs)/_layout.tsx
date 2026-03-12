@@ -14,9 +14,9 @@ function NativeTabLayout() {
         <Icon sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis" }} />
         <Label>Dashboard</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="log">
-        <Icon sf={{ default: "plus.circle", selected: "plus.circle.fill" }} />
-        <Label>Log</Label>
+      <NativeTabs.Trigger name="tracker">
+        <Icon sf={{ default: "square.and.pencil", selected: "square.and.pencil.fill" }} />
+        <Label>Logbook</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="checklist">
         <Icon sf={{ default: "list.bullet.clipboard", selected: "list.bullet.clipboard.fill" }} />
@@ -30,10 +30,7 @@ function NativeTabLayout() {
         <Icon sf={{ default: "waveform.path.ecg", selected: "waveform.path.ecg" }} />
         <Label>Vitals</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="tracker">
-        <Icon sf={{ default: "square.and.pencil", selected: "square.and.pencil" }} />
-        <Label>Track</Label>
-      </NativeTabs.Trigger>
+      {/* Old log tab intentionally omitted from tab bar — still routable at /log */}
     </NativeTabs>
   );
 }
@@ -78,11 +75,11 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="log"
+        name="tracker"
         options={{
-          title: "Log",
+          title: "Logbook",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" size={size} color={color} />
+            <Ionicons name="pencil-outline" size={size} color={color} />
           ),
         }}
       />
@@ -113,13 +110,12 @@ function ClassicTabLayout() {
           ),
         }}
       />
+      {/* Old log tab — hidden from tab bar, still accessible at /log */}
       <Tabs.Screen
-        name="tracker"
+        name="log"
         options={{
-          title: "Track",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="pencil-outline" size={size} color={color} />
-          ),
+          title: "Log",
+          tabBarButton: () => null,
         }}
       />
     </Tabs>

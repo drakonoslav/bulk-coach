@@ -436,7 +436,7 @@ export default function TrackerScreen() {
 
         {/* ── Header ─────────────────────────────── */}
         <View style={s.header}>
-          <Text style={s.title}>Daily Track</Text>
+          <Text style={s.title}>Logbook</Text>
           <View style={s.uidRow}>
             <Ionicons name="person-circle-outline" size={12} color={TEAL} />
             <Text style={s.uid}>{userId || "…"}</Text>
