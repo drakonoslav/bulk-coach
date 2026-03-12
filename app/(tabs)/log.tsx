@@ -45,6 +45,8 @@ import { CLASSIFICATION_LABELS, type SleepClassification } from "@/lib/sleep-tim
 import { deriveSleep } from "@/lib/sleep-derivation";
 import { fmtVal, fmtInt, fmtPctVal } from "@/lib/format";
 
+const _intelCyclesRefreshedDates = new Set<string>();
+
 const MEAL_CALORIES: Record<string, number> = {
   preCardio: 104,
   postCardio: 644,
@@ -825,7 +827,9 @@ export default function LogScreen() {
     }
     try {
       let rec = await loadIntelRecommendation("local_default", day);
-      if (!rec && day === todayStr()) {
+      const needsFresh = (!rec || !rec.cycles) && !_intelCyclesRefreshedDates.has(day);
+      if (needsFresh && day === todayStr()) {
+        _intelCyclesRefreshedDates.add(day);
         try {
           const baseUrl = getApiUrl();
           const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", baseUrl).toString());

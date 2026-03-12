@@ -56,6 +56,8 @@ interface ConfidenceWindow {
   grade: "High" | "Med" | "Low" | "None";
 }
 
+const _intelCyclesRefreshedVitals = new Set<string>();
+
 const ACCENT = "#8B5CF6";
 const ACCENT_MUTED = "rgba(139, 92, 246, 0.15)";
 const MEASURED_COLOR = "#34D399";
@@ -928,7 +930,9 @@ export default function VitalsScreen() {
         setHpaData(data);
       }
       let resolvedIntelRec: IntelRecommendation | null = intelRecCached;
-      if (!resolvedIntelRec) {
+      const needsFreshVitals = (!resolvedIntelRec || !resolvedIntelRec.cycles) && !_intelCyclesRefreshedVitals.has(todayDate);
+      if (needsFreshVitals) {
+        _intelCyclesRefreshedVitals.add(todayDate);
         try {
           const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", baseUrl).toString());
           if (latestRes.ok) {

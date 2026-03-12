@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
-import { loadDashboard, loadStrengthSets, loadStrengthMapping, loadIntelRecommendation, type StrengthSet, type IntelRecommendation, type IntelIngredientAdjustment } from "@/lib/entry-storage";
+import { loadDashboard, loadStrengthSets, loadStrengthMapping, loadIntelRecommendation, saveIntelRecommendation, type StrengthSet, type IntelRecommendation, type IntelIngredientAdjustment } from "@/lib/entry-storage";
 import { computeGlobalStrengthIndexV2, computeRegionalMuscleIndicesV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping, type MuscleIndexDay } from "@/lib/strength-v2";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
@@ -47,6 +47,8 @@ import { computeSCS, classifyMode, waistVelocity14d, type ModeClassification, ty
 import { USE_INTEL_STRENGTH, fetchIntelStrengthTrend, deriveStrengthSummary, trendToChartData, trendPhaseMarkers, type IntelStrengthTrend, type IntelStrengthSummary } from "@/lib/intel-strength";
 import { EXPECTED_SCHEMA_VERSION, validateIntelSchema } from "@/lib/muscle_map_layout";
 import ContextLensCard from "@/components/ContextLensCard";
+
+const _intelCyclesRefreshedReport = new Set<string>();
 
 type CalorieSource = "weight_only" | "mode_override";
 
@@ -698,13 +700,16 @@ export default function ReportScreen() {
     const todayDate = new Date().toISOString().slice(0, 10);
     try {
       let irec = await loadIntelRecommendation("local_default", todayDate);
-      if (!irec) {
+      const needsFreshReport = (!irec || !irec.cycles) && !_intelCyclesRefreshedReport.has(todayDate);
+      if (needsFreshReport) {
+        _intelCyclesRefreshedReport.add(todayDate);
         const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", getApiUrl()).toString());
         if (latestRes.ok) {
           const latestData = await latestRes.json();
           const r = latestData.recommendation ?? latestData;
           if (r && r.scores) {
             irec = { date: todayDate, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
+            await saveIntelRecommendation("local_default", todayDate, irec!);
           }
         }
       }
