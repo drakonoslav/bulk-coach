@@ -595,13 +595,25 @@ export default function LogScreen() {
       setMoodStabilityScore(existing.moodStabilityScore != null ? Number(existing.moodStabilityScore) : null);
       setMentalDriveScore(existing.mentalDriveScore != null ? Number(existing.mentalDriveScore) : null);
       setJointFrictionScore(existing.jointFrictionScore != null ? Number(existing.jointFrictionScore) : null);
-      setProteinGActual(existing.proteinGActual?.toString() || "");
-      setCarbsGActual(existing.carbsGActual?.toString() || "");
-      setFatGActual(existing.fatGActual?.toString() || "");
-      setMealChecklist(existing.mealChecklist ?? {
+      const loadedChecklist = existing.mealChecklist ?? {
         preCardio: false, postCardio: false, midday: false,
         preLift: false, postLift: false, evening: false,
-      });
+      };
+      setMealChecklist(loadedChecklist);
+      if (existing.proteinGActual != null) {
+        setProteinGActual(existing.proteinGActual.toString());
+        setCarbsGActual(existing.carbsGActual?.toString() || "");
+        setFatGActual(existing.fatGActual?.toString() || "");
+      } else if (Object.values(loadedChecklist).some(Boolean)) {
+        const t = computeMealMacros(loadedChecklist);
+        setProteinGActual(t.p > 0 ? t.p.toString() : "");
+        setCarbsGActual(t.c > 0 ? t.c.toString() : "");
+        setFatGActual(t.f > 0 ? t.f.toString() : "");
+      } else {
+        setProteinGActual("");
+        setCarbsGActual("");
+        setFatGActual("");
+      }
       setFitbitData({
         sleepMinutes: existing.sleepMinutes,
         activeZoneMinutes: existing.activeZoneMinutes,
