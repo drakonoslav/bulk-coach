@@ -4,7 +4,6 @@ import {
   StyleSheet, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Crypto from "expo-crypto";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { getApiUrl, authFetch } from "@/lib/query-client";
@@ -239,9 +238,9 @@ interface HistoryEntry { date: string; savedAt: string; form: Form; }
 async function getOrCreateUserId(): Promise<string> {
   const stored = await AsyncStorage.getItem(USER_ID_KEY);
   if (stored) return stored;
-  const id = "usr_" + (await Crypto.randomUUID()).replace(/-/g, "").slice(0, 16);
-  await AsyncStorage.setItem(USER_ID_KEY, id);
-  return id;
+  // Preserve all existing DB data: new installs default to "local_default".
+  await AsyncStorage.setItem(USER_ID_KEY, "local_default");
+  return "local_default";
 }
 
 async function loadHistory(uid: string): Promise<HistoryEntry[]> {
