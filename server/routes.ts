@@ -5110,9 +5110,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (row.zone2_min != null) payload.cardio_zone2_min = row.zone2_min;
       if (row.zone3_min != null) payload.cardio_zone3_min = row.zone3_min;
-      if ((row.zone3_min ?? 0) > 0) payload.actual_cardio_mode = "zone3";
-      else if ((row.zone2_min ?? 0) > 0) payload.actual_cardio_mode = "zone2";
-      else if ((row.cardio_min ?? 0) > 0) payload.actual_cardio_mode = "zone1";
+      if ((row.zone3_min ?? 0) > 0) payload.actual_cardio_mode = "zone_3";
+      else if ((row.zone2_min ?? 0) > 0) payload.actual_cardio_mode = "zone_2";
+      else if ((row.cardio_min ?? 0) > 0) payload.actual_cardio_mode = "recovery_walk";
     }
     if (!row.lift_skipped) {
       if (row.lift_start_time && row.lift_end_time) {

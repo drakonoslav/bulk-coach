@@ -1204,9 +1204,9 @@ export default function LogScreen() {
           if (zone3) intelPayload.cardio_zone3_min = parseFloat(zone3);
           const z3v = zone3 ? parseFloat(zone3) : 0;
           const z2v = zone2 ? parseFloat(zone2) : 0;
-          if (z3v > 0) intelPayload.actual_cardio_mode = "zone3";
-          else if (z2v > 0) intelPayload.actual_cardio_mode = "zone2";
-          else if (entry.cardioMin && entry.cardioMin > 0) intelPayload.actual_cardio_mode = "zone1";
+          if (z3v > 0) intelPayload.actual_cardio_mode = "zone_3";
+          else if (z2v > 0) intelPayload.actual_cardio_mode = "zone_2";
+          else if (entry.cardioMin && entry.cardioMin > 0) intelPayload.actual_cardio_mode = "recovery_walk";
         }
         if (!liftSkipped) {
           if (liftStartTime && liftEndTime) {
