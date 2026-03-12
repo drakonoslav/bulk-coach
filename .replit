@@ -7,7 +7,7 @@ packages = ["unzip"]
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["sh", "-c", "npm run expo:static:build && npm run server:build"]
+build = ["npm", "run", "server:build"]
 run = ["npm", "run", "server:prod"]
 
 [[ports]]
