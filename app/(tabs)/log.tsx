@@ -30,10 +30,12 @@ import {
   saveStrengthSets,
   loadIntelReceipt,
   saveIntelRecommendation,
+  loadIntelRecommendation,
   type StrengthExercise,
   type StrengthSet,
   type GameBridgeEntry,
   type IntelReceipt,
+  type IntelRecommendation,
 } from "@/lib/entry-storage";
 import { USE_INTEL_STRENGTH } from "@/lib/intel-strength";
 import { DailyEntry, todayStr, avg3 } from "@/lib/coaching-engine";
@@ -361,6 +363,7 @@ export default function LogScreen() {
   const [dayStateColor, setDayStateColor] = useState<{ color: string; label: string } | null>(null);
 
   const [intelReceipt, setIntelReceipt] = useState<IntelReceipt | null>(null);
+  const [intelRec, setIntelRec] = useState<IntelRecommendation | null>(null);
 
   const [strengthExercises, setStrengthExercises] = useState<StrengthExercise[]>([]);
   const [strengthSetsDay, setStrengthSetsDay] = useState<StrengthSet[]>([]);
@@ -805,6 +808,12 @@ export default function LogScreen() {
     } catch {
       setIntelReceipt(null);
     }
+    try {
+      const rec = await loadIntelRecommendation("local_default", day);
+      setIntelRec(rec);
+    } catch {
+      setIntelRec(null);
+    }
   }, []);
 
   useEffect(() => {
@@ -1240,11 +1249,13 @@ export default function LogScreen() {
         if (intelRes.ok) {
           const intelData = await intelRes.json();
           if (intelData.ok && intelData.recommendation) {
-            await saveIntelRecommendation("local_default", selectedDate, {
+            const saved = {
               date: intelData.date || selectedDate,
               ...intelData.recommendation,
               scoreBreakdowns: intelData.scoreBreakdowns,
-            });
+            };
+            await saveIntelRecommendation("local_default", selectedDate, saved);
+            setIntelRec(saved);
           }
         }
       } catch {}
@@ -1371,6 +1382,133 @@ export default function LogScreen() {
         bottomOffset={80}
         keyboardShouldPersistTaps="handled"
       >
+        {intelRec && (() => {
+          const cardioLabel: Record<string, string> = {
+            recovery_walk: "Walk", zone_2: "Zone 2", zone_3: "Zone 3", off: "Rest",
+          };
+          const liftLabel: Record<string, string> = {
+            neural_tension: "Neural", recovery_patterning: "Recovery", pump: "Pump",
+            hypertrophy_build: "Hypertrophy", mobility: "Mobility", off: "Rest",
+          };
+          const macroLabel: Record<string, string> = {
+            reset: "Reset", build: "Build", prime: "Prime",
+            resensitize: "Resensitize", surge: "Surge",
+          };
+          const classColor: Record<string, string> = {
+            surge: "#34D399", build: "#00D4AA", controlled_build: "#00D4AA",
+            strong_build: "#00D4AA", reset: "#FBBF24", resensitize: "#FBBF24",
+            hard_stop: "#EF4444",
+          };
+          const cls = intelRec.scores.oscillatorClass ?? "";
+          const clsColor = classColor[cls.toLowerCase().replace(/ /g, "_")] ?? "#8B5CF6";
+          const weekLabel = (intelRec.cycleWeekType ?? "").toUpperCase();
+          const hasHardStop = intelRec.flags?.hardStopFatigue;
+          const hasSuppressedHrv = intelRec.flags?.suppressedHrv;
+          const hasElevatedRhr = intelRec.flags?.elevatedRhr;
+          const hasLowSleep = intelRec.flags?.lowSleep;
+          const anyFlag = hasHardStop || hasSuppressedHrv || hasElevatedRhr || hasLowSleep;
+          return (
+            <View style={{
+              marginBottom: 8,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#8B5CF620",
+              backgroundColor: "#8B5CF608",
+              overflow: "hidden",
+            }}>
+              <View style={{
+                flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6,
+                borderBottomWidth: 1, borderBottomColor: "#8B5CF615",
+              }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="pulse" size={13} color="#8B5CF6" />
+                  <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 12, color: "#8B5CF6" }}>
+                    Intel · D{intelRec.cycleDay28} {weekLabel}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ backgroundColor: clsColor + "25", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: clsColor, textTransform: "uppercase" as const }}>
+                      {cls.replace(/_/g, " ")}
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: "Rubik_700Bold", fontSize: 14, color: clsColor }}>
+                    {intelRec.scores.compositeScore}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 6 }}>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {[
+                    { icon: "bicycle-outline" as const, label: "Cardio", val: cardioLabel[intelRec.recommendedCardioMode] ?? intelRec.recommendedCardioMode },
+                    { icon: "barbell-outline" as const, label: "Lift", val: liftLabel[intelRec.recommendedLiftMode] ?? intelRec.recommendedLiftMode },
+                    { icon: "nutrition-outline" as const, label: "Macro", val: macroLabel[intelRec.recommendedMacroDayType] ?? intelRec.recommendedMacroDayType },
+                  ].map(({ icon, label, val }) => (
+                    <View key={label} style={{ flex: 1, alignItems: "center", gap: 2 }}>
+                      <Ionicons name={icon} size={13} color={Colors.textTertiary} />
+                      <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 9, color: Colors.textTertiary, textTransform: "uppercase" as const, letterSpacing: 0.4 }}>{label}</Text>
+                      <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 11, color: Colors.text }}>{val}</Text>
+                    </View>
+                  ))}
+                </View>
+                {intelRec.macroTargets && (
+                  <View style={{
+                    flexDirection: "row", justifyContent: "center", gap: 12,
+                    backgroundColor: "#8B5CF610", borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10,
+                  }}>
+                    <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 11, color: Colors.textSecondary }}>
+                      {intelRec.macroTargets.kcal} kcal
+                    </Text>
+                    <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 11, color: Colors.textTertiary }}>·</Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
+                      {intelRec.macroTargets.proteinG}P
+                    </Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
+                      {intelRec.macroTargets.carbsG}C
+                    </Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
+                      {intelRec.macroTargets.fatG}F
+                    </Text>
+                  </View>
+                )}
+                {anyFlag && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+                    {hasHardStop && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#EF444415", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                        <Ionicons name="stop-circle-outline" size={11} color="#EF4444" />
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: "#EF4444" }}>Hard stop</Text>
+                      </View>
+                    )}
+                    {hasSuppressedHrv && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FBBF2415", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                        <Ionicons name="trending-down-outline" size={11} color="#FBBF24" />
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: "#FBBF24" }}>HRV suppressed</Text>
+                      </View>
+                    )}
+                    {hasElevatedRhr && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FBBF2415", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                        <Ionicons name="heart-outline" size={11} color="#FBBF24" />
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: "#FBBF24" }}>RHR elevated</Text>
+                      </View>
+                    )}
+                    {hasLowSleep && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FBBF2415", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                        <Ionicons name="moon-outline" size={11} color="#FBBF24" />
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: "#FBBF24" }}>Low sleep</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                {intelRec.reasoning && intelRec.reasoning.length > 0 && (
+                  <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 10, color: Colors.textTertiary, fontStyle: "italic" }}>
+                    {intelRec.reasoning[0]}
+                  </Text>
+                )}
+              </View>
+            </View>
+          );
+        })()}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Meal Execution</Text>
           {([
