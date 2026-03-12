@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
-import { loadDashboard, loadStrengthSets, loadStrengthMapping, type StrengthSet } from "@/lib/entry-storage";
+import { loadDashboard, loadStrengthSets, loadStrengthMapping, loadIntelRecommendation, type StrengthSet, type IntelRecommendation, type IntelIngredientAdjustment } from "@/lib/entry-storage";
 import { computeGlobalStrengthIndexV2, computeRegionalMuscleIndicesV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping, type MuscleIndexDay } from "@/lib/strength-v2";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
@@ -36,6 +36,7 @@ import {
   BASELINE,
   ITEM_LABELS,
   ITEM_UNITS,
+  KCAL_PER_G,
   distributeDeltasToMeals,
   type AdjustmentItem,
   type MealGuideEntry,
@@ -580,6 +581,7 @@ export default function ReportScreen() {
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [intelRecToday, setIntelRecToday] = useState<IntelRecommendation | null>(null);
   const [proxyData, setProxyData] = useState<Array<{ date: string; proxyScore: number | null; proxy7dAvg: number | null }>>([]);
   const [proxyImputed, setProxyImputed] = useState(false);
   const [confidence, setConfidence] = useState<Array<{ window: string; days: number; measured: number; imputed: number; multiNight: number; grade: string }>>([]);
@@ -692,6 +694,24 @@ export default function ReportScreen() {
     setPolicySource(dash.policySource);
     setModeInsightReason(dash.modeInsightReason);
     setCalorieHistory(dash.decisions14d ?? []);
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+    try {
+      let irec = await loadIntelRecommendation("local_default", todayDate);
+      if (!irec) {
+        const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", getApiUrl()).toString());
+        if (latestRes.ok) {
+          const latestData = await latestRes.json();
+          const r = latestData.recommendation ?? latestData;
+          if (r && r.scores) {
+            irec = { date: todayDate, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
+          }
+        }
+      }
+      setIntelRecToday(irec);
+    } catch {
+      setIntelRecToday(null);
+    }
 
     try {
       const v2End = end;
@@ -896,8 +916,27 @@ export default function ReportScreen() {
   const modeInsight =
     (modeInsightReason ?? modeClass?.calorieAction?.reason ?? "").trim();
 
-  const adjustments =
-    finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
+  const INTEL_INGREDIENT_KEY: Record<string, string> = {
+    "MCT Powder": "mct_g", "Dextrin": "dextrin_g", "Oats": "oats_g",
+    "Whey": "whey_g", "Flaxseed": "flax_g", "Eggs": "eggs",
+    "Yogurt": "yogurt_cups", "Bananas": "bananas",
+  };
+
+  const intelIngredientAdjs = intelRecToday?.cycles?.resource_14d?.output?.ingredientAdjustments;
+
+  const adjustments: AdjustmentItem[] = (() => {
+    if (intelIngredientAdjs && intelIngredientAdjs.length > 0) {
+      return intelIngredientAdjs
+        .filter(a => INTEL_INGREDIENT_KEY[a.ingredient])
+        .map(a => {
+          const key = INTEL_INGREDIENT_KEY[a.ingredient];
+          const delta = a.action === "increase" ? a.qty : -a.qty;
+          const kcalPerUnit = KCAL_PER_G[key] ?? 0;
+          return { item: key, deltaAmount: delta, achievedKcal: delta * kcalPerUnit };
+        });
+    }
+    return finalKcal.delta !== 0 ? proposeMacroSafeAdjustment(finalKcal.delta, BASELINE) : [];
+  })();
 
   const strengthPhase = classifyStrengthPhase(sV?.pctPerWeek ?? null);
 
@@ -2646,9 +2685,17 @@ export default function ReportScreen() {
                 Insight: {modeInsight.length ? modeInsight : "No additional insight (need more data)."}
               </Text>
 
-              {finalKcal.delta !== 0 ? (
+              {adjustments.length > 0 ? (
                 <View style={{ marginTop: 12 }}>
-                  <Text style={[styles.sectionTitle, { marginBottom: 8 }]}>Suggested Tweaks</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <Text style={styles.sectionTitle}>Suggested Tweaks</Text>
+                    {intelIngredientAdjs && intelIngredientAdjs.length > 0 && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#8B5CF615", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Ionicons name="pulse" size={10} color="#8B5CF6" />
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 9, color: "#8B5CF6" }}>Intel</Text>
+                      </View>
+                    )}
+                  </View>
                   <AdjustmentCard adjustments={adjustments} kcalChange={finalKcal.delta} />
                 </View>
               ) : (
@@ -2658,9 +2705,17 @@ export default function ReportScreen() {
               )}
             </View>
 
-            {finalKcal.delta !== 0 ? (
+            {adjustments.length > 0 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Meal Adjustment Guide</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <Text style={styles.sectionTitle}>Meal Adjustment Guide</Text>
+                  {intelIngredientAdjs && intelIngredientAdjs.length > 0 && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#8B5CF615", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Ionicons name="pulse" size={10} color="#8B5CF6" />
+                      <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 9, color: "#8B5CF6" }}>Intel</Text>
+                    </View>
+                  )}
+                </View>
                 <MealAdjustmentGuide adjustments={adjustments} kcalChange={finalKcal.delta} />
               </View>
             ) : null}

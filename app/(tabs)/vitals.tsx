@@ -935,7 +935,7 @@ export default function VitalsScreen() {
             const latestData = await latestRes.json();
             const rec = latestData.recommendation ?? latestData;
             if (rec && rec.scores) {
-              resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns };
+              resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
               await saveIntelRecommendation("local_default", todayDate, resolvedIntelRec!);
             }
           }

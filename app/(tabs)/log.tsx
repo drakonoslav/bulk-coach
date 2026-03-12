@@ -818,7 +818,7 @@ export default function LogScreen() {
             const latestData = await latestRes.json();
             const r = latestData.recommendation ?? latestData;
             if (r && r.scores) {
-              rec = { date: day, ...r, scoreBreakdowns: latestData.scoreBreakdowns };
+              rec = { date: day, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
               await saveIntelRecommendation("local_default", day, rec!);
             }
           }
@@ -1267,6 +1267,7 @@ export default function LogScreen() {
               date: intelData.date || selectedDate,
               ...intelData.recommendation,
               scoreBreakdowns: intelData.scoreBreakdowns,
+              cycles: intelData.cycles,
             };
             await saveIntelRecommendation("local_default", selectedDate, saved);
             setIntelRec(saved);
@@ -1421,6 +1422,18 @@ export default function LogScreen() {
           const hasElevatedRhr = intelRec.flags?.elevatedRhr;
           const hasLowSleep = intelRec.flags?.lowSleep;
           const anyFlag = hasHardStop || hasSuppressedHrv || hasElevatedRhr || hasLowSleep;
+
+          const acute = intelRec.cycles?.acute_7d;
+          const resource = intelRec.cycles?.resource_14d;
+          const seasonal = intelRec.cycles?.seasonal_28d;
+          const circadian = intelRec.cycles?.circadian_24h;
+          const keyDrivers = acute?.keyDrivers ?? [];
+          const ingredientAdjs = resource?.output?.ingredientAdjustments ?? [];
+          const seasonalNarrative = seasonal?.output?.narrative ?? "";
+          const cardioWindow = circadian?.output?.cardioWindow;
+          const liftWindow = circadian?.output?.liftWindow;
+          const mealTiming = circadian?.output?.mealTiming;
+
           return (
             <View style={{
               marginBottom: 8,
@@ -1430,6 +1443,7 @@ export default function LogScreen() {
               backgroundColor: "#8B5CF608",
               overflow: "hidden",
             }}>
+              {/* Header */}
               <View style={{
                 flexDirection: "row", alignItems: "center", justifyContent: "space-between",
                 paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6,
@@ -1452,7 +1466,9 @@ export default function LogScreen() {
                   </Text>
                 </View>
               </View>
-              <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 6 }}>
+
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 7 }}>
+                {/* Governors row */}
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   {[
                     { icon: "bicycle-outline" as const, label: "Cardio", val: cardioLabel[intelRec.recommendedCardioMode] ?? intelRec.recommendedCardioMode },
@@ -1466,6 +1482,8 @@ export default function LogScreen() {
                     </View>
                   ))}
                 </View>
+
+                {/* Macro targets */}
                 {intelRec.macroTargets && (
                   <View style={{
                     flexDirection: "row", justifyContent: "center", gap: 12,
@@ -1475,17 +1493,13 @@ export default function LogScreen() {
                       {intelRec.macroTargets.kcal} kcal
                     </Text>
                     <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 11, color: Colors.textTertiary }}>·</Text>
-                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
-                      {intelRec.macroTargets.proteinG}P
-                    </Text>
-                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
-                      {intelRec.macroTargets.carbsG}C
-                    </Text>
-                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>
-                      {intelRec.macroTargets.fatG}F
-                    </Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>{intelRec.macroTargets.proteinG}P</Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>{intelRec.macroTargets.carbsG}C</Text>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 11, color: Colors.textSecondary }}>{intelRec.macroTargets.fatG}F</Text>
                   </View>
                 )}
+
+                {/* Flags */}
                 {anyFlag && (
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                     {hasHardStop && (
@@ -1514,9 +1528,73 @@ export default function LogScreen() {
                     )}
                   </View>
                 )}
-                {intelRec.reasoning && intelRec.reasoning.length > 0 && (
+
+                {/* Acute key drivers — HRV/RHR specifics */}
+                {keyDrivers.length > 0 && (
+                  <View style={{ borderTopWidth: 1, borderTopColor: "#8B5CF610", paddingTop: 6, gap: 3 }}>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 9, color: "#8B5CF6", textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 2 }}>
+                      Acute signals
+                    </Text>
+                    {keyDrivers.map((kd, i) => (
+                      <View key={i} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                        <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 10, color: Colors.textSecondary, flex: 1 }}>{kd.note}</Text>
+                        <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: kd.score < 0 ? "#EF4444" : "#34D399", marginLeft: 6 }}>
+                          {kd.score > 0 ? "+" : ""}{kd.score}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Resource: ingredient gram adjustments */}
+                {ingredientAdjs.length > 0 && (
+                  <View style={{ borderTopWidth: 1, borderTopColor: "#8B5CF610", paddingTop: 6, gap: 3 }}>
+                    <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 9, color: "#8B5CF6", textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 2 }}>
+                      Gram prescription
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+                      {ingredientAdjs.map((adj, i) => {
+                        const isInc = adj.action === "increase";
+                        return (
+                          <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: (isInc ? "#34D39915" : "#EF444415"), borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                            <Ionicons name={isInc ? "add-circle-outline" : "remove-circle-outline"} size={11} color={isInc ? "#34D399" : "#EF4444"} />
+                            <Text style={{ fontFamily: "Rubik_600SemiBold", fontSize: 10, color: isInc ? "#34D399" : "#EF4444" }}>
+                              {adj.ingredient} {isInc ? "+" : "-"}{adj.qty}g
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                {/* Circadian training windows */}
+                {(cardioWindow || liftWindow) && (
+                  <View style={{ borderTopWidth: 1, borderTopColor: "#8B5CF610", paddingTop: 6, flexDirection: "row", gap: 12 }}>
+                    {cardioWindow && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Ionicons name="bicycle-outline" size={11} color={Colors.textTertiary} />
+                        <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 10, color: Colors.textSecondary }}>{cardioWindow.anchor}</Text>
+                      </View>
+                    )}
+                    {liftWindow && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Ionicons name="barbell-outline" size={11} color={Colors.textTertiary} />
+                        <Text style={{ fontFamily: "Rubik_500Medium", fontSize: 10, color: Colors.textSecondary }}>{liftWindow.anchor}</Text>
+                      </View>
+                    )}
+                    {mealTiming && (
+                      <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 10, color: Colors.textTertiary }}>
+                        Meals: {mealTiming.postCardio} · {mealTiming.preLift} · {mealTiming.postLift}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Seasonal narrative or reasoning fallback */}
+                {(seasonalNarrative || (intelRec.reasoning && intelRec.reasoning.length > 0)) && (
                   <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 10, color: Colors.textTertiary, fontStyle: "italic" }}>
-                    {intelRec.reasoning[0]}
+                    {seasonalNarrative || intelRec.reasoning[0]}
                   </Text>
                 )}
               </View>

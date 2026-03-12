@@ -446,6 +446,57 @@ export async function loadIntelReceipt(date: string): Promise<IntelReceipt | nul
   return data?.receipt ?? null;
 }
 
+export interface IntelIngredientAdjustment {
+  priority: number;
+  ingredient: string;
+  action: "increase" | "decrease";
+  qty: number;
+  display: string;
+}
+
+export interface IntelCycles {
+  acute_7d?: {
+    score: number;
+    state: string;
+    governor: string;
+    activeFlags?: string[];
+    keyDrivers?: Array<{ key: string; score: number; note: string }>;
+    output?: { cardioMode: string; liftMode: string };
+  };
+  resource_14d?: {
+    score: number;
+    state: string;
+    governor: string;
+    output?: {
+      macroDay: string;
+      macroDelta?: { carbsDeltaG: number; fatDeltaG: number };
+      ingredientAdjustments?: IntelIngredientAdjustment[];
+    };
+  };
+  seasonal_28d?: {
+    score: number;
+    cycleDay: number;
+    weekType: string;
+    phase: string;
+    governor: string;
+    output?: {
+      deloadActive: boolean;
+      virilityTrend: number;
+      narrative: string;
+    };
+  };
+  circadian_24h?: {
+    governor: string;
+    output?: {
+      cardioWindow?: { mode: string; anchor: string };
+      liftWindow?: { mode: string; anchor: string };
+      mealTiming?: { postCardio: string; preLift: string; postLift: string };
+    };
+  };
+  ultradian_90min?: { governor: string; status: string };
+  macro_block_90d?: { governor: string; status: string };
+}
+
 export interface IntelRecommendation {
   date: string;
   cycleDay28: number;
@@ -471,6 +522,7 @@ export interface IntelRecommendation {
   macroTargets: { kcal: number; proteinG: number; carbsG: number; fatG: number };
   macroDelta: { proteinDeltaG: number; carbsDeltaG: number; fatDeltaG: number; kcalDelta: number };
   reasoning: string[];
+  cycles?: IntelCycles;
   scoreBreakdowns?: {
     acute?: unknown[];
     resource?: unknown[];
