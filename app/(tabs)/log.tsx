@@ -317,6 +317,8 @@ export default function LogScreen() {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [syncingIntel, setSyncingIntel] = useState(false);
+  const [intelSyncMsg, setIntelSyncMsg] = useState<string | null>(null);
   const [erectionBadges, setErectionBadges] = useState<Record<string, "measured" | "imputed">>({});
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
@@ -1010,6 +1012,31 @@ export default function LogScreen() {
     setZone5("");
   };
 
+  const handleIntelSync = async () => {
+    if (syncingIntel) return;
+    setSyncingIntel(true);
+    setIntelSyncMsg(null);
+    try {
+      const baseUrl = getApiUrl();
+      const res = await authFetch(new URL("/api/intel/backfill", baseUrl).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 60 }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIntelSyncMsg(`Synced ${data.ok}/${data.sent} days`);
+      } else {
+        setIntelSyncMsg("Sync failed");
+      }
+    } catch {
+      setIntelSyncMsg("Sync error");
+    } finally {
+      setSyncingIntel(false);
+      setTimeout(() => setIntelSyncMsg(null), 4000);
+    }
+  };
+
   const handleSave = async () => {
     if (!morningWeight) {
       Alert.alert("Required", "Morning weight is required to log an entry.");
@@ -1175,6 +1202,11 @@ export default function LogScreen() {
           }
           if (zone2) intelPayload.cardio_zone2_min = parseFloat(zone2);
           if (zone3) intelPayload.cardio_zone3_min = parseFloat(zone3);
+          const z3v = zone3 ? parseFloat(zone3) : 0;
+          const z2v = zone2 ? parseFloat(zone2) : 0;
+          if (z3v > 0) intelPayload.actual_cardio_mode = "zone3";
+          else if (z2v > 0) intelPayload.actual_cardio_mode = "zone2";
+          else if (entry.cardioMin && entry.cardioMin > 0) intelPayload.actual_cardio_mode = "zone1";
         }
         if (!liftSkipped) {
           if (liftStartTime && liftEndTime) {
@@ -1230,7 +1262,22 @@ export default function LogScreen() {
     <View style={styles.container}>
       <View style={[styles.stickyHeader, { paddingTop: topInset + 16 }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Daily Log</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={styles.title}>Daily Log</Text>
+            <Pressable
+              onPress={handleIntelSync}
+              disabled={syncingIntel}
+              hitSlop={10}
+              style={{ opacity: syncingIntel ? 0.4 : 0.7 }}
+            >
+              <Ionicons name={syncingIntel ? "sync" : "cloud-upload-outline"} size={16} color={Colors.textSecondary} />
+            </Pressable>
+            {intelSyncMsg && (
+              <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.primary }}>
+                {intelSyncMsg}
+              </Text>
+            )}
+          </View>
           <View style={styles.dateNav}>
             <Pressable onPress={goToPrevDay} style={styles.dateNavBtn} hitSlop={12}>
               <Ionicons name="chevron-back" size={22} color={Colors.text} />

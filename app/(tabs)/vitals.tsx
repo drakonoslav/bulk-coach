@@ -22,6 +22,7 @@ import * as Sharing from "expo-sharing";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt, scoreColor } from "@/lib/format";
+import { loadIntelRecommendation, type IntelRecommendation } from "@/lib/entry-storage";
 
 interface SessionRow {
   date: string;
@@ -156,6 +157,64 @@ const TIER_CONFIG: Record<string, { color: string; glow: string; label: string; 
   "Reset":           { color: "#FB923C", glow: "rgba(251,146,60,0.15)",   label: "RESET",        sub: "Zone 2 Short · Recovery Pattern · Reset" },
   "Resensitize":     { color: "#F87171", glow: "rgba(248,113,113,0.15)",  label: "RESENSITIZE",  sub: "Walk Only · No Hard Lift · Resensitize" },
 };
+
+function mapIntelToOscillator(intel: IntelRecommendation): OscillatorData {
+  const cls = intel.scores?.oscillatorClass ?? "Resensitize";
+  const dayTypeMap: Record<string, "SURGE" | "BUILD" | "RESET" | "RESENSITIZE"> = {
+    "Peak": "SURGE", "Strong Build": "BUILD",
+    "Controlled Build": "RESET", "Reset": "RESET", "Resensitize": "RESENSITIZE",
+  };
+  const weekMap: Record<string, "Prime" | "Overload" | "Peak" | "Resensitize"> = {
+    prime: "Prime", overload: "Overload", peak: "Peak", resensitize: "Resensitize",
+  };
+  const zero = { caloriePts: 0, proteinPts: 0, fatFloorPts: 0, carbTimingPts: 0,
+    weightTrendPts: 0, waistTrendPts: 0, ffmTrendPts: 0, strengthTrendPts: 0,
+    cardioMonotonyPts: 0, avgCalories7d: null, avgProtein7d: null, avgFat7d: null,
+    bwTrend14dLbPerWk: null, waistTrend14dInOver14d: null, ffmTrend14dLbPerWk: null,
+    strengthTrendPct: null, zone2Days7d: 0, zone3Days7d: 0, easyDays7d: 0 };
+  const zeroAc = { hrvRatio: null, hrvYearRatio: null, hrvPts: 0, rhrDelta: null, rhrPts: 0,
+    sleepMin: null, sleepPts: 0, sleepMidpointShiftMin: null, regularityPts: 0,
+    bwDeltaPct: null, bwStabilityPts: 0, subjectiveDrivePts: 0, jointSorenessPts: 0,
+    yesterdayLiftPts: 0, yesterdayCardioPts: 0,
+    hasHrv: false, hasRhr: false, hasSleep: false, hasSubjective: false };
+  const zeroSeas = { hrv28Pts: 0, rhr28Pts: 0, sleepReg28Pts: 0, waistWeightRelPts: 0,
+    ffm28Pts: 0, deloadPts: 0, monotonyPts: 0, lightPts: 0, motivationPts: 0,
+    hrv28PctChange: null, rhr28DeltaBpm: null, waistChange28d: null, weightChange28d: null, ffm28dChange: null };
+  const mt = intel.macroTargets ?? { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
+  return {
+    date: intel.date,
+    cycleDay28: intel.cycleDay28 ?? 0,
+    cycleWeek: weekMap[(intel.cycleWeekType ?? "prime").toLowerCase()] ?? "Prime",
+    composite: intel.scores?.compositeScore ?? null,
+    ocs_class: cls,
+    tier: cls,
+    acute: intel.scores?.acuteScore ?? null,
+    resource: intel.scores?.resourceScore ?? null,
+    seasonal: intel.scores?.seasonalScore ?? null,
+    acuteComponents: zeroAc,
+    resourceComponents: zero,
+    seasonalComponents: zeroSeas,
+    prescription: {
+      dayType: dayTypeMap[cls] ?? "RESENSITIZE",
+      cardioMode: intel.recommendedCardioMode ?? "",
+      liftExpression: intel.recommendedLiftMode ?? "",
+      macroProteinG: mt.proteinG,
+      macroCarbG: [Math.round(mt.carbsG * 0.9), Math.round(mt.carbsG * 1.1)],
+      macroFatG: [Math.round(mt.fatG * 0.9), Math.round(mt.fatG * 1.1)],
+      macroKcalApprox: mt.kcal,
+      mealTiming: {} as MealTiming,
+    },
+    hardStopFatigue: intel.flags?.hardStopFatigue ?? false,
+    hardStopReasons: [],
+    zone2Count7d: 0,
+    zone3Count7d: 0,
+    easyCount7d: 0,
+    explanationText: (intel.reasoning ?? []).join(" "),
+    dataQuality: "full",
+    breakdowns: intel.scoreBreakdowns as OscillatorData["breakdowns"],
+    reasoning: intel.reasoning,
+  };
+}
 
 function layerColor(score: number | null): string {
   if (score == null) return "#64748B";
@@ -848,11 +907,13 @@ export default function VitalsScreen() {
         if (json.sources) setDataSources(json.sources);
       }
 
-      const [activeRes, archiveRes, hpaRes, oscillatorRes] = await Promise.all([
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const [activeRes, archiveRes, hpaRes, oscillatorRes, intelRec] = await Promise.all([
         authFetch(new URL("/api/context-lens/episodes/active", baseUrl).toString()),
         authFetch(new URL("/api/context-lens/archives", baseUrl).toString()),
         authFetch(new URL("/api/hpa", baseUrl).toString()),
         authFetch(new URL("/api/oscillator", baseUrl).toString()),
+        loadIntelRecommendation("local_default", todayDate),
       ]);
       if (activeRes.ok) {
         const data = await activeRes.json();
@@ -866,7 +927,9 @@ export default function VitalsScreen() {
         const data = await hpaRes.json();
         setHpaData(data);
       }
-      if (oscillatorRes.ok) {
+      if (intelRec) {
+        setOscillatorData(mapIntelToOscillator(intelRec));
+      } else if (oscillatorRes.ok) {
         const data = await oscillatorRes.json();
         setOscillatorData(data);
       }

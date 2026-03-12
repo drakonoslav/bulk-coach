@@ -741,6 +741,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json({ ok: true });
+
+      // Fire-and-forget Intel POST — runs after response is sent
+      const intelBase = process.env.LIFTING_INTEL_BASE_URL;
+      if (intelBase) {
+        (async () => {
+          try {
+            const { rows: fresh } = await pool.query(
+              `SELECT * FROM daily_log WHERE user_id = $1 AND day = $2`,
+              [userId, b.day],
+            );
+            if (fresh.length > 0) {
+              const payload = buildIntelDailyLogPayload(fresh[0]);
+              const r = await fetch(`${intelBase}/vitals/daily-log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              console.log(`[intel-sync] ${b.day} → ${r.status}`);
+            }
+          } catch (e) {
+            console.error("[intel-sync] fire-and-forget error:", e);
+          }
+        })();
+      }
     } catch (err: unknown) {
       console.error("upsert error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -5039,6 +5063,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  function buildIntelDailyLogPayload(row: Record<string, any>): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      expo_user_id: row.user_id || "local_default",
+      date: row.day,
+    };
+    function timeToIso(date: string, hhmm: string, previousDay = false): string {
+      const d = new Date(date + "T12:00:00");
+      if (previousDay) d.setDate(d.getDate() - 1);
+      return `${d.toISOString().slice(0, 10)}T${hhmm}:00`;
+    }
+    function hhmmDiffMin(start: string, end: string): number {
+      const [sh, sm] = start.split(":").map(Number);
+      const [eh, em] = end.split(":").map(Number);
+      let diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff < 0) diff += 24 * 60;
+      return diff;
+    }
+    if (row.sleep_minutes != null) payload.sleep_duration_min = row.sleep_minutes;
+    if (row.sleep_efficiency != null) payload.sleep_efficiency_pct = row.sleep_efficiency;
+    if (row.actual_bed_time) {
+      const bedHour = parseInt(row.actual_bed_time.split(":")[0], 10);
+      payload.bedtime_local = timeToIso(row.day, row.actual_bed_time, bedHour >= 12);
+    }
+    if (row.actual_wake_time) payload.waketime_local = timeToIso(row.day, row.actual_wake_time);
+    if (row.hrv != null) payload.hrv_ms = row.hrv;
+    if (row.resting_hr != null) payload.resting_hr_bpm = row.resting_hr;
+    if (row.morning_weight_lb != null) payload.body_weight_lb = row.morning_weight_lb;
+    if (row.bf_morning_pct != null) payload.body_fat_pct = row.bf_morning_pct;
+    if (row.fat_free_mass_lb != null) payload.fat_free_mass_lb = row.fat_free_mass_lb;
+    if (row.waist_in != null) payload.waist_at_navel_in = row.waist_in;
+    if (row.steps != null) payload.step_count = row.steps;
+    if (!row.cardio_skipped) {
+      if (row.cardio_start_time && row.cardio_end_time) {
+        payload.cardio_start_time = timeToIso(row.day, row.cardio_start_time);
+        payload.cardio_end_time = timeToIso(row.day, row.cardio_end_time);
+        payload.cardio_duration_min = hhmmDiffMin(row.cardio_start_time, row.cardio_end_time);
+      }
+      if (row.zone2_min != null) payload.cardio_zone2_min = row.zone2_min;
+      if (row.zone3_min != null) payload.cardio_zone3_min = row.zone3_min;
+      if ((row.zone3_min ?? 0) > 0) payload.actual_cardio_mode = "zone3";
+      else if ((row.zone2_min ?? 0) > 0) payload.actual_cardio_mode = "zone2";
+      else if ((row.cardio_min ?? 0) > 0) payload.actual_cardio_mode = "zone1";
+    }
+    if (!row.lift_skipped) {
+      if (row.lift_start_time && row.lift_end_time) {
+        payload.lift_start_time = timeToIso(row.day, row.lift_start_time);
+        payload.lift_end_time = timeToIso(row.day, row.lift_end_time);
+      }
+      if (row.lift_min != null) payload.lift_duration_min = row.lift_min;
+      if (row.lift_working_min != null) payload.lift_working_time_min = row.lift_working_min;
+      const liftModeMap: Record<string, string> = {
+        light: "recovery_patterning", moderate: "pump", hard: "hypertrophy_build",
+      };
+      const liftMode = row.deload_week ? "mobility"
+        : row.lift_done ? "neural_tension"
+        : row.training_load && liftModeMap[row.training_load] ? liftModeMap[row.training_load]
+        : undefined;
+      if (liftMode) payload.completed_lift_mode = liftMode;
+    }
+    if (row.calories_in != null) payload.kcal_actual = row.calories_in;
+    if (row.protein_g_actual != null) payload.protein_g_actual = row.protein_g_actual;
+    if (row.carbs_g_actual != null) payload.carbs_g_actual = row.carbs_g_actual;
+    if (row.fat_g_actual != null) payload.fat_g_actual = row.fat_g_actual;
+    if (row.morning_erection_score != null) payload.morning_erection_score = row.morning_erection_score;
+    if (row.libido_score != null) payload.libido_score = row.libido_score;
+    if (row.motivation_score != null) payload.motivation_score = row.motivation_score;
+    if (row.mood_stability_score != null) payload.mood_stability_score = row.mood_stability_score;
+    if (row.mental_drive_score != null) payload.mental_drive_score = row.mental_drive_score;
+    if (row.joint_friction_score != null) payload.joint_friction_score = row.joint_friction_score;
+    if (row.stress_load_score != null) payload.stress_load_score = row.stress_load_score;
+    if (row.pain_0_10 != null) payload.soreness_score = Math.min(5, Math.max(1, Math.round(row.pain_0_10 / 2) + 1));
+    return payload;
+  }
+
   app.post("/api/intel/vitals/daily-log", async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
@@ -5053,6 +5151,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error("POST /api/intel/vitals/daily-log error:", err);
       return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
+  app.post("/api/intel/backfill", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const userId = getUserId(req);
+      const days = Math.min(parseInt(req.body?.days || "60", 10), 120);
+      const { rows } = await pool.query(
+        `SELECT * FROM daily_log WHERE user_id = $1 AND morning_weight_lb IS NOT NULL ORDER BY day DESC LIMIT $2`,
+        [userId, days],
+      );
+      const results: { day: string; status: number | string }[] = [];
+      for (const row of rows) {
+        try {
+          const payload = buildIntelDailyLogPayload(row);
+          const r = await fetch(`${INTEL_BASE}/vitals/daily-log`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          results.push({ day: row.day, status: r.status });
+          console.log(`[intel-backfill] ${row.day} → ${r.status}`);
+        } catch (e: any) {
+          results.push({ day: row.day, status: `error: ${e.message}` });
+        }
+      }
+      const ok = results.filter(r => typeof r.status === "number" && r.status < 300).length;
+      return res.json({ sent: rows.length, ok, results });
+    } catch (err: any) {
+      console.error("POST /api/intel/backfill error:", err);
+      return res.status(500).json({ error: String(err) });
     }
   });
 
