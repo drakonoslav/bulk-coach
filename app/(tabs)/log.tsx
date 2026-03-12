@@ -1325,8 +1325,8 @@ export default function LogScreen() {
             const saved = {
               date: intelData.date || selectedDate,
               ...intelData.recommendation,
-              scoreBreakdowns: intelData.scoreBreakdowns,
-              cycles: intelData.cycles,
+              scoreBreakdowns: intelData.scoreBreakdowns ?? intelRec?.scoreBreakdowns,
+              cycles: intelData.cycles ?? intelRec?.cycles,
             };
             await saveIntelRecommendation("local_default", selectedDate, saved);
             setIntelRec(saved);
