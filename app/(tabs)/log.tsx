@@ -70,10 +70,12 @@ const LOCKED_BASELINE_MACROS = { p: 173.9, c: 330.9, f: 54.4 };
 const CORE_MEAL_KEYS = ["preCardio", "postCardio", "midday", "preLift", "postLift", "evening"];
 
 const INGREDIENT_MACRO_FACTORS: Record<string, { p: number; c: number; f: number }> = {
-  dextrin:      { p: 0, c: 1.0, f: 0   },
-  dextrose:     { p: 0, c: 1.0, f: 0   },
-  "mct powder": { p: 0, c: 0,   f: 1.0 },
-  mct:          { p: 0, c: 0,   f: 1.0 },
+  dextrin:         { p: 0,   c: 1.0,  f: 0    },
+  dextrose:        { p: 0,   c: 1.0,  f: 0    },
+  "mct powder":    { p: 0,   c: 0,    f: 1.0  },
+  mct:             { p: 0,   c: 0,    f: 1.0  },
+  whey:            { p: 0.8, c: 0.1,  f: 0.05 },
+  "whey protein":  { p: 0.8, c: 0.1,  f: 0.05 },
 };
 
 function computeMealCalories(checklist: Record<string, boolean>): number {
