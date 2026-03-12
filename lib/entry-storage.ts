@@ -406,6 +406,14 @@ function rowToEntry(row: any): DailyEntry {
     mealChecklist: row.mealChecklist ?? undefined,
     cardioSkipped: row.cardioSkipped ?? undefined,
     liftSkipped: row.liftSkipped ?? undefined,
+    libidoScore: row.libidoScore != null ? Number(row.libidoScore) : undefined,
+    motivationScore: row.motivationScore != null ? Number(row.motivationScore) : undefined,
+    moodStabilityScore: row.moodStabilityScore != null ? Number(row.moodStabilityScore) : undefined,
+    mentalDriveScore: row.mentalDriveScore != null ? Number(row.mentalDriveScore) : undefined,
+    jointFrictionScore: row.jointFrictionScore != null ? Number(row.jointFrictionScore) : undefined,
+    proteinGActual: row.proteinGActual != null ? Number(row.proteinGActual) : undefined,
+    carbsGActual: row.carbsGActual != null ? Number(row.carbsGActual) : undefined,
+    fatGActual: row.fatGActual != null ? Number(row.fatGActual) : undefined,
   };
 }
 
