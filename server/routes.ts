@@ -159,13 +159,19 @@ function requireAuth(req: Request, res: Response, next: Function) {
   if (token !== API_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  (req as any).userId = 'local_default';
+  // Use X-User-Id header for per-device data segregation.
+  // Falls back to 'local_default' for legacy clients that don't send the header.
+  const userIdHeader = (req.headers["x-user-id"] as string | undefined) || "";
+  (req as any).userId = userIdHeader.trim() || 'local_default';
   next();
 }
 
 function requireAdmin(req: Request, res: Response, next: Function) {
   const userId = (req as any).userId;
-  if (userId !== 'local_default') {
+  // ADMIN_USER_ID env var = the owner's device UUID.
+  // Falls back to 'local_default' so existing single-user setups still work.
+  const adminId = process.env.ADMIN_USER_ID || 'local_default';
+  if (userId !== adminId) {
     return res.status(403).json({ error: "Admin access required" });
   }
   next();
@@ -2680,7 +2686,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/reset-database", requireAdmin, async (req: Request, res: Response) => {
+  // Any authenticated user can reset their own data.
+  // Global import metadata tables are only wiped if the user is the designated admin.
+  app.post("/api/reset-database", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
       const confirm = req.body?.confirm;
@@ -2712,26 +2720,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "fitbit_takeout_imports",
       ];
 
-      const globalTables = [
-        "fitbit_import_conflicts",
-        "fitbit_import_file_contributions",
-        "fitbit_daily_sources",
-        "fitbit_sleep_bucketing",
-        "sleep_import_diagnostics",
-      ];
-
       const counts: Record<string, number> = {};
       for (const table of userScopedTables) {
         const result = await pool.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
         counts[table] = result.rowCount ?? 0;
       }
-      for (const table of globalTables) {
-        const result = await pool.query(`DELETE FROM ${table}`);
-        counts[table] = result.rowCount ?? 0;
+
+      // Global import metadata — only cleared by the designated admin user
+      const adminId = process.env.ADMIN_USER_ID || 'local_default';
+      if (userId === adminId) {
+        const globalTables = [
+          "fitbit_import_conflicts",
+          "fitbit_import_file_contributions",
+          "fitbit_daily_sources",
+          "fitbit_sleep_bucketing",
+          "sleep_import_diagnostics",
+        ];
+        for (const table of globalTables) {
+          const result = await pool.query(`DELETE FROM ${table}`);
+          counts[table] = result.rowCount ?? 0;
+        }
       }
 
       const totalDeleted = Object.values(counts).reduce((sum, c) => sum + c, 0);
-      console.log(`[RESET] User ${userId} wiped ${totalDeleted} rows across ${userScopedTables.length + globalTables.length} tables`);
+      console.log(`[RESET] User ${userId} wiped ${totalDeleted} rows`);
 
       res.json({ status: "ok", totalDeleted, counts });
     } catch (err: unknown) {

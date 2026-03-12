@@ -1,6 +1,7 @@
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getDeviceUserId } from "./user-identity";
 
 export function getApiUrl(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -66,6 +67,12 @@ export async function apiRequest(
   const apiKey = await getApiKey();
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
+  // Per-device user identity — segregates all DB data automatically
+  try {
+    const userId = await getDeviceUserId();
+    if (userId) headers["X-User-Id"] = userId;
+  } catch {}
+
   const res = await fetch(url.toString(), {
     method,
     headers,
@@ -90,6 +97,12 @@ export const getQueryFn: <T>(options: {
     const apiKey = await getApiKey();
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
+    // Per-device user identity
+    try {
+      const userId = await getDeviceUserId();
+      if (userId) headers["X-User-Id"] = userId;
+    } catch {}
+
     const res = await fetch(url.toString(), {
       headers,
       credentials: "include",
@@ -108,6 +121,13 @@ export async function authFetch(url: string, options?: any): Promise<Response> {
   const existing = (options?.headers as Record<string, string>) || {};
   const headers: Record<string, string> = { ...existing };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  // Per-device user identity
+  try {
+    const userId = await getDeviceUserId();
+    if (userId) headers["X-User-Id"] = userId;
+  } catch {}
+
   return fetch(url, { ...(options || {}), headers, credentials: "include" });
 }
 

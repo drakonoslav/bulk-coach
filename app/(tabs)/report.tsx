@@ -13,6 +13,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadDashboard, loadStrengthSets, loadStrengthMapping, loadIntelRecommendation, saveIntelRecommendation, type StrengthSet, type IntelRecommendation, type IntelIngredientAdjustment } from "@/lib/entry-storage";
+import { getDeviceUserId } from "@/lib/user-identity";
 import { computeGlobalStrengthIndexV2, computeRegionalMuscleIndicesV2, strengthVelocity14dV2, strengthIndexRollingAvgV2, strengthVelocityOverTimeV2, type StrengthV2Mapping, type MuscleIndexDay } from "@/lib/strength-v2";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtScore100, fmtScore110, fmtPct, fmtRaw, fmtVal, fmtInt, fmtDelta, fmtPctVal, fmtFracToPctInt, scoreColor as sharedScoreColor } from "@/lib/format";
@@ -765,7 +766,7 @@ export default function ReportScreen() {
 
     const todayDate = new Date().toISOString().slice(0, 10);
     try {
-      let irec = await loadIntelRecommendation("local_default", todayDate);
+      let irec = await loadIntelRecommendation(await getDeviceUserId(), todayDate);
       const needsFreshReport = (!irec || !irec.cycles) && !_intelCyclesRefreshedReport.has(todayDate);
       if (needsFreshReport) {
         _intelCyclesRefreshedReport.add(todayDate);
@@ -775,7 +776,7 @@ export default function ReportScreen() {
           const r = latestData.recommendation ?? latestData;
           if (r && r.scores) {
             irec = { date: todayDate, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles, rawInputs: latestData.rawInputs };
-            await saveIntelRecommendation("local_default", todayDate, irec!);
+            await saveIntelRecommendation(await getDeviceUserId(), todayDate, irec!);
           }
         }
       }

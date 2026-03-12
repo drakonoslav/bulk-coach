@@ -23,6 +23,7 @@ import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt, scoreColor } from "@/lib/format";
 import { loadIntelRecommendation, saveIntelRecommendation, type IntelRecommendation } from "@/lib/entry-storage";
+import { getDeviceUserId } from "@/lib/user-identity";
 
 interface SessionRow {
   date: string;
@@ -980,7 +981,7 @@ export default function VitalsScreen() {
         authFetch(new URL("/api/context-lens/archives", baseUrl).toString()),
         authFetch(new URL("/api/hpa", baseUrl).toString()),
         authFetch(new URL("/api/oscillator", baseUrl).toString()),
-        loadIntelRecommendation("local_default", todayDate),
+        loadIntelRecommendation(await getDeviceUserId(), todayDate),
       ]);
       if (activeRes.ok) {
         const data = await activeRes.json();
@@ -1005,7 +1006,7 @@ export default function VitalsScreen() {
             const rec = latestData.recommendation ?? latestData;
             if (rec && rec.scores) {
               resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles, rawInputs: latestData.rawInputs };
-              await saveIntelRecommendation("local_default", todayDate, resolvedIntelRec!);
+              await saveIntelRecommendation(await getDeviceUserId(), todayDate, resolvedIntelRec!);
             }
           }
         } catch {}

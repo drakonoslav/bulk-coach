@@ -6,8 +6,11 @@ Bulk Coach is a mobile fitness tracking application designed to implement a feed
 ## User Preferences
 I prefer iterative development with clear communication on significant changes. When implementing new features or making architectural decisions, please ask for confirmation before proceeding. Ensure that code is well-documented and follows modern JavaScript/TypeScript best practices. I prioritize robust error handling and data integrity.
 
+## Multi-User Architecture
+Each device generates a permanent UUID on first launch, stored in AsyncStorage under `tracker_user_id`. This UUID is sent as `X-User-Id` header on every API request. The backend's `requireAuth` middleware reads this header and uses it as the `userId` for all DB queries — every table already has a `user_id` column, so data is segregated automatically. Friends sharing the app link each get their own isolated dataset. The `ADMIN_USER_ID` env var designates the owner for admin-only operations (backup, global import resets). Intel `expo_user_id` is the same device UUID, ensuring Intel's decisions are per-user too. AsyncStorage Intel recommendation cache is also keyed by device UUID (`intel_recommendation_{userId}_{date}`).
+
 ## System Architecture
-The application features an Expo Router frontend with file-based routing and a 5-tab layout (Dashboard, Log, Plan, Report, Vitals). The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
+The application features an Expo Router frontend with file-based routing and a 5-tab layout (Dashboard, Logbook, Plan, Report, Vitals). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
 
 Core logic is modularized into several engines and modules:
 - **Coaching Engine**: Manages calorie adjustments and ingredient suggestions.
