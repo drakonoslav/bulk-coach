@@ -169,20 +169,81 @@ function mapIntelToOscillator(intel: IntelRecommendation): OscillatorData {
   const weekMap: Record<string, "Prime" | "Overload" | "Peak" | "Resensitize"> = {
     prime: "Prime", overload: "Overload", peak: "Peak", resensitize: "Resensitize",
   };
-  const zero = { caloriePts: 0, proteinPts: 0, fatFloorPts: 0, carbTimingPts: 0,
-    weightTrendPts: 0, waistTrendPts: 0, ffmTrendPts: 0, strengthTrendPts: 0,
-    cardioMonotonyPts: 0, avgCalories7d: null, avgProtein7d: null, avgFat7d: null,
-    bwTrend14dLbPerWk: null, waistTrend14dInOver14d: null, ffmTrend14dLbPerWk: null,
-    strengthTrendPct: null, zone2Days7d: 0, zone3Days7d: 0, easyDays7d: 0 };
-  const zeroAc = { hrvRatio: null, hrvYearRatio: null, hrvPts: 0, rhrDelta: null, rhrPts: 0,
-    sleepMin: null, sleepPts: 0, sleepMidpointShiftMin: null, regularityPts: 0,
-    bwDeltaPct: null, bwStabilityPts: 0, subjectiveDrivePts: 0, jointSorenessPts: 0,
-    yesterdayLiftPts: 0, yesterdayCardioPts: 0,
-    hasHrv: false, hasRhr: false, hasSleep: false, hasSubjective: false };
-  const zeroSeas = { hrv28Pts: 0, rhr28Pts: 0, sleepReg28Pts: 0, waistWeightRelPts: 0,
-    ffm28Pts: 0, deloadPts: 0, monotonyPts: 0, lightPts: 0, motivationPts: 0,
-    hrv28PctChange: null, rhr28DeltaBpm: null, waistChange28d: null, weightChange28d: null, ffm28dChange: null };
   const mt = intel.macroTargets ?? { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
+
+  const abd = intel.scoreBreakdowns?.acute ?? [];
+  const rbd = intel.scoreBreakdowns?.resource ?? [];
+  const sebd = intel.scoreBreakdowns?.seasonal ?? [];
+
+  const ra = intel.rawInputs?.acute ?? {};
+  const rr = intel.rawInputs?.resource ?? {};
+  const rs = intel.rawInputs?.seasonal ?? {};
+
+  const acuteComponents: OscillatorData["acuteComponents"] = {
+    hrvRatio: ra.hrv_ratio ?? null,
+    hrvYearRatio: null,
+    hrvPts: abd[0]?.score ?? 0,
+    rhrDelta: ra.rhr_delta_bpm ?? null,
+    rhrPts: abd[1]?.score ?? 0,
+    sleepMin: ra.sleep_duration_min ?? null,
+    sleepPts: abd[2]?.score ?? 0,
+    sleepMidpointShiftMin: ra.sleep_midpoint_shift_min ?? null,
+    regularityPts: abd[3]?.score ?? 0,
+    bwDeltaPct: ra.weight_delta_pct ?? null,
+    bwStabilityPts: abd[4]?.score ?? 0,
+    subjectiveDrivePts: abd[5]?.score ?? 0,
+    jointSorenessPts: abd[6]?.score ?? 0,
+    yesterdayLiftPts: abd[7]?.score ?? 0,
+    yesterdayCardioPts: abd[8]?.score ?? 0,
+    hasHrv: ra.hrv_ratio != null,
+    hasRhr: ra.rhr_delta_bpm != null,
+    hasSleep: ra.sleep_duration_min != null,
+    hasSubjective: ra.drive_composite_0_10 != null,
+  };
+
+  const z2 = rr.zone2_days_7d ?? 0;
+  const z3 = rr.zone3_days_7d ?? 0;
+  const ez = rr.easy_days_7d ?? 0;
+
+  const resourceComponents: OscillatorData["resourceComponents"] = {
+    caloriePts: rbd[0]?.score ?? 0,
+    proteinPts: rbd[1]?.score ?? 0,
+    fatFloorPts: rbd[2]?.score ?? 0,
+    carbTimingPts: rbd[3]?.score ?? 0,
+    weightTrendPts: rbd[4]?.score ?? 0,
+    waistTrendPts: rbd[5]?.score ?? 0,
+    ffmTrendPts: rbd[6]?.score ?? 0,
+    strengthTrendPts: rbd[7]?.score ?? 0,
+    cardioMonotonyPts: rbd[8]?.score ?? 0,
+    avgCalories7d: rr.avg_calories_7d ?? null,
+    avgProtein7d: rr.avg_protein_7d ?? null,
+    avgFat7d: rr.avg_fat_7d ?? null,
+    bwTrend14dLbPerWk: rr.bw_trend_14d_lb_per_wk ?? null,
+    waistTrend14dInOver14d: rr.waist_trend_14d ?? null,
+    ffmTrend14dLbPerWk: rr.ffm_trend_14d_lb_per_wk ?? null,
+    strengthTrendPct: rr.strength_trend_pct ?? null,
+    zone2Days7d: z2,
+    zone3Days7d: z3,
+    easyDays7d: ez,
+  };
+
+  const seasonalComponents: OscillatorData["seasonalComponents"] = {
+    hrv28Pts: sebd[0]?.score ?? 0,
+    rhr28Pts: sebd[1]?.score ?? 0,
+    sleepReg28Pts: sebd[2]?.score ?? 0,
+    waistWeightRelPts: sebd[3]?.score ?? 0,
+    ffm28Pts: sebd[4]?.score ?? 0,
+    deloadPts: sebd[5]?.score ?? 0,
+    monotonyPts: sebd[6]?.score ?? 0,
+    lightPts: sebd[7]?.score ?? 0,
+    motivationPts: sebd[8]?.score ?? 0,
+    hrv28PctChange: rs.hrv_28d_pct_change ?? null,
+    rhr28DeltaBpm: rs.rhr_28d_delta_bpm ?? null,
+    waistChange28d: rs.waist_change_28d ?? null,
+    weightChange28d: rs.weight_change_28d ?? null,
+    ffm28dChange: rs.ffm_28d_change ?? null,
+  };
+
   return {
     date: intel.date,
     cycleDay28: intel.cycleDay28 ?? 0,
@@ -193,9 +254,9 @@ function mapIntelToOscillator(intel: IntelRecommendation): OscillatorData {
     acute: intel.scores?.acuteScore ?? null,
     resource: intel.scores?.resourceScore ?? null,
     seasonal: intel.scores?.seasonalScore ?? null,
-    acuteComponents: zeroAc,
-    resourceComponents: zero,
-    seasonalComponents: zeroSeas,
+    acuteComponents,
+    resourceComponents,
+    seasonalComponents,
     prescription: {
       dayType: dayTypeMap[cls] ?? "RESENSITIZE",
       cardioMode: intel.recommendedCardioMode ?? "",
@@ -208,12 +269,16 @@ function mapIntelToOscillator(intel: IntelRecommendation): OscillatorData {
     },
     hardStopFatigue: intel.flags?.hardStopFatigue ?? false,
     hardStopReasons: [],
-    zone2Count7d: 0,
-    zone3Count7d: 0,
-    easyCount7d: 0,
+    zone2Count7d: z2,
+    zone3Count7d: z3,
+    easyCount7d: ez,
     explanationText: (intel.reasoning ?? []).join(" "),
     dataQuality: "full",
-    breakdowns: intel.scoreBreakdowns as OscillatorData["breakdowns"],
+    breakdowns: {
+      acute: abd as BreakdownItem[],
+      resource: rbd as BreakdownItem[],
+      seasonal: sebd as BreakdownItem[],
+    },
     reasoning: intel.reasoning,
   };
 }
@@ -437,7 +502,7 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
             label="Yesterday cardio strain (zone3_min proxy)"
             note={abd[8]?.note} />
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.25)", marginTop: 8, lineHeight: 14 }}>
-            {"Future inputs (schema ready, not in log form yet):\n• libido_score · morning_erection_score · motivation_score\n• mental_drive_score · joint_friction_score · soreness_score · stress_load_score"}
+            {"Subjective signals (libido, motivation, joint friction, soreness) flow from your daily log into Intel's scoring. Log them daily for full acute resolution."}
           </Text>
         </View>
       )}
@@ -474,7 +539,7 @@ function OscillatorCard({ data }: { data: OscillatorData | null }) {
             label={`Cardio variety 7d (Z2 ${rc.zone2Days7d} / Z3 ${rc.zone3Days7d} / easy ${rc.easyDays7d})`}
             note={rbd[8]?.note} />
           <Text style={{ fontSize: 9, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.25)", marginTop: 8, lineHeight: 14 }}>
-            {"Future inputs (schema ready, not in log form yet):\n• protein_g_actual · carbs_g_actual · fat_g_actual · kcal_target\n• Per-meal carb timing · pump_quality_score"}
+            {"Macro actuals (protein, carbs, fat, kcal) flow from your daily log entry. Log them consistently for full resource resolution. Carb timing improves with per-meal tracking."}
           </Text>
         </View>
       )}
@@ -939,7 +1004,7 @@ export default function VitalsScreen() {
             const latestData = await latestRes.json();
             const rec = latestData.recommendation ?? latestData;
             if (rec && rec.scores) {
-              resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
+              resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles, rawInputs: latestData.rawInputs };
               await saveIntelRecommendation("local_default", todayDate, resolvedIntelRec!);
             }
           }

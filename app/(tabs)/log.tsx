@@ -871,7 +871,7 @@ export default function LogScreen() {
             const latestData = await latestRes.json();
             const r = latestData.recommendation ?? latestData;
             if (r && r.scores) {
-              rec = { date: day, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
+              rec = { date: day, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles, rawInputs: latestData.rawInputs };
               await saveIntelRecommendation("local_default", day, rec!);
             }
           }
@@ -1368,6 +1368,7 @@ export default function LogScreen() {
               ...intelData.recommendation,
               scoreBreakdowns: intelData.scoreBreakdowns ?? intelRec?.scoreBreakdowns,
               cycles: intelData.cycles ?? intelRec?.cycles,
+              rawInputs: intelData.rawInputs ?? intelRec?.rawInputs,
             };
             await saveIntelRecommendation("local_default", selectedDate, saved);
             setIntelRec(saved);

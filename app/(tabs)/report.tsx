@@ -774,7 +774,7 @@ export default function ReportScreen() {
           const latestData = await latestRes.json();
           const r = latestData.recommendation ?? latestData;
           if (r && r.scores) {
-            irec = { date: todayDate, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles };
+            irec = { date: todayDate, ...r, scoreBreakdowns: latestData.scoreBreakdowns, cycles: latestData.cycles, rawInputs: latestData.rawInputs };
             await saveIntelRecommendation("local_default", todayDate, irec!);
           }
         }

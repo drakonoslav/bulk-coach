@@ -535,9 +535,63 @@ export interface IntelRecommendation {
   reasoning: string[];
   cycles?: IntelCycles;
   scoreBreakdowns?: {
-    acute?: unknown[];
-    resource?: unknown[];
-    seasonal?: unknown[];
+    acute?: Array<{ key: string; label: string; score: number; maxScore: number; note: string }>;
+    resource?: Array<{ key: string; label: string; score: number; maxScore: number; note: string }>;
+    seasonal?: Array<{ key: string; label: string; score: number; maxScore: number; note: string }>;
+  };
+  rawInputs?: {
+    acute?: {
+      hrv_ratio?: number | null;
+      hrv_ms?: number | null;
+      hrv_7d_avg?: number | null;
+      rhr_delta_bpm?: number | null;
+      rhr_bpm?: number | null;
+      rhr_7d_avg?: number | null;
+      sleep_duration_min?: number | null;
+      sleep_midpoint_shift_min?: number | null;
+      sleep_midpoint_min?: number | null;
+      weight_delta_pct?: number | null;
+      body_weight_lb?: number | null;
+      weight_7d_avg_lb?: number | null;
+      drive_composite_0_10?: number | null;
+      libido_score?: number | null;
+      motivation_score?: number | null;
+      recovery_comfort_0_10?: number | null;
+      soreness_score?: number | null;
+      joint_friction_score?: number | null;
+      lift_strain_yesterday?: number | null;
+      cardio_mode_yesterday?: string | null;
+    };
+    resource?: {
+      kcal_actual_today?: number | null;
+      protein_g_actual_today?: number | null;
+      fat_g_actual_today?: number | null;
+      carbs_g_actual_today?: number | null;
+      avg_calories_7d?: number | null;
+      avg_protein_7d?: number | null;
+      avg_fat_7d?: number | null;
+      avg_carbs_7d?: number | null;
+      calorie_adherence_ratio?: number | null;
+      protein_adherence_ratio?: number | null;
+      bw_trend_14d_lb_per_wk?: number | null;
+      waist_trend_14d?: number | null;
+      ffm_trend_14d_lb_per_wk?: number | null;
+      strength_trend_pct?: number | null;
+      zone2_days_7d?: number | null;
+      zone3_days_7d?: number | null;
+      easy_days_7d?: number | null;
+    };
+    seasonal?: {
+      hrv_28d_pct_change?: number | null;
+      rhr_28d_delta_bpm?: number | null;
+      waist_change_28d?: number | null;
+      weight_change_28d?: number | null;
+      ffm_28d_change?: number | null;
+      monotony_index?: number | null;
+      virility_trend?: number | null;
+      deload_compliant?: boolean | null;
+      sleep_regularity_score_28d?: number | null;
+    };
   };
 }
 
