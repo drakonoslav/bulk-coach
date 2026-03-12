@@ -1155,7 +1155,13 @@ export default function LogScreen() {
         sleepMinutes: sleepMinutesManual ? parseInt(sleepMinutesManual, 10) : undefined,
         hrv: hrvManual ? parseFloat(hrvManual) : undefined,
         restingHr: restingHrManual ? parseInt(restingHrManual, 10) : undefined,
-        caloriesIn: caloriesIn ? parseInt(caloriesIn, 10) : undefined,
+        caloriesIn: (() => {
+          const mealKcal = computeMealCalories(mealChecklist);
+          const reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
+          const computed = mealKcal + reserveKcal;
+          if (computed > 0) return computed;
+          return caloriesIn ? parseInt(caloriesIn, 10) : undefined;
+        })(),
         trainingLoad: trainingLoad || undefined,
         fatFreeMassLb: fatFreeMass ? parseFloat(fatFreeMass) : undefined,
         pushupsReps: pushupsReps ? parseInt(pushupsReps, 10) : undefined,
@@ -1173,9 +1179,23 @@ export default function LogScreen() {
         moodStabilityScore: moodStabilityScore ?? undefined,
         mentalDriveScore: mentalDriveScore ?? undefined,
         jointFrictionScore: jointFrictionScore ?? undefined,
-        proteinGActual: proteinGActual ? parseFloat(proteinGActual) : undefined,
-        carbsGActual: carbsGActual ? parseFloat(carbsGActual) : undefined,
-        fatGActual: fatGActual ? parseFloat(fatGActual) : undefined,
+        proteinGActual: (() => {
+          const m = computeMealMacros(mealChecklist);
+          const rp = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
+          const computed = m.p + rp;
+          if (computed > 0) return computed;
+          return proteinGActual ? parseFloat(proteinGActual) : undefined;
+        })(),
+        carbsGActual: (() => {
+          const m = computeMealMacros(mealChecklist);
+          if (m.c > 0) return m.c;
+          return carbsGActual ? parseFloat(carbsGActual) : undefined;
+        })(),
+        fatGActual: (() => {
+          const m = computeMealMacros(mealChecklist);
+          if (m.f > 0) return m.f;
+          return fatGActual ? parseFloat(fatGActual) : undefined;
+        })(),
       };
 
       await saveEntry(entry);
