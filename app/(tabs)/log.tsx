@@ -385,6 +385,21 @@ export default function LogScreen() {
     return m;
   }, [strengthExercises]);
 
+  const WHEY_KCAL_PER_G = 3.76;
+  const WHEY_PROTEIN_PER_G = 0.8;
+
+  const eveningReserveWheyG = React.useMemo(() => {
+    if (!intelRec) return 0;
+    const wheyAdj = intelRec.cycles?.resource_14d?.output?.ingredientAdjustments?.find(
+      (a) => a.ingredient === "Whey" && a.action === "increase"
+    );
+    if (wheyAdj) return wheyAdj.qty;
+    const proteinTarget = intelRec.macroTargets?.proteinG ?? 0;
+    const proteinGap = Math.max(0, proteinTarget - 175);
+    if (proteinGap > 0) return Math.round(proteinGap / WHEY_PROTEIN_PER_G);
+    return 0;
+  }, [intelRec]);
+
   function resetStrengthDraft(defaultExerciseId?: string) {
     setDraftExerciseId(defaultExerciseId || strengthExercises[0]?.id || "");
     setDraftWeightLb("");
@@ -605,15 +620,15 @@ export default function LogScreen() {
         preLift: false, postLift: false, evening: false,
       };
       setMealChecklist(loadedChecklist);
-      if (existing.proteinGActual != null) {
-        setProteinGActual(existing.proteinGActual.toString());
-        setCarbsGActual(existing.carbsGActual?.toString() || "");
-        setFatGActual(existing.fatGActual?.toString() || "");
-      } else if (Object.values(loadedChecklist).some(Boolean)) {
+      if (Object.values(loadedChecklist).some(Boolean)) {
         const t = computeMealMacros(loadedChecklist);
         setProteinGActual(t.p > 0 ? t.p.toString() : "");
         setCarbsGActual(t.c > 0 ? t.c.toString() : "");
         setFatGActual(t.f > 0 ? t.f.toString() : "");
+      } else if (existing.proteinGActual != null) {
+        setProteinGActual(existing.proteinGActual.toString());
+        setCarbsGActual(existing.carbsGActual?.toString() || "");
+        setFatGActual(existing.fatGActual?.toString() || "");
       } else {
         setProteinGActual("");
         setCarbsGActual("");
@@ -855,11 +870,19 @@ export default function LogScreen() {
   );
 
   useEffect(() => {
-    const computed = computeMealCalories(mealChecklist);
-    if (computed > 0) {
-      setCaloriesIn(String(computed));
-    }
-  }, [mealChecklist]);
+    const mealKcal = computeMealCalories(mealChecklist);
+    const reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
+    const total = mealKcal + reserveKcal;
+    if (total > 0) setCaloriesIn(String(total));
+  }, [mealChecklist, eveningReserveWheyG]);
+
+  useEffect(() => {
+    if (!Object.values(mealChecklist).some(Boolean)) return;
+    const t = computeMealMacros(mealChecklist);
+    const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
+    const totalP = t.p + reserveProtein;
+    if (totalP > 0) setProteinGActual(String(totalP));
+  }, [eveningReserveWheyG]);
 
   function formatDur(sec: number): string {
     const m = Math.floor(sec / 60);
@@ -1242,10 +1265,22 @@ export default function LogScreen() {
           if (entry.liftWorkingMin) intelPayload.lift_working_time_min = entry.liftWorkingMin;
           if (completedLiftMode) intelPayload.completed_lift_mode = completedLiftMode;
         }
-        if (entry.caloriesIn) intelPayload.kcal_actual = entry.caloriesIn;
-        if (entry.proteinGActual) intelPayload.protein_g_actual = entry.proteinGActual;
-        if (entry.carbsGActual) intelPayload.carbs_g_actual = entry.carbsGActual;
-        if (entry.fatGActual) intelPayload.fat_g_actual = entry.fatGActual;
+        const _mealMacros = computeMealMacros(mealChecklist);
+        const _mealKcal = computeMealCalories(mealChecklist);
+        const _reserveProteinG = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
+        const _reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
+        const anyMealChecked = Object.values(mealChecklist).some(Boolean);
+        if (anyMealChecked) {
+          intelPayload.kcal_actual = _mealKcal + _reserveKcal;
+          intelPayload.protein_g_actual = _mealMacros.p + _reserveProteinG;
+          intelPayload.carbs_g_actual = _mealMacros.c;
+          intelPayload.fat_g_actual = _mealMacros.f;
+        } else {
+          if (entry.caloriesIn) intelPayload.kcal_actual = entry.caloriesIn;
+          if (entry.proteinGActual) intelPayload.protein_g_actual = entry.proteinGActual;
+          if (entry.carbsGActual) intelPayload.carbs_g_actual = entry.carbsGActual;
+          if (entry.fatGActual) intelPayload.fat_g_actual = entry.fatGActual;
+        }
         if (nocturnalCount) intelPayload.morning_erection_score = erectionScore;
         if (entry.libidoScore) intelPayload.libido_score = entry.libidoScore;
         if (entry.motivationScore) intelPayload.motivation_score = entry.motivationScore;
@@ -1568,6 +1603,16 @@ export default function LogScreen() {
                   </View>
                 )}
 
+                {/* Evening reserve protein indicator */}
+                {eveningReserveWheyG > 0 && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, borderTopWidth: 1, borderTopColor: "#8B5CF610", paddingTop: 6 }}>
+                    <Ionicons name="moon-outline" size={11} color="#8B5CF6" />
+                    <Text style={{ fontFamily: "Rubik_400Regular", fontSize: 10, color: Colors.textSecondary }}>
+                      21:30 reserve  ·  {eveningReserveWheyG}g whey  →  +{Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G)}P +{Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G)} kcal
+                    </Text>
+                  </View>
+                )}
+
                 {/* Circadian training windows */}
                 {(cardioWindow || liftWindow) && (
                   <View style={{ borderTopWidth: 1, borderTopColor: "#8B5CF610", paddingTop: 6, flexDirection: "row", gap: 12 }}>
@@ -1618,8 +1663,10 @@ export default function LogScreen() {
                 setMealChecklist(prev => {
                   const next = { ...prev, [key]: !prev[key] };
                   const totals = computeMealMacros(next);
-                  if (totals.p > 0 || totals.c > 0 || totals.f > 0) {
-                    setProteinGActual(totals.p.toString());
+                  const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
+                  const totalP = totals.p + reserveProtein;
+                  if (totalP > 0 || totals.c > 0 || totals.f > 0) {
+                    setProteinGActual(totalP.toString());
                     setCarbsGActual(totals.c.toString());
                     setFatGActual(totals.f.toString());
                   } else {
@@ -1651,15 +1698,27 @@ export default function LogScreen() {
             </Pressable>
           ))}
           <View style={styles.mealCheckSummary}>
-            <Text style={styles.mealCheckSummaryText}>
-              {Object.values(mealChecklist).filter(Boolean).length} / 6 meals  ·  {computeMealCalories(mealChecklist)} kcal
-            </Text>
-            {Object.values(mealChecklist).some(Boolean) && (() => {
+            {(() => {
+              const checkedCount = Object.values(mealChecklist).filter(Boolean).length;
+              const mealKcal = computeMealCalories(mealChecklist);
+              const reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
               const t = computeMealMacros(mealChecklist);
+              const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
+              const totalKcal = mealKcal + reserveKcal;
+              const totalP = t.p + reserveProtein;
               return (
-                <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
-                  {t.p}P · {t.c}C · {t.f}F
-                </Text>
+                <>
+                  <Text style={styles.mealCheckSummaryText}>
+                    {checkedCount} / 6 meals  ·  {totalKcal} kcal
+                    {eveningReserveWheyG > 0 ? ` (incl. +${reserveKcal} reserve)` : ""}
+                  </Text>
+                  {checkedCount > 0 && (
+                    <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
+                      {totalP}P · {t.c}C · {t.f}F
+                      {eveningReserveWheyG > 0 ? ` (+${reserveProtein}P reserve)` : ""}
+                    </Text>
+                  )}
+                </>
               );
             })()}
           </View>
