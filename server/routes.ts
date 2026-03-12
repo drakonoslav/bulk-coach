@@ -824,6 +824,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Patch only the provided fields — safe for partial updates from the Metrics tab
+  app.patch("/api/logs/quick-patch", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const b = req.body;
+      if (!b.day) return res.status(400).json({ error: "day required" });
+
+      const allowed: Record<string, string> = {
+        morning_weight_lb: "morning_weight_lb",
+        waist_in: "waist_in",
+        notes: "notes",
+        evening_weight_lb: "evening_weight_lb",
+      };
+
+      const sets: string[] = [];
+      const vals: unknown[] = [userId, b.day];
+      for (const [key, col] of Object.entries(allowed)) {
+        if (b[key] !== undefined) {
+          vals.push(b[key]);
+          sets.push(`${col} = $${vals.length}`);
+        }
+      }
+
+      if (sets.length === 0) return res.status(400).json({ error: "No valid fields to update" });
+
+      sets.push(`updated_at = NOW()`);
+      await pool.query(
+        `INSERT INTO daily_log (user_id, day) VALUES ($1, $2)
+         ON CONFLICT (user_id, day) DO UPDATE SET ${sets.join(", ")}`,
+        vals,
+      );
+      res.json({ ok: true });
+    } catch (err: unknown) {
+      console.error("quick-patch error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/logs/reset-adherence", async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);

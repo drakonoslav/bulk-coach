@@ -9,8 +9,11 @@ I prefer iterative development with clear communication on significant changes. 
 ## Multi-User Architecture
 Each device has a permanent user ID stored in AsyncStorage under `tracker_user_id`. This ID is sent as `X-User-Id` header on every API request. The backend's `requireAuth` middleware reads this header and uses it as the `userId` for all DB queries. Every table has a `user_id` column so data is segregated automatically. On first launch (or any install with no stored ID), the app defaults to `"local_default"` — preserving all existing DB data. True per-device UUIDs can be assigned in future by setting a unique value in AsyncStorage. The `ADMIN_USER_ID` env var designates the owner for admin-only operations (backup, global import resets). Intel `expo_user_id` is the same stored ID. AsyncStorage Intel recommendation cache is keyed by this ID (`intel_recommendation_{userId}_{date}`).
 
+## Onboarding & Identity
+On first launch (no `user_profile` in AsyncStorage), the app routes to `/onboarding` (full-screen Stack screen). The user enters their name and birthday (MM/DD/YYYY). This creates a `UserProfile` (`lib/profile.ts`) with a generated UUID stored under `tracker_user_id` and `user_profile` AsyncStorage keys. On system reset (via Vitals tab), the DB rows are wiped, profile is cleared, UUID cache is invalidated, and the app redirects to onboarding so the next person can create their own identity. Profile management lives in `lib/profile.ts`; identity helpers in `lib/user-identity.ts`.
+
 ## System Architecture
-The application features an Expo Router frontend with file-based routing and a 5-tab layout (Dashboard, Logbook, Plan, Report, Vitals). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
+The application features an Expo Router frontend with file-based routing and a 6-tab layout (Dashboard, Logbook, Plan, Report, Vitals, Metrics). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
 
 Core logic is modularized into several engines and modules:
 - **Coaching Engine**: Manages calorie adjustments and ingredient suggestions.

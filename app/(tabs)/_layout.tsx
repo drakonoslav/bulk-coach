@@ -30,6 +30,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "waveform.path.ecg", selected: "waveform.path.ecg" }} />
         <Label>Vitals</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="metrics">
+        <Icon sf={{ default: "person.crop.circle", selected: "person.crop.circle.fill" }} />
+        <Label>Metrics</Label>
+      </NativeTabs.Trigger>
       {/* Old log tab intentionally omitted from tab bar — still routable at /log */}
     </NativeTabs>
   );
@@ -107,6 +111,15 @@ function ClassicTabLayout() {
           title: "Vitals",
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="pulse" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="metrics"
+        options={{
+          title: "Metrics",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle-outline" size={size} color={color} />
           ),
         }}
       />

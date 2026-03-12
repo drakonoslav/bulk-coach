@@ -23,7 +23,8 @@ import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt, scoreColor } from "@/lib/format";
 import { loadIntelRecommendation, saveIntelRecommendation, type IntelRecommendation } from "@/lib/entry-storage";
-import { getDeviceUserId } from "@/lib/user-identity";
+import { getDeviceUserId, clearUserIdCache } from "@/lib/user-identity";
+import { clearProfile } from "@/lib/profile";
 
 interface SessionRow {
   date: string;
@@ -1209,15 +1210,17 @@ export default function VitalsScreen() {
               try { json = await res.json(); } catch { json = {}; }
               if (res.ok && json.status === "ok") {
                 if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setResetStatus(`Cleared ${json.totalDeleted} rows`);
-                loadData();
+                // Clear identity so the next person gets their own profile
+                await clearProfile();
+                clearUserIdCache();
+                router.replace("/onboarding");
               } else {
                 setResetStatus(json.error || `Server error ${res.status} — try again`);
+                setResetting(false);
               }
             } catch (err) {
               console.error("reset error:", err);
               setResetStatus("Reset failed");
-            } finally {
               setResetting(false);
             }
           },

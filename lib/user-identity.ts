@@ -6,21 +6,17 @@ let _cached: string | null = null;
 
 /**
  * Returns the persistent device-scoped user ID.
- * Devices that had no UUID stored (all existing installs) receive "local_default",
- * which matches every row already in the database.
- * The value is written to AsyncStorage on first call so subsequent launches
- * return the same identity even without a network round-trip.
+ * Set by createProfile() during onboarding. Falls back to "local_default"
+ * only if nothing is stored (pre-profile legacy installs).
  */
 export async function getDeviceUserId(): Promise<string> {
   if (_cached) return _cached;
+  const stored = await AsyncStorage.getItem(USER_ID_KEY);
+  _cached = stored ?? "local_default";
+  return _cached;
+}
 
-  let stored = await AsyncStorage.getItem(USER_ID_KEY);
-  if (!stored) {
-    // Preserve all existing data: new installs default to "local_default".
-    stored = "local_default";
-    await AsyncStorage.setItem(USER_ID_KEY, stored);
-  }
-
-  _cached = stored;
-  return stored;
+/** Invalidate the in-memory cache (call after profile creation or reset). */
+export function clearUserIdCache(): void {
+  _cached = null;
 }
