@@ -65,6 +65,13 @@ const MEAL_MACROS: Record<string, { p: number; c: number; f: number }> = {
   evening:    { p: 35, c: 40, f: 30 },
 };
 
+const INGREDIENT_MACRO_FACTORS: Record<string, { p: number; c: number; f: number }> = {
+  dextrin:      { p: 0, c: 1.0, f: 0   },
+  dextrose:     { p: 0, c: 1.0, f: 0   },
+  "mct powder": { p: 0, c: 0,   f: 1.0 },
+  mct:          { p: 0, c: 0,   f: 1.0 },
+};
+
 function computeMealCalories(checklist: Record<string, boolean>): number {
   let total = 0;
   for (const [key, checked] of Object.entries(checklist)) {
@@ -73,13 +80,27 @@ function computeMealCalories(checklist: Record<string, boolean>): number {
   return total;
 }
 
-function computeMealMacros(checklist: Record<string, boolean>): { p: number; c: number; f: number } {
+function computeMealMacros(
+  checklist: Record<string, boolean>,
+  adjs?: IntelIngredientAdjustment[],
+): { p: number; c: number; f: number } {
   let p = 0, c = 0, f = 0;
   for (const [key, checked] of Object.entries(checklist)) {
     if (checked && MEAL_MACROS[key]) {
       p += MEAL_MACROS[key].p;
       c += MEAL_MACROS[key].c;
       f += MEAL_MACROS[key].f;
+    }
+  }
+  if (adjs && adjs.length > 0) {
+    for (const adj of adjs) {
+      const key = (adj.ingredient ?? "").toLowerCase();
+      const factors = INGREDIENT_MACRO_FACTORS[key];
+      if (!factors) continue;
+      const sign = adj.action === "increase" ? 1 : -1;
+      p = Math.max(0, p + Math.round(sign * adj.qty * factors.p));
+      c = Math.max(0, c + Math.round(sign * adj.qty * factors.c));
+      f = Math.max(0, f + Math.round(sign * adj.qty * factors.f));
     }
   }
   return { p, c, f };
@@ -882,11 +903,14 @@ export default function LogScreen() {
 
   useEffect(() => {
     if (!Object.values(mealChecklist).some(Boolean)) return;
-    const t = computeMealMacros(mealChecklist);
+    const adjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+    const t = computeMealMacros(mealChecklist, adjs);
     const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
     const totalP = t.p + reserveProtein;
     if (totalP > 0) setProteinGActual(String(totalP));
-  }, [eveningReserveWheyG]);
+    if (t.c > 0) setCarbsGActual(String(t.c));
+    if (t.f > 0) setFatGActual(String(t.f));
+  }, [eveningReserveWheyG, intelRec]);
 
   function formatDur(sec: number): string {
     const m = Math.floor(sec / 60);
@@ -1184,19 +1208,22 @@ export default function LogScreen() {
         mentalDriveScore: mentalDriveScore ?? undefined,
         jointFrictionScore: jointFrictionScore ?? undefined,
         proteinGActual: (() => {
-          const m = computeMealMacros(mealChecklist);
+          const saveAdjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+          const m = computeMealMacros(mealChecklist, saveAdjs);
           const rp = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
           const computed = m.p + rp;
           if (computed > 0) return computed;
           return proteinGActual ? parseFloat(proteinGActual) : undefined;
         })(),
         carbsGActual: (() => {
-          const m = computeMealMacros(mealChecklist);
+          const saveAdjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+          const m = computeMealMacros(mealChecklist, saveAdjs);
           if (m.c > 0) return m.c;
           return carbsGActual ? parseFloat(carbsGActual) : undefined;
         })(),
         fatGActual: (() => {
-          const m = computeMealMacros(mealChecklist);
+          const saveAdjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+          const m = computeMealMacros(mealChecklist, saveAdjs);
           if (m.f > 0) return m.f;
           return fatGActual ? parseFloat(fatGActual) : undefined;
         })(),
@@ -1289,7 +1316,8 @@ export default function LogScreen() {
           if (entry.liftWorkingMin) intelPayload.lift_working_time_min = entry.liftWorkingMin;
           if (completedLiftMode) intelPayload.completed_lift_mode = completedLiftMode;
         }
-        const _mealMacros = computeMealMacros(mealChecklist);
+        const _intelAdjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+        const _mealMacros = computeMealMacros(mealChecklist, _intelAdjs);
         const _mealKcal = computeMealCalories(mealChecklist);
         const _reserveProteinG = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
         const _reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
@@ -1686,7 +1714,8 @@ export default function LogScreen() {
                 if (Platform.OS !== "web") Haptics.selectionAsync();
                 setMealChecklist(prev => {
                   const next = { ...prev, [key]: !prev[key] };
-                  const totals = computeMealMacros(next);
+                  const adjsNow = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+                  const totals = computeMealMacros(next, adjsNow);
                   const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
                   const totalP = totals.p + reserveProtein;
                   if (totalP > 0 || totals.c > 0 || totals.f > 0) {
@@ -1726,7 +1755,8 @@ export default function LogScreen() {
               const checkedCount = Object.values(mealChecklist).filter(Boolean).length;
               const mealKcal = computeMealCalories(mealChecklist);
               const reserveKcal = Math.round(eveningReserveWheyG * WHEY_KCAL_PER_G);
-              const t = computeMealMacros(mealChecklist);
+              const footerAdjs = intelRec?.cycles?.resource_14d?.output?.ingredientAdjustments;
+              const t = computeMealMacros(mealChecklist, footerAdjs);
               const reserveProtein = Math.round(eveningReserveWheyG * WHEY_PROTEIN_PER_G);
               const totalKcal = mealKcal + reserveKcal;
               const totalP = t.p + reserveProtein;
