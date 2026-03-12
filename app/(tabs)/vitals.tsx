@@ -1204,13 +1204,14 @@ export default function VitalsScreen() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ confirm: "RESET_ALL_DATA" }),
               });
-              const json = await res.json();
+              let json: any = {};
+              try { json = await res.json(); } catch { json = {}; }
               if (res.ok && json.status === "ok") {
                 if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setResetStatus(`Cleared ${json.totalDeleted} rows`);
                 loadData();
               } else {
-                setResetStatus(json.error || "Reset failed");
+                setResetStatus(json.error || `Server error ${res.status} — try again`);
               }
             } catch (err) {
               console.error("reset error:", err);

@@ -174,8 +174,14 @@ export async function loadEntry(day: string): Promise<DailyEntry | null> {
     if (!res.ok) throw new Error(`${res.status}`);
     const row = await res.json();
     return rowToEntry(row);
-  } catch (err) {
-    console.error("loadEntry API error:", err);
+  } catch (err: any) {
+    const status = parseInt(err?.message, 10);
+    // 503 = server cold-starting, 502 = proxy error — transient, not a bug
+    if (status === 503 || status === 502) {
+      console.warn("loadEntry: server unavailable (cold start), will retry on next load");
+    } else {
+      console.error("loadEntry API error:", err);
+    }
     return null;
   }
 }
