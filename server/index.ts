@@ -143,10 +143,26 @@ function serveLandingPage({
   landingPageTemplate: string;
   appName: string;
 }) {
-  const forwardedProto = req.header("x-forwarded-proto");
-  const protocol = forwardedProto || req.protocol || "https";
-  const forwardedHost = req.header("x-forwarded-host");
-  const host = forwardedHost || req.get("host");
+  // In production Replit deployments, REPLIT_INTERNAL_APP_DOMAIN is the
+  // real public hostname (e.g. bulkcoach-drakonoslav.replit.app).
+  // The forwarded headers contain the internal proxy address (127.0.0.1:xxxx)
+  // which must NOT be used for QR code / exps:// URLs.
+  const replitPublicDomain = process.env.REPLIT_INTERNAL_APP_DOMAIN;
+
+  let host: string;
+  let protocol: string;
+
+  if (replitPublicDomain) {
+    // Strip any leading https:// that Replit sometimes includes
+    host = replitPublicDomain.replace(/^https?:\/\//, "");
+    protocol = "https";
+  } else {
+    const forwardedProto = req.header("x-forwarded-proto");
+    protocol = forwardedProto || req.protocol || "https";
+    const forwardedHost = req.header("x-forwarded-host");
+    host = forwardedHost || req.get("host") || "localhost:5000";
+  }
+
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
 
