@@ -52,12 +52,33 @@ const MEAL_CALORIES: Record<string, number> = {
   evening: 992,
 };
 
+const MEAL_MACROS: Record<string, { p: number; c: number; f: number }> = {
+  preCardio:  { p: 0,  c: 26, f: 0  },
+  postCardio: { p: 40, c: 75, f: 10 },
+  midday:     { p: 30, c: 55, f: 10 },
+  preLift:    { p: 25, c: 65, f: 5  },
+  postLift:   { p: 45, c: 85, f: 5  },
+  evening:    { p: 35, c: 40, f: 30 },
+};
+
 function computeMealCalories(checklist: Record<string, boolean>): number {
   let total = 0;
   for (const [key, checked] of Object.entries(checklist)) {
     if (checked && MEAL_CALORIES[key]) total += MEAL_CALORIES[key];
   }
   return total;
+}
+
+function computeMealMacros(checklist: Record<string, boolean>): { p: number; c: number; f: number } {
+  let p = 0, c = 0, f = 0;
+  for (const [key, checked] of Object.entries(checklist)) {
+    if (checked && MEAL_MACROS[key]) {
+      p += MEAL_MACROS[key].p;
+      c += MEAL_MACROS[key].c;
+      f += MEAL_MACROS[key].f;
+    }
+  }
+  return { p, c, f };
 }
 
 function parseMinuteInput(raw: string): string {
@@ -1303,7 +1324,20 @@ export default function LogScreen() {
               key={key}
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.selectionAsync();
-                setMealChecklist(prev => ({ ...prev, [key]: !prev[key] }));
+                setMealChecklist(prev => {
+                  const next = { ...prev, [key]: !prev[key] };
+                  const totals = computeMealMacros(next);
+                  if (totals.p > 0 || totals.c > 0 || totals.f > 0) {
+                    setProteinGActual(totals.p.toString());
+                    setCarbsGActual(totals.c.toString());
+                    setFatGActual(totals.f.toString());
+                  } else {
+                    setProteinGActual("");
+                    setCarbsGActual("");
+                    setFatGActual("");
+                  }
+                  return next;
+                });
               }}
               style={styles.mealCheckRow}
             >
@@ -1312,18 +1346,31 @@ export default function LogScreen() {
                 size={22}
                 color={mealChecklist[key] ? Colors.primary : Colors.textTertiary}
               />
-              <Text style={[styles.mealCheckLabel, mealChecklist[key] && styles.mealCheckLabelDone]}>
-                {label}
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: mealChecklist[key] ? Colors.primary : Colors.textTertiary, marginLeft: "auto" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.mealCheckLabel, mealChecklist[key] && styles.mealCheckLabelDone]}>
+                  {label}
+                </Text>
+                <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: Colors.textTertiary, marginTop: 1 }}>
+                  {MEAL_MACROS[key].p > 0 ? `${MEAL_MACROS[key].p}P · ` : ""}{MEAL_MACROS[key].c}C{MEAL_MACROS[key].f > 0 ? ` · ${MEAL_MACROS[key].f}F` : ""}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, fontFamily: "Rubik_400Regular", color: mealChecklist[key] ? Colors.primary : Colors.textTertiary }}>
                 {MEAL_CALORIES[key]} kcal
               </Text>
             </Pressable>
           ))}
           <View style={styles.mealCheckSummary}>
             <Text style={styles.mealCheckSummaryText}>
-              Execution: {Object.values(mealChecklist).filter(Boolean).length} / 6 complete  ·  {computeMealCalories(mealChecklist)} kcal
+              {Object.values(mealChecklist).filter(Boolean).length} / 6 meals  ·  {computeMealCalories(mealChecklist)} kcal
             </Text>
+            {Object.values(mealChecklist).some(Boolean) && (() => {
+              const t = computeMealMacros(mealChecklist);
+              return (
+                <Text style={{ fontSize: 11, fontFamily: "Rubik_400Regular", color: Colors.textSecondary, marginTop: 2 }}>
+                  {t.p}P · {t.c}C · {t.f}F
+                </Text>
+              );
+            })()}
           </View>
         </View>
 
@@ -3524,7 +3571,7 @@ const styles = StyleSheet.create({
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 10,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
