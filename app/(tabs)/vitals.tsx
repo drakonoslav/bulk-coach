@@ -22,7 +22,7 @@ import * as Sharing from "expo-sharing";
 import Colors from "@/constants/colors";
 import { getApiUrl, authFetch } from "@/lib/query-client";
 import { fmtVal, fmtInt, fmtDelta, fmtFracToPctInt, scoreColor } from "@/lib/format";
-import { loadIntelRecommendation, type IntelRecommendation } from "@/lib/entry-storage";
+import { loadIntelRecommendation, saveIntelRecommendation, type IntelRecommendation } from "@/lib/entry-storage";
 
 interface SessionRow {
   date: string;
@@ -908,7 +908,7 @@ export default function VitalsScreen() {
       }
 
       const todayDate = new Date().toISOString().slice(0, 10);
-      const [activeRes, archiveRes, hpaRes, oscillatorRes, intelRec] = await Promise.all([
+      const [activeRes, archiveRes, hpaRes, oscillatorRes, intelRecCached] = await Promise.all([
         authFetch(new URL("/api/context-lens/episodes/active", baseUrl).toString()),
         authFetch(new URL("/api/context-lens/archives", baseUrl).toString()),
         authFetch(new URL("/api/hpa", baseUrl).toString()),
@@ -927,8 +927,22 @@ export default function VitalsScreen() {
         const data = await hpaRes.json();
         setHpaData(data);
       }
-      if (intelRec) {
-        setOscillatorData(mapIntelToOscillator(intelRec));
+      let resolvedIntelRec: IntelRecommendation | null = intelRecCached;
+      if (!resolvedIntelRec) {
+        try {
+          const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", baseUrl).toString());
+          if (latestRes.ok) {
+            const latestData = await latestRes.json();
+            const rec = latestData.recommendation ?? latestData;
+            if (rec && rec.scores) {
+              resolvedIntelRec = { date: todayDate, ...rec, scoreBreakdowns: latestData.scoreBreakdowns };
+              await saveIntelRecommendation("local_default", todayDate, resolvedIntelRec!);
+            }
+          }
+        } catch {}
+      }
+      if (resolvedIntelRec) {
+        setOscillatorData(mapIntelToOscillator(resolvedIntelRec));
       } else if (oscillatorRes.ok) {
         const data = await oscillatorRes.json();
         setOscillatorData(data);

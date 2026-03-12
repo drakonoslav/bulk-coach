@@ -5167,6 +5167,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/intel/recommendation/latest", async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });
+    try {
+      const userId = (req.query.expo_user_id as string) || getUserId(req) || "local_default";
+      const r = await fetch(`${INTEL_BASE}/vitals/recommendation/latest?expo_user_id=${encodeURIComponent(userId)}`);
+      const data = await r.json();
+      return res.status(r.status).json(data);
+    } catch (err: any) {
+      console.error("GET /api/intel/recommendation/latest error:", err);
+      return res.status(502).json({ error: "Network failure reaching lifting-intel", details: String(err) });
+    }
+  });
+
   app.post("/api/intel/backfill", async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     if (!INTEL_BASE) return res.status(503).json({ error: "LIFTING_INTEL_BASE_URL not configured" });

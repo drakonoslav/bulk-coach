@@ -809,7 +809,21 @@ export default function LogScreen() {
       setIntelReceipt(null);
     }
     try {
-      const rec = await loadIntelRecommendation("local_default", day);
+      let rec = await loadIntelRecommendation("local_default", day);
+      if (!rec && day === todayStr()) {
+        try {
+          const baseUrl = getApiUrl();
+          const latestRes = await authFetch(new URL("/api/intel/recommendation/latest", baseUrl).toString());
+          if (latestRes.ok) {
+            const latestData = await latestRes.json();
+            const r = latestData.recommendation ?? latestData;
+            if (r && r.scores) {
+              rec = { date: day, ...r, scoreBreakdowns: latestData.scoreBreakdowns };
+              await saveIntelRecommendation("local_default", day, rec!);
+            }
+          }
+        } catch {}
+      }
       setIntelRec(rec);
     } catch {
       setIntelRec(null);
