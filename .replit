@@ -7,8 +7,8 @@ packages = ["unzip"]
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["bash", "-c", "npm run server:build && npx expo export --platform web --output-dir dist"]
-run = ["npm", "run", "server:prod"]
+build = ["bash", "-c", "./node_modules/.bin/esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist && npx expo export --platform web --output-dir dist"]
+run = ["node", "server_dist/index.js"]
 
 [[ports]]
 localPort = 5000
