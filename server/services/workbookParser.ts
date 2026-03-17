@@ -1,7 +1,8 @@
 /**
  * server/services/workbookParser.ts
  * NEW CANONICAL: Parses an Excel .xlsx buffer into sheet rows,
- * normalized biolog rows, meal_line rows, and meal_template rows.
+ * normalized biolog rows, meal_line rows, meal_template rows,
+ * drift_history rows, colony_coord rows, and threshold_lab rows.
  *
  * Source of truth: the uploaded workbook buffer.
  * No fallback. No default values injected. No native recomputation.
@@ -59,6 +60,39 @@ export type ParsedMealTemplateRow = {
   raw: Record<string, unknown>;
 };
 
+export type ParsedDriftHistoryRow = {
+  rowIndex: number;
+  driftDate: string | null;
+  phase: string | null;
+  driftType: string | null;
+  driftSource: string | null;
+  confidence: string | null;
+  weightedDriftScore: number | null;
+  watchFlag: string | null;
+  raw: Record<string, unknown>;
+};
+
+export type ParsedColonyCoordRow = {
+  rowIndex: number;
+  metric: string | null;
+  value: string | null;
+  threshold: string | null;
+  status: string | null;
+  recommendation: string | null;
+  confidence: string | null;
+  raw: Record<string, unknown>;
+};
+
+export type ParsedThresholdLabRow = {
+  rowIndex: number;
+  thresholdName: string | null;
+  currentValue: string | null;
+  suggestedValue: string | null;
+  evidenceCount: number | null;
+  notes: string | null;
+  raw: Record<string, unknown>;
+};
+
 export type ParsedWorkbook = {
   sheetNames: string[];
   rowCounts: Record<string, number>;
@@ -67,6 +101,9 @@ export type ParsedWorkbook = {
   biologRows: ParsedBiologRow[];
   mealLineRows: ParsedMealLineRow[];
   mealTemplateRows: ParsedMealTemplateRow[];
+  driftHistoryRows: ParsedDriftHistoryRow[];
+  colonyCoordRows: ParsedColonyCoordRow[];
+  thresholdLabRows: ParsedThresholdLabRow[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -259,6 +296,93 @@ function extractMealTemplateRow(row: ParsedSheetRow): ParsedMealTemplateRow {
   };
 }
 
+// ─── drift_history extractor ──────────────────────────────────────────────────
+
+function extractDriftHistoryRow(row: ParsedSheetRow): ParsedDriftHistoryRow {
+  const dateInfo = getByPreferredKeys(row.raw, ["date", "drift_date", "log_date"]);
+  const phase = extractPhase(row.raw).value;
+
+  const driftTypeInfo = getByPreferredKeys(row.raw, ["drift_type", "type"]);
+  const driftSourceInfo = getByPreferredKeys(row.raw, ["drift_source", "source"]);
+  const confidenceInfo = getByPreferredKeys(row.raw, ["confidence"]);
+  const weightedInfo = getByPreferredKeys(row.raw, [
+    "weighted_drift_score", "drift_score",
+  ]);
+  const watchInfo = getByPreferredKeys(row.raw, [
+    "watch_flag", "watch", "review_flag",
+  ]);
+
+  return {
+    rowIndex: row.rowIndex,
+    driftDate: toIsoDate(dateInfo.value),
+    phase,
+    driftType: isNonEmpty(driftTypeInfo.value) ? String(driftTypeInfo.value).trim() : null,
+    driftSource: isNonEmpty(driftSourceInfo.value) ? String(driftSourceInfo.value).trim() : null,
+    confidence: isNonEmpty(confidenceInfo.value) ? String(confidenceInfo.value).trim() : null,
+    weightedDriftScore: toNumber(weightedInfo.value),
+    watchFlag: isNonEmpty(watchInfo.value) ? String(watchInfo.value).trim() : null,
+    raw: row.raw,
+  };
+}
+
+// ─── colony_coord extractor ───────────────────────────────────────────────────
+
+function extractColonyCoordRow(row: ParsedSheetRow): ParsedColonyCoordRow {
+  const metricInfo = getByPreferredKeys(row.raw, ["metric", "metric_name"]);
+  const valueInfo = getByPreferredKeys(row.raw, ["value", "metric_value"]);
+  const thresholdInfo = getByPreferredKeys(row.raw, ["threshold", "threshold_value"]);
+  const statusInfo = getByPreferredKeys(row.raw, ["status"]);
+  const recommendationInfo = getByPreferredKeys(row.raw, [
+    "recommendation", "candidate_fix",
+  ]);
+  const confidenceInfo = getByPreferredKeys(row.raw, ["confidence"]);
+
+  return {
+    rowIndex: row.rowIndex,
+    metric: isNonEmpty(metricInfo.value) ? String(metricInfo.value).trim() : null,
+    value: isNonEmpty(valueInfo.value) ? String(valueInfo.value).trim() : null,
+    threshold: isNonEmpty(thresholdInfo.value) ? String(thresholdInfo.value).trim() : null,
+    status: isNonEmpty(statusInfo.value) ? String(statusInfo.value).trim() : null,
+    recommendation: isNonEmpty(recommendationInfo.value)
+      ? String(recommendationInfo.value).trim()
+      : null,
+    confidence: isNonEmpty(confidenceInfo.value) ? String(confidenceInfo.value).trim() : null,
+    raw: row.raw,
+  };
+}
+
+// ─── threshold_lab extractor ──────────────────────────────────────────────────
+
+function extractThresholdLabRow(row: ParsedSheetRow): ParsedThresholdLabRow {
+  const thresholdNameInfo = getByPreferredKeys(row.raw, [
+    "threshold_name", "metric", "threshold",
+  ]);
+  const currentValueInfo = getByPreferredKeys(row.raw, ["current_value", "current"]);
+  const suggestedValueInfo = getByPreferredKeys(row.raw, [
+    "suggested_value", "suggested",
+  ]);
+  const evidenceInfo = getByPreferredKeys(row.raw, [
+    "evidence_count", "evidence", "count",
+  ]);
+  const notesInfo = getByPreferredKeys(row.raw, ["notes", "note"]);
+
+  return {
+    rowIndex: row.rowIndex,
+    thresholdName: isNonEmpty(thresholdNameInfo.value)
+      ? String(thresholdNameInfo.value).trim()
+      : null,
+    currentValue: isNonEmpty(currentValueInfo.value)
+      ? String(currentValueInfo.value).trim()
+      : null,
+    suggestedValue: isNonEmpty(suggestedValueInfo.value)
+      ? String(suggestedValueInfo.value).trim()
+      : null,
+    evidenceCount: toNumber(evidenceInfo.value),
+    notes: isNonEmpty(notesInfo.value) ? String(notesInfo.value).trim() : null,
+    raw: row.raw,
+  };
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function parseWorkbookBuffer(buffer: Buffer): ParsedWorkbook {
@@ -296,6 +420,9 @@ export function parseWorkbookBuffer(buffer: Buffer): ParsedWorkbook {
 
   const mealLineRows = (sheets["meal_lines"] || []).map(extractMealLineRow);
   const mealTemplateRows = (sheets["meal_templates"] || []).map(extractMealTemplateRow);
+  const driftHistoryRows = (sheets["drift_history"] || []).map(extractDriftHistoryRow);
+  const colonyCoordRows = (sheets["colony_coord"] || []).map(extractColonyCoordRow);
+  const thresholdLabRows = (sheets["threshold_lab"] || []).map(extractThresholdLabRow);
 
   return {
     sheetNames,
@@ -305,5 +432,8 @@ export function parseWorkbookBuffer(buffer: Buffer): ParsedWorkbook {
     biologRows,
     mealLineRows,
     mealTemplateRows,
+    driftHistoryRows,
+    colonyCoordRows,
+    thresholdLabRows,
   };
 }

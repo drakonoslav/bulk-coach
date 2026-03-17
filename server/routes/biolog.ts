@@ -72,7 +72,7 @@ biologRouter.get("/api/biolog", async (req: Request, res: Response) => {
       _provenance: {
         db: dbProv,
         userId,
-        workbookSnapshotId: snapshotId,
+        activeWorkbookSnapshotId: snapshotId,
         tablesRead: ["biolog_rows"],
         source: "workbook_snapshot",
       },
@@ -107,7 +107,7 @@ biologRouter.get("/api/biolog/phases", async (req: Request, res: Response) => {
       _provenance: {
         db: dbProv,
         userId,
-        workbookSnapshotId: snapshotId,
+        activeWorkbookSnapshotId: snapshotId,
         tablesRead: ["biolog_rows"],
         source: "workbook_snapshot",
       },
@@ -140,7 +140,7 @@ biologRouter.get("/api/biolog/latest", async (req: Request, res: Response) => {
         _provenance: {
           db: dbProv,
           userId,
-          workbookSnapshotId: snapshotId,
+          activeWorkbookSnapshotId: snapshotId,
           tablesRead: ["biolog_rows"],
         },
       });
@@ -151,7 +151,7 @@ biologRouter.get("/api/biolog/latest", async (req: Request, res: Response) => {
       _provenance: {
         db: dbProv,
         userId,
-        workbookSnapshotId: snapshotId,
+        activeWorkbookSnapshotId: snapshotId,
         tablesRead: ["biolog_rows"],
         source: "workbook_snapshot",
       },

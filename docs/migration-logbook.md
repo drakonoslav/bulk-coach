@@ -219,3 +219,50 @@ Every response includes `_provenance.db`, `_provenance.userId`, `_provenance.act
 **Sheets (7):** biolog (3 rows), ingredients (3), meal_lines (3), meal_templates (2), drift_history (2), colony_coord (2), threshold_lab (2)  
 **Purpose:** Proves upload→activate→read mechanism without hardcoding real workbook contents.  
 **Marker:** All rows contain `"note": "FIXTURE-TEST"` to distinguish from real data.
+
+---
+
+## End-to-End Proof Run — 2026-03-17 (Passes 5-9 Complete)
+
+**Status:** ALL 13 TESTS PASS  
+**User:** `test_user_workbook_host`  
+**Active Snapshot for Proof:** id=5, `logbook03162026.xlsx`, filenameDate=2026-03-16
+
+### Tables Populated (snapshot 5)
+| Table | Rows |
+|-------|------|
+| workbook_snapshots | 1 |
+| biolog_rows | 3 |
+| meal_line_rows | 3 |
+| meal_template_rows | 2 |
+| drift_event_rows | 2 |
+| colony_metric_rows | 2 |
+| threshold_lab_rows | 2 |
+
+### Test Results
+| Test | Description | Result |
+|------|-------------|--------|
+| T0 | No X-User-Id → 400 | PASS |
+| T1 | No active snapshot → 404 | PASS |
+| T2 | Upload → 201 + 8 tables written | PASS |
+| T3 | Snapshot list shows uploaded workbook | PASS |
+| T4 | Activate via PATCH /workbooks/:id | PASS |
+| T5 | GET /snapshots/active returns correct | PASS |
+| T6 | GET /biolog from active snapshot (3 rows) | PASS |
+| T7 | GET /nutrition/* from active snapshot (phases + lines) | PASS |
+| T8 | GET /colony from active snapshot (coord:2 drift:2 threshold:2) | PASS |
+| T9 | _provenance on every response (activeWorkbookSnapshotId=5 on all) | PASS |
+| T10 | Snapshot switch: activate snap 4 → colony 0 rows | PASS |
+| T11 | Re-activate snap 5 → colony 2+2+2 rows restored | PASS |
+| T12 | DELETE /api/snapshots/4 → cascade: all 7 tables zeroed | PASS |
+| T13 | ghost_user_no_snaps → 404 "No active workbook snapshot" | PASS |
+
+### Provenance Snapshot (at T9)
+| Route | activeWorkbookSnapshotId | tablesRead |
+|-------|-------------------------|------------|
+| GET /api/snapshots | 5 | workbook_snapshots |
+| GET /api/snapshots/active | 5 | workbook_snapshots |
+| GET /api/biolog | 5 | biolog_rows |
+| GET /api/nutrition/summary | 5 | workbook_snapshots, meal_template_rows |
+| GET /api/nutrition?phase=base | 5 | workbook_snapshots, meal_line_rows |
+| GET /api/colony | 5 | workbook_snapshots, colony_metric_rows, drift_event_rows, threshold_lab_rows |

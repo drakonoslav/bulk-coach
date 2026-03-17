@@ -36,61 +36,77 @@ GET /api/colony  →  404 "No active workbook snapshot."
 
 ### ☑ Workbook active
 ```
-PATCH /api/workbooks/2/activate (X-User-Id: proof-test-001)
-→ { "ok": true, "activatedSnapshotId": 2, "_provenance": { "activeWorkbookSnapshotId": 2 } }
+PATCH /api/workbooks/5/activate (X-User-Id: test_user_workbook_host)
+→ { "ok": true, "activatedSnapshotId": 5, "_provenance": { "activeWorkbookSnapshotId": 5 } }
 
 GET /api/snapshots/active
-→ { "activeSnapshot": { "id": 2, "isActive": true, "filename": "logbook03162026.xlsx", "filenameDate": "2026-03-16" } }
+→ { "activeSnapshot": { "id": 5, "isActive": true, "filename": "logbook03162026.xlsx", "filenameDate": "2026-03-16" } }
 ```
-**Verified:** Step 7 re-activation in logbook.
+**Verified:** 2026-03-17 end-to-end proof run.
 
 ---
 
 ### ☑ Biolog reads active workbook
 ```
-GET /api/biolog (X-User-Id: proof-test-001, active: snapshot #2)
+GET /api/biolog (X-User-Id: test_user_workbook_host, active: snapshot #5)
 → {
     "count": 3,
-    "rows": [ { "phase": "base", "biolog_date": "2026-03-01", ... }, ... ],
-    "_provenance": { "tablesRead": ["biolog_rows"], "activeWorkbookSnapshotId": 2 }
+    "rows": [ { "phase": "base", "biolog_date": "2026-03-01T00:00:00.000Z", ... }, ... ],
+    "_provenance": { "tablesRead": ["biolog_rows"], "activeWorkbookSnapshotId": "5" }
   }
 ```
-**Verified:** Step 4 in logbook. Rows come from `biolog_rows` keyed to `workbook_snapshot_id=2`.
+**Verified:** 2026-03-17 end-to-end proof run.
 
 ---
 
 ### ☑ Nutrition reads active workbook
 ```
-GET /api/nutrition (X-User-Id: proof-test-001, active: snapshot #2)
+GET /api/nutrition/summary (X-User-Id: test_user_workbook_host, active: snapshot #5)
 → {
-    "mealTemplates": { "count": 2, ... },
-    "mealLines": { "count": 3, ... },
-    "ingredients": { "count": 3, ... },
-    "_provenance": { "tablesRead": ["meal_template_rows","meal_line_rows","snapshot_sheet_rows"] }
+    "phases": [{"phase":"base","kcal":525,"protein":66,"carbs":42,"fat":7.7},
+               {"phase":"peak","kcal":155,"protein":13,"carbs":1,"fat":11}],
+    "provenance": { "tablesRead": ["workbook_snapshots","meal_template_rows"], "activeWorkbookSnapshotId": 5 }
   }
+
+GET /api/nutrition?phase=base
+→ { "rows": 2, "total": 2, "provenance": { "tablesRead": ["workbook_snapshots","meal_line_rows"] } }
 ```
-**Verified:** Step 5 in logbook. Tables are `meal_template_rows` + `meal_line_rows` + `snapshot_sheet_rows`.
+**Verified:** 2026-03-17 end-to-end proof run.
 
 ---
 
 ### ☑ Colony reads active workbook
 ```
-GET /api/colony (X-User-Id: proof-test-001, active: snapshot #2)
+GET /api/colony (X-User-Id: test_user_workbook_host, active: snapshot #5)
 → {
-    "coords": { "count": 2, "rows": [{ "colony_id": "C1", "x": "0.5", "y": "0.3" }, ...] },
-    "drift": { "count": 2 },
-    "thresholds": { "count": 2 },
-    "_provenance": { "tablesRead": ["snapshot_sheet_rows"], "workbookSnapshotId": 2 }
+    "colonyCoord": [
+      { "metric": "branch_conflict_7d", "value": 4, "status": "unstable", "recommendation": "review arbitration weights" },
+      { "metric": "sleep_adequacy_proxy", "value": 0.72, "status": "alert", "recommendation": "increase sleep window" }
+    ],
+    "driftHistory": [
+      { "date": "2026-03-08", "driftType": "schedule_break", "weightedDriftScore": 4, "watchFlag": "review" },
+      { "date": "2026-03-01", "driftType": "outcome_mismatch", "weightedDriftScore": 3, "watchFlag": "watch" }
+    ],
+    "thresholdLab": [
+      { "thresholdName": "sleep_adequacy_threshold", "currentValue": 0.75, "suggestedValue": 0.78, "evidenceCount": 6 },
+      { "thresholdName": "hrv_floor", "currentValue": 30, "suggestedValue": 32, "evidenceCount": 4 }
+    ],
+    "_provenance": {
+      "tablesRead": ["workbook_snapshots","colony_metric_rows","drift_event_rows","threshold_lab_rows"],
+      "activeWorkbookSnapshotId": 5,
+      "source": "postgres",
+      "activeWorkbookFilename": "logbook03162026.xlsx"
+    }
   }
 ```
-**Verified:** Step 6 in logbook.
+**Verified:** 2026-03-17 end-to-end proof run.
 
 ---
 
 ### ☑ Dashboard reads active workbook
 ```
 GET /api/snapshots/active (X-User-Id: <device-user-id>)
-→ { "activeSnapshot": { "id": 2, "filename": "logbook03162026.xlsx", ... } }
+→ { "activeSnapshot": { "id": 5, "filename": "logbook03162026.xlsx", ... } }
 ```
 Dashboard's `fetchActiveSnapshot()` (useFocusEffect) gates the BASELINE macro display:
 - No active snapshot → `[LEGACY FALLBACK]` amber badge shown
@@ -148,11 +164,47 @@ Dashboard's `fetchActiveSnapshot()` (useFocusEffect) gates the BASELINE macro di
 | GET /api/snapshots | workbook_snapshots | No |
 | GET /api/snapshots/active | workbook_snapshots | N/A (checks) |
 | PATCH /api/workbooks/:id/activate | workbook_snapshots | No |
+| DELETE /api/snapshots/:id | workbook_snapshots + all child tables (cascade) | No |
 | GET /api/biolog | biolog_rows | Yes → 404 |
-| GET /api/nutrition | meal_template_rows, meal_line_rows, snapshot_sheet_rows | Yes → 404 |
-| GET /api/colony | snapshot_sheet_rows | Yes → 404 |
-| POST /api/upload-workbook | workbook_snapshots, snapshot_sheet_rows, biolog_rows, meal_line_rows, meal_template_rows | N/A (creates) |
+| GET /api/nutrition/summary | workbook_snapshots, meal_template_rows | Yes → 404 |
+| GET /api/nutrition | workbook_snapshots, meal_line_rows | Yes → 404 |
+| GET /api/colony | workbook_snapshots, colony_metric_rows, drift_event_rows, threshold_lab_rows | Yes → 404 |
+| POST /api/upload-workbook | workbook_snapshots, snapshot_sheet_rows, biolog_rows, meal_line_rows, meal_template_rows, drift_event_rows, colony_metric_rows, threshold_lab_rows | N/A (creates) |
 
 ---
 
-*Last updated: 2026-03-17 — Migration Passes 1–9 + filename_date complete. Pass 10 pending.*
+## Snapshot Switching Proof
+
+Activating a different snapshot immediately changes truth across ALL domains:
+
+| State | Colony coord rows | Drift rows | Threshold rows |
+|-------|------------------|-----------|----------------|
+| Snap 5 active | 2 | 2 | 2 |
+| Snap 4 active (old-code upload, no colony rows) | 0 | 0 | 0 |
+| Snap 5 re-activated | 2 | 2 | 2 |
+
+**Verified:** 2026-03-17 — PATCH /api/workbooks/4/activate → colony snap shows 4 (no rows). PATCH /api/workbooks/5/activate → colony snap shows 5 (2+2+2 rows).
+
+---
+
+## Cascade Delete Proof
+
+DELETE /api/snapshots/4 → HTTP 200 `{ "ok": true, "deletedId": 4 }`
+
+Post-delete row counts for workbook_snapshot_id=4:
+
+| Table | Count |
+|-------|-------|
+| workbook_snapshots | 0 |
+| biolog_rows | 0 |
+| meal_line_rows | 0 |
+| meal_template_rows | 0 |
+| drift_event_rows | 0 |
+| colony_metric_rows | 0 |
+| threshold_lab_rows | 0 |
+
+**Verified:** 2026-03-17 — all 7 tables zeroed via FK `ON DELETE CASCADE`.
+
+---
+
+*Last updated: 2026-03-17 — All 13 proof tests PASS. Passes 1–9 complete. Pass 10 (native engine lab) pending parity verification.*

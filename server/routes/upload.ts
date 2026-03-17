@@ -4,10 +4,13 @@
  *
  * Truth written:
  *   workbook_snapshots       — snapshot metadata + active flag + filename_date
- *   workbook_sheet_rows      — all sheet rows as raw JSONB
+ *   snapshot_sheet_rows      — all sheet rows as raw JSONB
  *   biolog_rows              — normalized biolog sheet rows
  *   meal_line_rows           — normalized meal_lines sheet rows
  *   meal_template_rows       — normalized meal_templates sheet rows
+ *   drift_event_rows         — normalized drift_history sheet rows
+ *   colony_metric_rows       — normalized colony_coord sheet rows
+ *   threshold_lab_rows       — normalized threshold_lab sheet rows
  *
  * User scope: X-User-Id header — REQUIRED. No fallback. Fails loudly.
  * Filename date: parsed from logbookMMDDYYYY.xlsx convention for display/sorting only.
@@ -110,8 +113,6 @@ uploadRouter.post(
         filenameDate = snapshotInsert.rows[0].filename_date;
 
         // ── snapshot_sheet_rows (all sheets, raw) ─────────────────────────────
-        // NOTE: uses snapshot_sheet_rows (references workbook_snapshots).
-        //       workbook_sheet_rows is the legacy table (references workbook_versions).
         for (const [sheetName, rows] of Object.entries(parsed.sheets)) {
           for (const row of rows) {
             await client.query(
@@ -197,6 +198,75 @@ uploadRouter.post(
           );
         }
 
+        // ── drift_event_rows (normalized) ─────────────────────────────────────
+        for (const row of parsed.driftHistoryRows) {
+          await client.query(
+            `INSERT INTO drift_event_rows (
+              workbook_snapshot_id, row_index,
+              drift_date, phase, drift_type, drift_source,
+              confidence, weighted_drift_score, watch_flag, raw_json
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+            ON CONFLICT (workbook_snapshot_id, row_index) DO NOTHING`,
+            [
+              workbookSnapshotId,
+              row.rowIndex,
+              row.driftDate,
+              row.phase,
+              row.driftType,
+              row.driftSource,
+              row.confidence,
+              row.weightedDriftScore,
+              row.watchFlag,
+              JSON.stringify(row.raw),
+            ]
+          );
+        }
+
+        // ── colony_metric_rows (normalized) ───────────────────────────────────
+        for (const row of parsed.colonyCoordRows) {
+          await client.query(
+            `INSERT INTO colony_metric_rows (
+              workbook_snapshot_id, row_index,
+              metric, metric_value, threshold_value,
+              status, recommendation, confidence, raw_json
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+            ON CONFLICT (workbook_snapshot_id, row_index) DO NOTHING`,
+            [
+              workbookSnapshotId,
+              row.rowIndex,
+              row.metric,
+              row.value,
+              row.threshold,
+              row.status,
+              row.recommendation,
+              row.confidence,
+              JSON.stringify(row.raw),
+            ]
+          );
+        }
+
+        // ── threshold_lab_rows (normalized) ───────────────────────────────────
+        for (const row of parsed.thresholdLabRows) {
+          await client.query(
+            `INSERT INTO threshold_lab_rows (
+              workbook_snapshot_id, row_index,
+              threshold_name, current_value, suggested_value,
+              evidence_count, notes, raw_json
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+            ON CONFLICT (workbook_snapshot_id, row_index) DO NOTHING`,
+            [
+              workbookSnapshotId,
+              row.rowIndex,
+              row.thresholdName,
+              row.currentValue,
+              row.suggestedValue,
+              row.evidenceCount,
+              row.notes,
+              JSON.stringify(row.raw),
+            ]
+          );
+        }
+
         await client.query("COMMIT");
       } catch (err) {
         await client.query("ROLLBACK");
@@ -211,7 +281,10 @@ uploadRouter.post(
           `sheets=${parsed.sheetNames.join(",")} ` +
           `biolog=${parsed.biologRows.length} ` +
           `meal_lines=${parsed.mealLineRows.length} ` +
-          `meal_templates=${parsed.mealTemplateRows.length}`
+          `meal_templates=${parsed.mealTemplateRows.length} ` +
+          `drift=${parsed.driftHistoryRows.length} ` +
+          `colony=${parsed.colonyCoordRows.length} ` +
+          `threshold=${parsed.thresholdLabRows.length}`
       );
 
       return res.status(201).json({
@@ -233,6 +306,9 @@ uploadRouter.post(
             "biolog_rows",
             "meal_line_rows",
             "meal_template_rows",
+            "drift_event_rows",
+            "colony_metric_rows",
+            "threshold_lab_rows",
           ],
           source: "uploaded_workbook",
           filenameMatchedLogbookPattern: parsedFilename.matched,

@@ -1,88 +1,41 @@
 # Bulk Coach - Recomp Monitor App
 
 ## Overview
-Bulk Coach is a mobile fitness tracking application designed to implement a feedback-controlled bulk/recomposition system. It allows users to log daily metrics like weight, waist circumference, sleep, activity, and dietary adherence. The app provides weekly coaching recommendations, including calorie adjustments based on this data, aiming for personalized and dynamic fitness monitoring. Key capabilities include body fat tracking, lean mass calculation, and a readiness system to guide training intensity, optimizing body composition goals.
+Bulk Coach is a mobile fitness tracking application designed to implement a feedback-controlled bulk/recomposition system. It allows users to log daily metrics such as weight, waist circumference, sleep, activity, and dietary adherence. The app provides weekly coaching recommendations, including calorie adjustments, based on this data, aiming for personalized and dynamic fitness monitoring. Key capabilities include body fat tracking, lean mass calculation, and a readiness system to guide training intensity, optimizing body composition goals.
 
 ## User Preferences
 I prefer iterative development with clear communication on significant changes. When implementing new features or making architectural decisions, please ask for confirmation before proceeding. Ensure that code is well-documented and follows modern JavaScript/TypeScript best practices. I prioritize robust error handling and data integrity.
 
-## Multi-User Architecture
-Each device has a permanent user ID stored in AsyncStorage under `tracker_user_id`. This ID is sent as `X-User-Id` header on every API request. The backend's `requireAuth` middleware reads this header and uses it as the `userId` for all DB queries. Every table has a `user_id` column so data is segregated automatically. On first launch (or any install with no stored ID), the app defaults to `"local_default"` — preserving all existing DB data. True per-device UUIDs can be assigned in future by setting a unique value in AsyncStorage. The `ADMIN_USER_ID` env var designates the owner for admin-only operations (backup, global import resets). Intel `expo_user_id` is the same stored ID. AsyncStorage Intel recommendation cache is keyed by this ID (`intel_recommendation_{userId}_{date}`).
-
-## Onboarding & Identity
-On first launch (no `user_profile` in AsyncStorage), the app routes to `/onboarding` (full-screen Stack screen). The user enters their name and birthday (MM/DD/YYYY). This creates a `UserProfile` (`lib/profile.ts`) with a generated UUID stored under `tracker_user_id` and `user_profile` AsyncStorage keys. On system reset (via Vitals tab), the DB rows are wiped, profile is cleared, UUID cache is invalidated, and the app redirects to onboarding so the next person can create their own identity. Profile management lives in `lib/profile.ts`; identity helpers in `lib/user-identity.ts`.
-
-## Migration Status — Safe Gut Renovation (active)
-**New source of truth**: `workbook_snapshots` + `workbook_sheet_rows` + `biolog_rows` (Postgres).
-**Paths no longer allowed**: MemStorage (disabled), `local_default` fallback on new routes, legacy screens reading from daily_log without workbook scope.
-
-| Pass | Status | Description |
-|------|--------|-------------|
-| 1 — Inventory | ✓ | All persistence paths mapped |
-| 2 — Source-of-truth matrix | ✓ | KEEP/GUT/RISK lists produced |
-| 3 — Freeze unsafe writes | ✓ | MemStorage gutted; tracker/checklist/metrics quarantined |
-| 4 — Clean Postgres schema | ✓ | workbook_snapshots, workbook_sheet_rows, biolog_rows (migration 036) |
-| 5 — Rebuild upload/parsing spine | ✓ | server/routes/upload.ts, server/services/workbookParser.ts, server/services/workbookFilename.ts |
-| 6 — Active snapshot selection | ✓ | PATCH /api/workbooks/:id/activate (canonical) + PATCH /api/snapshots/:id/activate (alias) |
-| 7 — Reconnect screens to workbook truth | ✓ | workbook.tsx rebuilt; biolog/nutrition/colony/dashboard all use active snapshot |
-| 8 — Provenance display | ✓ | _provenance on every API response; ProvenanceBanner in workbook screen |
-| 9 — Disable legacy screens | ✓ | report.tsx quarantined; dashboard BASELINE gated; vitals advisory labelled |
-| 10 — Native engine lab | Pending | After parity only |
-
-**Quarantined tabs** (show QuarantinedScreen): tracker.tsx, checklist.tsx, metrics.tsx, report.tsx
-**Quarantined server files**: see server/quarantine/QUARANTINE.md
-**Conflict noted**: `workbook_versions` (legacy) and `workbook_snapshots` (new canonical) are both in Postgres. New routes use `workbook_snapshots` only. `workbook_sheet_rows` references `workbook_versions` (legacy) — use `snapshot_sheet_rows` instead.
-
-**Filename date support**: `server/services/workbookFilename.ts` parses `logbookMMDDYYYY.xlsx` → `filename_date DATE`. Cosmetic only — snapshot_id + is_active = operational authority.
-
-**Canonical route priority**: Canonical spine routes registered BEFORE `registerRoutes()` in `server/index.ts` so they take priority over legacy routes at the same paths.
-
-**New canonical API endpoints** (all require Authorization + X-User-Id, no fallbacks):
-- `POST /api/upload-workbook` → workbook_snapshots + snapshot_sheet_rows + biolog_rows + meal_line_rows + meal_template_rows; parses filename_date
-- `GET /api/snapshots` → `{ snapshots: WorkbookSnapshot[], _provenance }` (camelCase, filenameDate included)
-- `GET /api/snapshots/active` → `{ activeSnapshot: WorkbookSnapshot, _provenance }` (key is `activeSnapshot`)
-- `PATCH /api/workbooks/:id/activate` → `{ ok, activatedSnapshotId, _provenance }` (canonical frontend contract)
-- `PATCH /api/snapshots/:id/activate` → same handler (backward-compat alias)
-- `DELETE /api/snapshots/:id` → cascade delete
-- `GET /api/biolog` → biolog_rows from active snapshot
-- `GET /api/nutrition/meal-lines|meal-templates|ingredients` → snapshot_sheet_rows / meal_*_rows
-- `GET /api/colony` → `{ coords, drift, thresholds }` from snapshot_sheet_rows
-
-**Frontend contract**: `lib/workbook-types.ts` + `lib/workbook-api.ts` define exact payload shapes. `app/workbook.tsx` uses `WorkbookScreenState`. No shape invention.
-
-**Proof artifacts**: `docs/migration-logbook.md` + `docs/workbook-proof-checklist.md` + `fixtures/logbook03162026.xlsx` (synthetic 7-sheet test fixture).
-
 ## System Architecture
-The application features an Expo Router frontend with file-based routing and a 6-tab layout (Dashboard, Logbook, Plan, Report, Vitals, Metrics). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
+The application features an Expo Router frontend with file-based routing and a 6-tab layout (Dashboard, Logbook, Plan, Report, Vitals, Metrics). The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data and user-specific data. Each device has a permanent user ID stored in AsyncStorage (`tracker_user_id`), used for segregating user data in the database.
 
 Core logic is modularized into several engines and modules:
 - **Coaching Engine**: Manages calorie adjustments and ingredient suggestions.
 - **Erection Engine**: Handles snapshot parsing, delta computation, gap-fill imputation, and androgen proxy calculation.
-- **Readiness Engine**: Computes readiness scores and manages training templates based on canonical health data.
-- **Canonical Health**: A vendor-agnostic health data layer with idempotent upserts, source-priority-aware vitals upsert, HRV baseline computation, session strain scoring, recovery slope calculation, and HR oscillation-based bias detection.
+- **Readiness Engine**: Computes readiness scores and manages training templates.
+- **Canonical Health**: A vendor-agnostic health data layer with idempotent upserts and source-priority-aware vitals.
 - **Validation Module**: Provides strict input validation for all API routes.
-- **Workout Engine**: Implements a Compound Budget Points (CBP) drain model for workout progression, phase state machine, and RPE-adjusted set logging.
-- **Muscle Planner**: Manages a 17-muscle-group taxonomy with weekly volume tracking and deficit-based isolation target picking respecting readiness.
-- **Day Classifier**: Deterministically classifies day states (LEAN_GAIN, CUT, RECOMP, DELOAD, SUPPRESSED) using weight trends, recovery signals, and training load.
-- **Adherence Metrics**: Modules for single-day and range-based adherence tracking, including bedtime/wake drift and training adherence.
-- **Cardio and Lift Regulation Engines**: Unified 3x2 regulation architectures for cardio and lifting, assessing Schedule Stability (alignment, consistency, recovery) and Outcome (adequacy, efficiency, continuity).
-- **Recovery Helpers**: Shared recovery modifiers applying `suppressionFactor` and `driftFactor` across sleep, cardio, and lift domains.
-- **Health Data Adapters**: Modules for translating data from Fitbit, Apple HealthKit, and Polar devices into the canonical format.
+- **Workout Engine**: Implements a Compound Budget Points (CBP) drain model for workout progression and RPE-adjusted set logging.
+- **Muscle Planner**: Manages a 17-muscle-group taxonomy with weekly volume tracking.
+- **Day Classifier**: Deterministically classifies day states (e.g., LEAN_GAIN, CUT, RECOMP) using weight trends, recovery signals, and training load.
+- **Adherence Metrics**: Modules for single-day and range-based adherence tracking.
+- **Cardio and Lift Regulation Engines**: Unified 3x2 regulation architectures assessing Schedule Stability and Outcome.
+- **Recovery Helpers**: Shared recovery modifiers applying `suppressionFactor` and `driftFactor`.
+- **Health Data Adapters**: Modules for translating data from Fitbit, Apple HealthKit, and Polar devices.
 - **Backup Module**: Provides versioned export/import with schema migration safety.
 - **Fitbit Takeout Parser**: Handles parsing Google Takeout ZIP files for Fitbit data.
-- **Sleep Alignment Module**: Implements a 3-layer sleep model for deviation classification, tracking provenance and computing TIB/TST.
-- **Androgen Oscillator Engine**: (`server/oscillator-engine.ts`) Implements the 3-layer convergent rhythm control model. Computes three 0–100 scores — Acute Readiness (50% weight), Tissue-Resource (30% weight), and Endocrine-Seasonal (20% weight) — combining into a composite with 5 tier interpretations. Outputs `breakdowns: {acute, resource, seasonal}: ScoreBreakdownItem[]` and `reasoning: string[]` alongside the prescription. Route: `GET /api/oscillator`. IMPORTANT: All `daily_log` queries must use `day::date` cast (day column is text type). `sleep_midpoint_minutes` does not exist — compute from `sleep_start`/`sleep_end` using time arithmetic in SQL. Pool import: always use named `import { pool } from "./db.js"` (not default import).
-- **Vitals v1 Module** (`server/vitals/`): TypeScript module providing enums (`enums.ts`: CardioMode/LiftMode/MacroDayType/OscillatorClass/CycleWeekType), interfaces (`interfaces.ts`: ScoreBreakdownItem, VitalsDashboardResponse, UserVitalsBaselines), meal/macro templates (`macro-templates.ts`), and API routes (`vitals.routes.ts`). New endpoints: `GET /api/vitals/dashboard` (full VitalsDashboardResponse with scores, today's metrics, trends, weeklyDistribution, recommendation with macro/meal targets, breakdowns, flags), `GET/PATCH /api/vitals/baseline` (personal baselines: hrv_year_avg=36, rhr_year_avg=60, bw_setpoint=156, waist_setpoint=31.5, protein_floor=170, fat_floor_avg=55, default_kcal=2695), `GET/PATCH /api/vitals/recommendation` (today's oscillator-driven prescription). Column alias: `bf_morning_pct AS body_fat_pct` when querying body fat from daily_log.
-- **Intel Vitals Integration**: Daily log Save Entry fires `POST /api/intel/vitals/daily-log` (local Express proxy → `LIFTING_INTEL_BASE_URL/vitals/daily-log`) with all available fields mapped to the Intel spec (bedtime_local/waketime_local as ISO datetimes, erection score computed from count+firmness, pain→soreness_score, lift mode from trainingLoad/liftDone/deloadWeek). Intel response stored in AsyncStorage as `intel_recommendation_{userId}_{date}` via `saveIntelRecommendation()`. New DB columns active on daily_log: `libido_score`, `motivation_score`, `mood_stability_score`, `mental_drive_score`, `joint_friction_score`, `protein_g_actual`, `carbs_g_actual`, `fat_g_actual`. New log form sections: Wellbeing (5 signal tap-strip sliders 1–5: Libido/Motivation/Mood/Mental Drive/Joint Friction) added after Pain/Injury; macro actual fields (Protein/Carbs/Fat g) added in Nutrition section after Calories Consumed.
-- **Intervention Memory System**: Records state snapshots, actions, and outcomes for case-based reasoning. It uses a weighted feature similarity engine to provide advisory policy recommendations with confidence tiers based on historical data and forecast alignment.
-- **Workout Game Persistence Layer**: Centralized persistence via `persistWorkoutDerivedState()` for strength sets, game bridge entries, and daily log updates, ensuring data integrity and timezone-safe day resolution.
+- **Sleep Alignment Module**: Implements a 3-layer sleep model for deviation classification and tracking provenance.
+- **Androgen Oscillator Engine**: Implements a 3-layer convergent rhythm control model computing Acute Readiness, Tissue-Resource, and Endocrine-Seasonal scores for a composite interpretation and prescription.
+- **Vitals v1 Module**: Provides enums, interfaces, meal/macro templates, and API routes for comprehensive vitals dashboard, baseline management, and daily recommendations.
+- **Intel Vitals Integration**: Facilitates daily log data submission to an external Intel service for recommendations, storing responses in AsyncStorage.
+- **Intervention Memory System**: Records state snapshots, actions, and outcomes for case-based reasoning and advisory policy recommendations.
+- **Workout Game Persistence Layer**: Centralized persistence for workout data, ensuring data integrity and timezone-safe day resolution.
 - **Intel Exercise Mapping**: Resolves Intel numeric exercise IDs to local strength exercise text slugs.
-- **Context Lens**: Classifies physiological impact patterns around user-tagged life contexts using a multi-component disturbance score, including readiness deltas and adherence rates, supporting multi-day episode tracking and dual-baseline archiving.
+- **Context Lens**: Classifies physiological impact patterns around user-tagged life contexts using a multi-component disturbance score.
 
-UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purple accent for vitals (#8B5CF6), and the Rubik font family. Authentication uses Bearer tokens. Shared formatting utilities from `lib/format.ts` are used for signal breakdown values. The Dashboard CAPACITY chart displays Readiness and three sleep disruption metrics (Sleep Latency, Wake After Sleep Onset, Awake-in-Bed) with normalized percentages, exceedance fills, and blend colors for overlaps. The 3×2 regulation triads (Schedule: alignment/consistency/recovery; Outcome: adequacy/efficiency/continuity) are rendered as horizontal fuel-gauge fill bars with a green/amber/red color scale based on thresholds. Sleep efficiency and continuity metrics are provided with dual-unit fields (fraction and percentage) and invariant checks.
+The application incorporates a versioned Excel workbook ingestion system. Users upload `.xlsx` files, which are stored as immutable snapshots in `workbook_snapshots` and `snapshot_sheet_rows` tables, with typed rows distributed across additional tables (biolog_rows, meal_line_rows, meal_template_rows, drift_event_rows, colony_metric_rows, threshold_lab_rows). The frontend `app/workbook.tsx` provides a version selector and displays data from these workbooks.
 
-## Workbook Module
-Versioned Excel workbook ingestion system. Users upload `.xlsx` files via the Metrics tab → "Workbooks" button. Each upload is stored as an immutable version (`workbook_versions` table) with all sheet rows stored as raw JSON in `workbook_sheet_rows` (workbook_id, sheet_name, row_index, raw_json). Expected sheets: `biolog`, `ingredients`, `meal_lines`, `meal_templates`, `drift_history`, `colony_coord`, `threshold_lab`. Any subset is accepted; missing sheets are flagged as warnings. Frontend screen: `app/workbook.tsx` — horizontal version selector, sheet-count pills, 4 display panels (Phase / Nutrition / Drift / Colonies). Backend: `server/workbook-routes.ts` mounted at `/api/workbooks`. Phase detection: scans last biolog row containing a column with "phase" in its name. No logic recomputation — Excel is source of truth. Future: native computation engine + behavior recommendations layer.
+UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purple accent for vitals (#8B5CF6), and the Rubik font family. Authentication uses Bearer tokens. Shared formatting utilities are used for signal breakdown values. The Dashboard features CAPACITY charts for Readiness and sleep disruption metrics, and 3x2 regulation triads are rendered as horizontal fuel-gauge fill bars.
 
 ## External Dependencies
 - **Postgres (Neon)**: Primary database.
