@@ -7,11 +7,13 @@ import * as path from "path";
 // ── NEW CANONICAL SPINE ROUTES (Pass 3+) ─────────────────────────────────────
 // These are registered AFTER registerRoutes so the global Bearer auth middleware
 // still applies. Each handler also enforces X-User-Id explicitly (no fallback).
-import { uploadRouter }   from "./routes/upload.js";
-import { workbookRouter } from "./routes/workbook.js";
-import { biologRouter }   from "./routes/biolog.js";
-import { nutritionRouter } from "./routes/nutrition.js";
-import { colonyRouter }   from "./routes/colony.js";
+import { uploadRouter }           from "./routes/upload.js";
+import { workbookRouter }         from "./routes/workbook.js";
+import { biologRouter }           from "./routes/biolog.js";
+import { biologDerivedRouter }    from "./routes/biolog-derived.js";
+import { nutritionRouter }        from "./routes/nutrition.js";
+import { colonyRouter }           from "./routes/colony.js";
+import { workbookDashboardRouter } from "./routes/workbook-dashboard.js";
 
 const app = express();
 const log = console.log;
@@ -276,8 +278,10 @@ function setupErrorHandler(app: express.Application) {
   app.use(uploadRouter);
   app.use(workbookRouter);
   app.use(biologRouter);
+  app.use(biologDerivedRouter);
   app.use(nutritionRouter);
   app.use(colonyRouter);
+  app.use(workbookDashboardRouter);
 
   const server = await registerRoutes(app);
 
