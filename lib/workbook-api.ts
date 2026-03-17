@@ -15,6 +15,7 @@
  *   - Throw on non-ok responses with the backend error message
  */
 
+import { Platform } from "react-native";
 import { getApiUrl } from "./query-client";
 import { makeApiHeaders } from "./api-headers";
 import type {
@@ -81,14 +82,22 @@ export async function uploadWorkbook(params: {
 }): Promise<UploadWorkbookResponse> {
   const headers = await makeApiHeaders();
 
+  const mime =
+    params.mimeType ||
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
   const formData = new FormData();
-  formData.append("file", {
-    uri: params.fileUri,
-    name: params.fileName,
-    type:
-      params.mimeType ||
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  } as any);
+  if (Platform.OS === "web") {
+    const resp = await fetch(params.fileUri);
+    const blob = await resp.blob();
+    formData.append("file", new File([blob], params.fileName, { type: mime }));
+  } else {
+    formData.append("file", {
+      uri: params.fileUri,
+      name: params.fileName,
+      type: mime,
+    } as any);
+  }
 
   if (params.versionTag?.trim()) {
     formData.append("versionTag", params.versionTag.trim());

@@ -193,44 +193,34 @@ function serveLandingPage({
 }
 
 function configureExpoAndLanding(app: express.Application) {
-  const templatePath = path.resolve(
-    process.cwd(),
-    "server",
-    "templates",
-    "landing-page.html",
-  );
-  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
-  const appName = getAppName();
+  log("Serving web app from dist/, mobile bundles from static-build/");
 
-  log("Serving static Expo files with dynamic manifest routing");
-
+  // 1. Expo Go manifest — mobile only (expo-platform: ios / android header)
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith("/api")) {
-      return next();
-    }
-
-    if (req.path !== "/" && req.path !== "/manifest") {
-      return next();
-    }
+    if (req.path.startsWith("/api")) return next();
+    if (req.path !== "/" && req.path !== "/manifest") return next();
 
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
       return serveExpoManifest(platform, res);
     }
 
-    if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
-    }
-
     next();
   });
 
+  // 2. Named asset directory (fonts, images)
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets"), { maxAge: "1d" }));
+
+  // 3. Expo web bundle (dist/) — serves index.html + hashed JS/CSS for browsers
+  app.use(express.static(path.resolve(process.cwd(), "dist"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".html")) {
+        res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      }
+    },
+  }));
+
+  // 4. Mobile Expo OTA bundles (static-build/) — served to Expo Go
   app.use(express.static(path.resolve(process.cwd(), "static-build"), {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".html")) {
@@ -239,7 +229,17 @@ function configureExpoAndLanding(app: express.Application) {
     },
   }));
 
-  log("Expo routing: Checking expo-platform header on / and /manifest");
+  // 5. SPA fallback — Expo Router uses client-side routing, so every non-API
+  //    path that does not match a static file must return dist/index.html
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api")) return next();
+    const indexPath = path.resolve(process.cwd(), "dist", "index.html");
+    if (fs.existsSync(indexPath)) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
 }
 
 function setupErrorHandler(app: express.Application) {

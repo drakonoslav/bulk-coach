@@ -102,6 +102,19 @@ Canonical spine routes registered BEFORE `registerRoutes()` in `server/index.ts`
 - `docs/biolog-header-map.md` — canonical biolog header map documentation
 - `fixtures/logbook03162026.xlsx` — 7-sheet synthetic test fixture
 
+## Web + Mobile Serving Architecture
+
+**Website (browser)**: Express on port 5000 serves `dist/` — built by `npx expo export --platform web --output-dir dist`. SPA fallback (`app.use`) returns `dist/index.html` for all non-API routes. `window.location.origin` is used as the API base on web (no `EXPO_PUBLIC_DOMAIN` needed). Upload uses real `File`/`Blob` via `Platform.OS === "web"` branch in `lib/workbook-api.ts`.
+
+**Mobile (Expo Go)**: Express also serves `static-build/` (built by `node scripts/build.js`). Expo manifest at `/` detected by `expo-platform: ios/android` header.
+
+**Deployment build command** (in `.replit`):
+```
+npm run server:build && npx expo export --platform web --output-dir dist && npm run expo:static:build
+```
+
+**Proof standard for web path**: SOURCE → `dist/` built → RUNTIME via port 5000 (Express). NOT port 8081 (Metro dev server). Confirmed 2026-03-17: 4/4 quarantine tabs, 4/4 workbook-driven screens, active_snapshot=5, all via browser at localhost:5000.
+
 ## System Architecture
 Expo Router frontend (file-based routing, 6-tab layout). Express backend on port 5000. Postgres via `pg` pool. AsyncStorage for user profiles + Intel recommendation cache.
 
