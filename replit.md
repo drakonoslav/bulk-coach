@@ -22,26 +22,35 @@ On first launch (no `user_profile` in AsyncStorage), the app routes to `/onboard
 | 2 — Source-of-truth matrix | ✓ | KEEP/GUT/RISK lists produced |
 | 3 — Freeze unsafe writes | ✓ | MemStorage gutted; tracker/checklist/metrics quarantined |
 | 4 — Clean Postgres schema | ✓ | workbook_snapshots, workbook_sheet_rows, biolog_rows (migration 036) |
-| 5 — Rebuild upload/parsing spine | ✓ | server/routes/upload.ts, server/services/workbookParser.ts |
-| 6 — Active snapshot selection | ✓ | PATCH /api/snapshots/:id/activate |
-| 7 — Reconnect screens to workbook truth | In progress | workbook.tsx uses new endpoints; biolog/nutrition/colony APIs live |
-| 8 — Provenance display | ✓ | ProvenanceBanner on every screen; _provenance on every API response |
-| 9 — Disable legacy screens | Pending | Dashboard, Report, Vitals still read from daily_log |
+| 5 — Rebuild upload/parsing spine | ✓ | server/routes/upload.ts, server/services/workbookParser.ts, server/services/workbookFilename.ts |
+| 6 — Active snapshot selection | ✓ | PATCH /api/workbooks/:id/activate (canonical) + PATCH /api/snapshots/:id/activate (alias) |
+| 7 — Reconnect screens to workbook truth | ✓ | workbook.tsx rebuilt; biolog/nutrition/colony/dashboard all use active snapshot |
+| 8 — Provenance display | ✓ | _provenance on every API response; ProvenanceBanner in workbook screen |
+| 9 — Disable legacy screens | ✓ | report.tsx quarantined; dashboard BASELINE gated; vitals advisory labelled |
 | 10 — Native engine lab | Pending | After parity only |
 
-**Quarantined tabs** (show QuarantinedScreen): tracker.tsx, checklist.tsx, metrics.tsx
+**Quarantined tabs** (show QuarantinedScreen): tracker.tsx, checklist.tsx, metrics.tsx, report.tsx
 **Quarantined server files**: see server/quarantine/QUARANTINE.md
-**Conflict noted**: `workbook_versions` (legacy) and `workbook_snapshots` (new canonical) are both in Postgres. New routes use `workbook_snapshots` only.
+**Conflict noted**: `workbook_versions` (legacy) and `workbook_snapshots` (new canonical) are both in Postgres. New routes use `workbook_snapshots` only. `workbook_sheet_rows` references `workbook_versions` (legacy) — use `snapshot_sheet_rows` instead.
+
+**Filename date support**: `server/services/workbookFilename.ts` parses `logbookMMDDYYYY.xlsx` → `filename_date DATE`. Cosmetic only — snapshot_id + is_active = operational authority.
+
+**Canonical route priority**: Canonical spine routes registered BEFORE `registerRoutes()` in `server/index.ts` so they take priority over legacy routes at the same paths.
 
 **New canonical API endpoints** (all require Authorization + X-User-Id, no fallbacks):
-- `POST /api/upload-workbook` → workbook_snapshots + workbook_sheet_rows + biolog_rows
-- `GET /api/snapshots` → list for user
-- `GET /api/snapshots/active` → active snapshot
-- `PATCH /api/snapshots/:id/activate` → set active
+- `POST /api/upload-workbook` → workbook_snapshots + snapshot_sheet_rows + biolog_rows + meal_line_rows + meal_template_rows; parses filename_date
+- `GET /api/snapshots` → `{ snapshots: WorkbookSnapshot[], _provenance }` (camelCase, filenameDate included)
+- `GET /api/snapshots/active` → `{ activeSnapshot: WorkbookSnapshot, _provenance }` (key is `activeSnapshot`)
+- `PATCH /api/workbooks/:id/activate` → `{ ok, activatedSnapshotId, _provenance }` (canonical frontend contract)
+- `PATCH /api/snapshots/:id/activate` → same handler (backward-compat alias)
 - `DELETE /api/snapshots/:id` → cascade delete
 - `GET /api/biolog` → biolog_rows from active snapshot
-- `GET /api/nutrition/meal-lines|meal-templates|ingredients` → workbook_sheet_rows
-- `GET /api/colony` → colony_coord + drift_history + threshold_lab sheets
+- `GET /api/nutrition/meal-lines|meal-templates|ingredients` → snapshot_sheet_rows / meal_*_rows
+- `GET /api/colony` → `{ coords, drift, thresholds }` from snapshot_sheet_rows
+
+**Frontend contract**: `lib/workbook-types.ts` + `lib/workbook-api.ts` define exact payload shapes. `app/workbook.tsx` uses `WorkbookScreenState`. No shape invention.
+
+**Proof artifacts**: `docs/migration-logbook.md` + `docs/workbook-proof-checklist.md` + `fixtures/logbook03162026.xlsx` (synthetic 7-sheet test fixture).
 
 ## System Architecture
 The application features an Expo Router frontend with file-based routing and a 6-tab layout (Dashboard, Logbook, Plan, Report, Vitals, Metrics). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.

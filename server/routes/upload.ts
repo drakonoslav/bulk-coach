@@ -3,21 +3,22 @@
  * NEW CANONICAL: POST /api/upload-workbook
  *
  * Truth written:
- *   workbook_snapshots       — snapshot metadata + active flag
+ *   workbook_snapshots       — snapshot metadata + active flag + filename_date
  *   workbook_sheet_rows      — all sheet rows as raw JSONB
  *   biolog_rows              — normalized biolog sheet rows
  *   meal_line_rows           — normalized meal_lines sheet rows
  *   meal_template_rows       — normalized meal_templates sheet rows
  *
  * User scope: X-User-Id header — REQUIRED. No fallback. Fails loudly.
- * No AsyncStorage identity. No local_default fallback.
- * Provenance: every response includes _provenance block.
+ * Filename date: parsed from logbookMMDDYYYY.xlsx convention for display/sorting only.
+ *   snapshot_id + is_active = real authority. filename_date = convenience label.
  */
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import crypto from "crypto";
 import { pool, getDbProvenance } from "../db/pool.js";
 import { parseWorkbookBuffer } from "../services/workbookParser.js";
+import { parseLogbookFilename } from "../services/workbookFilename.js";
 
 export const uploadRouter = Router();
 
@@ -50,7 +51,7 @@ uploadRouter.post(
       if (!file) {
         return res.status(400).json({
           error: "No file uploaded",
-          _provenance: { db: dbProv, userId: null },
+          _provenance: { db: dbProv, userId: null, source: "upload" },
         });
       }
 
@@ -65,10 +66,12 @@ uploadRouter.post(
         .digest("hex");
 
       const parsed = parseWorkbookBuffer(file.buffer);
+      const parsedFilename = parseLogbookFilename(file.originalname);
 
       const client = await pool.connect();
-      let workbookSnapshotId: string | number | null = null;
+      let workbookSnapshotId: number | null = null;
       let uploadedAt: string | null = null;
+      let filenameDate: string | null = null;
 
       try {
         await client.query("BEGIN");
@@ -83,15 +86,16 @@ uploadRouter.post(
 
         const snapshotInsert = await client.query(
           `INSERT INTO workbook_snapshots (
-            user_id, filename, version_tag, is_active,
+            user_id, filename, filename_date, version_tag, is_active,
             sheet_names, row_counts, warnings,
             source_sha256, original_file_size_bytes
           )
-          VALUES ($1,$2,$3,TRUE,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8)
-          RETURNING id, uploaded_at`,
+          VALUES ($1,$2,$3,$4,TRUE,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9)
+          RETURNING id, uploaded_at, filename, filename_date`,
           [
             userId,
             file.originalname,
+            parsedFilename.filenameDate,
             versionTag,
             JSON.stringify(parsed.sheetNames),
             JSON.stringify(parsed.rowCounts),
@@ -103,12 +107,15 @@ uploadRouter.post(
 
         workbookSnapshotId = snapshotInsert.rows[0].id;
         uploadedAt = snapshotInsert.rows[0].uploaded_at;
+        filenameDate = snapshotInsert.rows[0].filename_date;
 
-        // ── workbook_sheet_rows (all sheets, raw) ──────────────────────────────
+        // ── snapshot_sheet_rows (all sheets, raw) ─────────────────────────────
+        // NOTE: uses snapshot_sheet_rows (references workbook_snapshots).
+        //       workbook_sheet_rows is the legacy table (references workbook_versions).
         for (const [sheetName, rows] of Object.entries(parsed.sheets)) {
           for (const row of rows) {
             await client.query(
-              `INSERT INTO workbook_sheet_rows (
+              `INSERT INTO snapshot_sheet_rows (
                 workbook_snapshot_id, sheet_name, row_index, raw_json
               ) VALUES ($1,$2,$3,$4::jsonb)
               ON CONFLICT (workbook_snapshot_id, sheet_name, row_index) DO NOTHING`,
@@ -200,6 +207,7 @@ uploadRouter.post(
 
       console.log(
         `[upload-workbook] user=${userId} snapshot=${workbookSnapshotId} ` +
+          `filename="${file.originalname}" filename_date=${filenameDate ?? "null"} ` +
           `sheets=${parsed.sheetNames.join(",")} ` +
           `biolog=${parsed.biologRows.length} ` +
           `meal_lines=${parsed.mealLineRows.length} ` +
@@ -211,21 +219,23 @@ uploadRouter.post(
         workbookSnapshotId,
         uploadedAt,
         filename: file.originalname,
+        filenameDate,
         versionTag,
         rowCounts: parsed.rowCounts,
         warnings: parsed.warnings,
         _provenance: {
           db: dbProv,
           userId,
-          workbookSnapshotId,
+          activeWorkbookSnapshotId: workbookSnapshotId,
           tablesWritten: [
             "workbook_snapshots",
-            "workbook_sheet_rows",
+            "snapshot_sheet_rows",
             "biolog_rows",
             "meal_line_rows",
             "meal_template_rows",
           ],
           source: "uploaded_workbook",
+          filenameMatchedLogbookPattern: parsedFilename.matched,
         },
       });
     } catch (err: any) {
@@ -233,7 +243,7 @@ uploadRouter.post(
       const status = err.statusCode || 500;
       return res.status(status).json({
         error: err.message || "Failed to upload workbook",
-        _provenance: { db: dbProv },
+        _provenance: { db: dbProv, source: "upload_error" },
       });
     }
   }

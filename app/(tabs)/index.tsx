@@ -283,7 +283,7 @@ export default function DashboardScreen() {
       const res = await authFetch(url.toString(), { headers });
       if (res.ok) {
         const data = await res.json();
-        setActiveSnapshotId(String(data.snapshot?.id ?? data.id ?? ""));
+        setActiveSnapshotId(String(data.activeSnapshot?.id ?? data.snapshot?.id ?? data.id ?? ""));
       } else {
         setActiveSnapshotId(null);
       }

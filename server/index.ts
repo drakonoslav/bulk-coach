@@ -268,16 +268,18 @@ function setupErrorHandler(app: express.Application) {
 
   configureExpoAndLanding(app);
 
-  const server = await registerRoutes(app);
-
-  // ── Register new canonical spine routes ─────────────────────────────────────
-  // New source of truth: workbook_snapshots, workbook_sheet_rows, biolog_rows
+  // ── Register new canonical spine routes FIRST ───────────────────────────────
+  // MUST be registered before registerRoutes() so canonical routes take priority
+  // over legacy routes mounted at the same paths (e.g. /api/workbooks in routes.ts).
+  // New source of truth: workbook_snapshots, snapshot_sheet_rows, biolog_rows
   // Paths no longer allowed: MemStorage, local_default fallback on these routes
   app.use(uploadRouter);
   app.use(workbookRouter);
   app.use(biologRouter);
   app.use(nutritionRouter);
   app.use(colonyRouter);
+
+  const server = await registerRoutes(app);
 
   setupErrorHandler(app);
 

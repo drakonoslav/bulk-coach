@@ -2,7 +2,7 @@
  * server/routes/colony.ts
  * NEW CANONICAL: GET /api/colony
  *
- * Truth read: workbook_sheet_rows WHERE sheet_name IN ('colony_coord','drift_history','threshold_lab')
+ * Truth read: snapshot_sheet_rows WHERE sheet_name IN ('colony_coord','drift_history','threshold_lab')
  *             from the active workbook_snapshot.
  * User scope: X-User-Id header — REQUIRED. No fallback.
  * No runtime-derived colony state. Colony_coord workbook sheet is the only authority.
@@ -41,7 +41,7 @@ async function getActiveSnapshotId(userId: string): Promise<number> {
 async function getSheetRows(snapshotId: number, sheetName: string, limit = 500) {
   const result = await pool.query(
     `SELECT row_index, raw_json
-     FROM workbook_sheet_rows
+     FROM snapshot_sheet_rows
      WHERE workbook_snapshot_id = $1 AND sheet_name = $2
      ORDER BY row_index ASC
      LIMIT $3`,
@@ -65,7 +65,7 @@ colonyRouter.get("/api/colony/coords", async (req: Request, res: Response) => {
         db: dbProv,
         userId,
         workbookSnapshotId: snapshotId,
-        tablesRead: ["workbook_sheet_rows"],
+        tablesRead: ["snapshot_sheet_rows"],
         sheetName: "colony_coord",
         source: "workbook_snapshot",
       },
@@ -90,7 +90,7 @@ colonyRouter.get("/api/colony/drift", async (req: Request, res: Response) => {
         db: dbProv,
         userId,
         workbookSnapshotId: snapshotId,
-        tablesRead: ["workbook_sheet_rows"],
+        tablesRead: ["snapshot_sheet_rows"],
         sheetName: "drift_history",
         source: "workbook_snapshot",
       },
@@ -115,7 +115,7 @@ colonyRouter.get("/api/colony/thresholds", async (req: Request, res: Response) =
         db: dbProv,
         userId,
         workbookSnapshotId: snapshotId,
-        tablesRead: ["workbook_sheet_rows"],
+        tablesRead: ["snapshot_sheet_rows"],
         sheetName: "threshold_lab",
         source: "workbook_snapshot",
       },
@@ -146,7 +146,7 @@ colonyRouter.get("/api/colony", async (req: Request, res: Response) => {
         db: dbProv,
         userId,
         workbookSnapshotId: snapshotId,
-        tablesRead: ["workbook_sheet_rows"],
+        tablesRead: ["snapshot_sheet_rows"],
         sheetsRead: ["colony_coord", "drift_history", "threshold_lab"],
         source: "workbook_snapshot",
       },

@@ -1,918 +1,728 @@
-import React, { useState, useCallback, useRef } from "react";
+/**
+ * app/workbook.tsx
+ * Workbook Host — canonical workbook snapshot management screen.
+ *
+ * State contract: WorkbookScreenState (lib/workbook-types.ts)
+ * API contract:   lib/workbook-api.ts
+ *
+ * Data authority: workbook_snapshots (Postgres) via snapshot_id + is_active.
+ * filename_date is display/sort convenience only — never used for activation.
+ * No AsyncStorage fallback identity. No legacy workbook_versions reads.
+ */
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  FlatList,
-  TouchableOpacity,
   ActivityIndicator,
   Alert,
+  FlatList,
   RefreshControl,
-  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { fetch as expoFetch } from "expo/fetch";
-import { getApiUrl } from "@/lib/query-client";
-import { makeApiHeaders } from "@/lib/api-headers";
+import * as DocumentPicker from "expo-document-picker";
+import {
+  activateSnapshot,
+  deleteSnapshot,
+  fetchActiveSnapshot,
+  fetchSnapshots,
+  uploadWorkbook,
+} from "@/lib/workbook-api";
+import type { ApiProvenance, WorkbookSnapshot } from "@/lib/workbook-types";
 
-// ─── Theme ───────────────────────────────────────────────────────────────────
+// ─── Theme ─────────────────────────────────────────────────────────────────────
 const C = {
   bg: "#0A0F1E",
-  cardBg: "#111827",
-  cardBg2: "#1A2235",
+  card: "#111827",
+  card2: "#1A2235",
   border: "#1E2D40",
   primary: "#00D4AA",
   accent: "#8B5CF6",
   warn: "#F59E0B",
   danger: "#EF4444",
   text: "#F1F5F9",
-  textSec: "#94A3B8",
-  textMuted: "#475569",
+  sec: "#94A3B8",
+  muted: "#475569",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface WorkbookVersion {
-  id: number;
-  filename: string;
-  version_tag: string | null;
-  uploaded_at: string;
-  sheets_found: string[];
-  row_counts: Record<string, number>;
-}
+// ─── State contract ─────────────────────────────────────────────────────────
+type WorkbookScreenState = {
+  snapshots: WorkbookSnapshot[];
+  activeSnapshotId: number | null;
+  provenance: ApiProvenance | null;
+  loading: boolean;
+  refreshing: boolean;
+  uploading: boolean;
+  activatingSnapshotId: number | null;
+  deletingSnapshotId: number | null;
+  error: string | null;
+};
 
-interface WorkbookSummary {
-  workbook: WorkbookVersion;
-  currentPhase: Record<string, any> | null;
-  biolog: Record<string, any>[];
-  ingredients: Record<string, any>[];
-  mealLines: Record<string, any>[];
-  mealTemplates: Record<string, any>[];
-  driftHistory: Record<string, any>[];
-  colonies: Record<string, any>[];
-  thresholds: Record<string, any>[];
-}
+const INIT: WorkbookScreenState = {
+  snapshots: [],
+  activeSnapshotId: null,
+  provenance: null,
+  loading: true,
+  refreshing: false,
+  uploading: false,
+  activatingSnapshotId: null,
+  deletingSnapshotId: null,
+  error: null,
+};
 
-type Panel = "phase" | "nutrition" | "drift" | "colonies";
-
-const PANELS: { key: Panel; label: string; icon: string }[] = [
-  { key: "phase", label: "Phase", icon: "pulse" },
-  { key: "nutrition", label: "Nutrition", icon: "nutrition" },
-  { key: "drift", label: "Drift", icon: "trending-up" },
-  { key: "colonies", label: "Colonies", icon: "grid" },
-];
-
-// ─── API helpers ──────────────────────────────────────────────────────────────
-// makeApiHeaders sends both Authorization: Bearer <token> and X-User-Id
-const makeHeaders = makeApiHeaders;
-
-// ─── NEW CANONICAL API (workbook_snapshots) ───────────────────────────────────
-// Source of truth: workbook_snapshots table in Postgres.
-// Paths no longer allowed: /api/workbooks (legacy workbook_versions table).
-
-async function fetchVersions(): Promise<WorkbookVersion[]> {
-  const base = getApiUrl();
-  const url = new URL("/api/snapshots", base).toString();
-  const headers = await makeHeaders();
-  const res = await expoFetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = await res.json() as any;
-  // New shape: { snapshots: [...], _provenance: {...} }
-  return body.snapshots ?? [];
-}
-
-async function fetchSummary(id: number): Promise<WorkbookSummary> {
-  const base = getApiUrl();
-  // New canonical endpoint: reads from workbook_sheet_rows for this snapshot
-  const url = new URL(`/api/snapshots/${id}/sheets`, base).toString();
-  const headers = await makeHeaders();
-  const res = await expoFetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = await res.json() as any;
-  // Map new shape { snapshotId, sheetNames, rowCounts, warnings } to WorkbookSummary
-  return {
-    phase: null,
-    biolog: [],
-    nutrition: [],
-    drift: [],
-    colonies: [],
-    thresholds: [],
-    // Expose the raw sheet metadata as provenance
-    _sheets: body.sheetNames ?? [],
-    _rowCounts: body.rowCounts ?? {},
-    _warnings: body.warnings ?? [],
-    _provenance: body._provenance,
-  } as unknown as WorkbookSummary;
-}
-
-async function deleteVersion(id: number): Promise<void> {
-  const base = getApiUrl();
-  const url = new URL(`/api/snapshots/${id}`, base).toString();
-  const headers = await makeHeaders();
-  const res = await expoFetch(url, { method: "DELETE", headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-}
-
-async function activateSnapshot(id: number): Promise<void> {
-  const base = getApiUrl();
-  const url = new URL(`/api/snapshots/${id}/activate`, base).toString();
-  const headers = await makeHeaders();
-  const res = await expoFetch(url, { method: "PATCH", headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-}
-
-// ─── Small components ─────────────────────────────────────────────────────────
-function KeyValueRow({ label, value }: { label: string; value: any }) {
-  const display =
-    value === null || value === undefined
-      ? "—"
-      : typeof value === "object"
-      ? JSON.stringify(value)
-      : String(value);
-  return (
-    <View style={kv.row}>
-      <Text style={kv.label} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text style={kv.value} selectable>
-        {display}
-      </Text>
-    </View>
-  );
-}
-
-const kv = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    gap: 10,
-  },
-  label: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Rubik_500Medium",
-    color: C.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  value: {
-    flex: 2,
-    fontSize: 13,
-    fontFamily: "Rubik_400Regular",
-    color: C.text,
-    flexWrap: "wrap",
-  },
-});
-
-function DataCard({
-  row,
-  index,
-}: {
-  row: Record<string, any>;
-  index: number;
-}) {
-  const keys = Object.keys(row);
-  return (
-    <View style={styles.dataCard}>
-      <Text style={styles.dataCardIndex}>#{index + 1}</Text>
-      {keys.map((k) => (
-        <KeyValueRow key={k} label={k} value={row[k]} />
-      ))}
-    </View>
-  );
-}
-
-function EmptyPanel({ message }: { message: string }) {
-  return (
-    <View style={styles.emptyPanel}>
-      <Ionicons name="document-outline" size={36} color={C.textMuted} />
-      <Text style={styles.emptyPanelText}>{message}</Text>
-    </View>
-  );
-}
-
-// ─── Panel contents ───────────────────────────────────────────────────────────
-function PhasePanel({ summary }: { summary: WorkbookSummary }) {
-  const { currentPhase, biolog } = summary;
-
-  return (
-    <ScrollView
-      contentContainerStyle={styles.panelScroll}
-      showsVerticalScrollIndicator={false}
-    >
-      {currentPhase ? (
-        <>
-          <View style={styles.phaseHero}>
-            <Ionicons name="pulse" size={24} color={C.primary} />
-            <Text style={styles.phaseHeroTitle}>Current Phase</Text>
-          </View>
-          <View style={styles.dataCard}>
-            {Object.keys(currentPhase).map((k) => (
-              <KeyValueRow key={k} label={k} value={currentPhase[k]} />
-            ))}
-          </View>
-        </>
-      ) : (
-        <EmptyPanel message='No phase data found. Ensure the "biolog" sheet has a column containing "phase".' />
-      )}
-
-      {biolog.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>
-            Biolog — {biolog.length} rows
-          </Text>
-          {biolog.slice(0, 20).map((row, i) => (
-            <DataCard key={i} row={row} index={i} />
-          ))}
-          {biolog.length > 20 && (
-            <Text style={styles.truncNote}>
-              Showing 20 of {biolog.length} rows
-            </Text>
-          )}
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
-function NutritionPanel({ summary }: { summary: WorkbookSummary }) {
-  const { mealTemplates, mealLines, ingredients, thresholds } = summary;
-
-  return (
-    <ScrollView
-      contentContainerStyle={styles.panelScroll}
-      showsVerticalScrollIndicator={false}
-    >
-      {mealTemplates.length === 0 &&
-      mealLines.length === 0 &&
-      ingredients.length === 0 ? (
-        <EmptyPanel message='No nutrition data found. Check "meal_templates", "meal_lines", and "ingredients" sheets.' />
-      ) : null}
-
-      {mealTemplates.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>
-            Meal Templates — {mealTemplates.length} rows
-          </Text>
-          {mealTemplates.map((row, i) => (
-            <DataCard key={i} row={row} index={i} />
-          ))}
-        </>
-      )}
-
-      {mealLines.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>
-            Meal Lines — {mealLines.length} rows
-          </Text>
-          {mealLines.slice(0, 30).map((row, i) => (
-            <DataCard key={i} row={row} index={i} />
-          ))}
-          {mealLines.length > 30 && (
-            <Text style={styles.truncNote}>
-              Showing 30 of {mealLines.length} rows
-            </Text>
-          )}
-        </>
-      )}
-
-      {ingredients.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>
-            Ingredients — {ingredients.length} rows
-          </Text>
-          {ingredients.slice(0, 30).map((row, i) => (
-            <DataCard key={i} row={row} index={i} />
-          ))}
-          {ingredients.length > 30 && (
-            <Text style={styles.truncNote}>
-              Showing 30 of {ingredients.length} rows
-            </Text>
-          )}
-        </>
-      )}
-
-      {thresholds.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>
-            Threshold Lab — {thresholds.length} rows
-          </Text>
-          {thresholds.map((row, i) => (
-            <DataCard key={i} row={row} index={i} />
-          ))}
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
-function DriftPanel({ summary }: { summary: WorkbookSummary }) {
-  const { driftHistory } = summary;
-
-  if (driftHistory.length === 0) {
-    return (
-      <View style={styles.panelScroll}>
-        <EmptyPanel message='No drift events found in "drift_history" sheet.' />
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      contentContainerStyle={styles.panelScroll}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={styles.sectionTitle}>
-        Drift History — {driftHistory.length} events
-      </Text>
-      {driftHistory.map((row, i) => (
-        <DataCard key={i} row={row} index={i} />
-      ))}
-    </ScrollView>
-  );
-}
-
-function ColoniesPanel({ summary }: { summary: WorkbookSummary }) {
-  const { colonies } = summary;
-
-  if (colonies.length === 0) {
-    return (
-      <View style={styles.panelScroll}>
-        <EmptyPanel message='No colony data found in "colony_coord" sheet.' />
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      contentContainerStyle={styles.panelScroll}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={styles.sectionTitle}>
-        Colony Coordinates — {colonies.length} entries
-      </Text>
-      {colonies.map((row, i) => (
-        <DataCard key={i} row={row} index={i} />
-      ))}
-    </ScrollView>
-  );
-}
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
+// ─── Screen ──────────────────────────────────────────────────────────────────
 export default function WorkbookScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const [state, setState] = useState<WorkbookScreenState>(INIT);
 
-  const [versions, setVersions] = useState<WorkbookVersion[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [summary, setSummary] = useState<WorkbookSummary | null>(null);
-  const [activePanel, setActivePanel] = useState<Panel>("phase");
-  const [loadingVersions, setLoadingVersions] = useState(true);
-  const [loadingSummary, setLoadingSummary] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const loadSnapshots = useCallback(
+    async (mode: "initial" | "refresh" = "initial") => {
+      setState((prev) => ({
+        ...prev,
+        loading: mode === "initial" && prev.snapshots.length === 0,
+        refreshing: mode === "refresh",
+        error: null,
+      }));
 
-  const loadVersions = useCallback(async () => {
-    try {
-      const data = await fetchVersions();
-      setVersions(data);
-      if (data.length && selectedId === null) {
-        setSelectedId(data[0].id);
-        loadSummaryFor(data[0].id);
+      try {
+        const [snapshotsRes, activeRes] = await Promise.allSettled([
+          fetchSnapshots(),
+          fetchActiveSnapshot(),
+        ]);
+
+        let snapshots: WorkbookSnapshot[] = [];
+        let provenance: ApiProvenance | null = null;
+        let activeSnapshotId: number | null = null;
+        let error: string | null = null;
+
+        if (snapshotsRes.status === "fulfilled") {
+          snapshots = snapshotsRes.value.snapshots;
+          provenance = snapshotsRes.value._provenance;
+        } else {
+          error = snapshotsRes.reason?.message || "Failed to load snapshots";
+        }
+
+        if (activeRes.status === "fulfilled") {
+          activeSnapshotId = activeRes.value.activeSnapshot.id;
+          provenance = activeRes.value._provenance ?? provenance;
+        } else {
+          const msg: string = activeRes.reason?.message || "";
+          if (!msg.toLowerCase().includes("no active workbook snapshot")) {
+            error = error || msg || "Failed to load active workbook";
+          }
+        }
+
+        setState((prev) => ({
+          ...prev,
+          snapshots,
+          activeSnapshotId,
+          provenance,
+          loading: false,
+          refreshing: false,
+          error,
+        }));
+      } catch (err: any) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          refreshing: false,
+          error: err.message || "Failed to load workbook state",
+        }));
       }
-    } catch (e) {
-      console.error("loadVersions", e);
-    } finally {
-      setLoadingVersions(false);
-      setRefreshing(false);
-    }
-  }, [selectedId]);
+    },
+    []
+  );
 
-  // Load on mount
-  React.useEffect(() => {
-    loadVersions();
-  }, []);
+  useEffect(() => {
+    void loadSnapshots("initial");
+  }, [loadSnapshots]);
 
-  const loadSummaryFor = async (id: number) => {
-    setLoadingSummary(true);
-    setSummary(null);
-    try {
-      const data = await fetchSummary(id);
-      setSummary(data);
-    } catch (e) {
-      Alert.alert("Error", "Could not load workbook summary.");
-    } finally {
-      setLoadingSummary(false);
-    }
-  };
-
-  const handleSelectVersion = (id: number) => {
-    if (id === selectedId) return;
-    setSelectedId(id);
-    loadSummaryFor(id);
-  };
-
-  const handleUpload = async () => {
+  const handleUpload = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: Platform.OS === "web"
-          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          : "*/*",
+        type: [
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.ms-excel.sheet.macroEnabled.12",
+        ],
+        multiple: false,
         copyToCacheDirectory: true,
       });
 
-      if (result.canceled || !result.assets?.length) return;
-
-      const asset = result.assets[0];
-      if (
-        !asset.name.endsWith(".xlsx") &&
-        !asset.mimeType?.includes("spreadsheet")
-      ) {
-        Alert.alert("Invalid file", "Please select an .xlsx Excel workbook.");
+      if (result.canceled) return;
+      const file = result.assets?.[0];
+      if (!file?.uri || !file?.name) {
+        Alert.alert("Upload failed", "No workbook file selected.");
         return;
       }
 
-      setUploading(true);
+      setState((prev) => ({ ...prev, uploading: true, error: null }));
 
-      const formData = new FormData();
-      formData.append("file", {
-        uri: asset.uri,
-        name: asset.name,
-        type:
-          asset.mimeType ||
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      } as any);
-
-      const base = getApiUrl();
-      // NEW CANONICAL: /api/upload-workbook writes to workbook_snapshots table
-      const url = new URL("/api/upload-workbook", base).toString();
-      const headers = await makeHeaders();
-
-      const res = await expoFetch(url, {
-        method: "POST",
-        headers,
-        body: formData,
+      const uploadRes = await uploadWorkbook({
+        fileUri: file.uri,
+        fileName: file.name,
+        mimeType: file.mimeType || undefined,
+        versionTag: null,
       });
 
-      const body = await res.json() as any;
-      if (!res.ok) {
-        Alert.alert("Upload failed", body.error || "Unknown error");
-        return;
-      }
+      setState((prev) => ({ ...prev, uploading: false }));
 
-      const warnings = body.warnings as string[] | undefined;
-      const msg =
-        warnings?.length
-          ? `Uploaded & activated.\n\nWarnings:\n${warnings.join("\n")}`
-          : "Workbook uploaded, parsed, and set as active snapshot.";
+      const dateStr = uploadRes.filenameDate
+        ? `\nDate parsed: ${uploadRes.filenameDate}`
+        : "";
+      Alert.alert(
+        "Workbook uploaded",
+        `Snapshot #${uploadRes.workbookSnapshotId} is now active.\n\n${uploadRes.filename}${dateStr}`
+      );
 
-      Alert.alert("Success", msg);
-      await loadVersions();
-      // New response shape uses workbookSnapshotId (not workbookId)
-      if (body.workbookSnapshotId) {
-        handleSelectVersion(Number(body.workbookSnapshotId));
-      }
-    } catch (e: any) {
-      Alert.alert("Upload error", e?.message || "Something went wrong.");
-    } finally {
-      setUploading(false);
+      await loadSnapshots("initial");
+    } catch (err: any) {
+      setState((prev) => ({
+        ...prev,
+        uploading: false,
+        error: err.message || "Failed to upload workbook",
+      }));
+      Alert.alert("Upload failed", err.message || "Failed to upload workbook");
     }
-  };
+  }, [loadSnapshots]);
 
-  const handleDelete = (ver: WorkbookVersion) => {
-    Alert.alert(
-      "Delete version",
-      `Remove "${ver.filename}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteVersion(ver.id);
-              const next = versions.filter((v) => v.id !== ver.id);
-              setVersions(next);
-              if (selectedId === ver.id) {
-                const nextSel = next[0] ?? null;
-                setSelectedId(nextSel?.id ?? null);
-                setSummary(null);
-                if (nextSel) loadSummaryFor(nextSel.id);
+  const handleActivate = useCallback(
+    async (snapshotId: number) => {
+      setState((prev) => ({
+        ...prev,
+        activatingSnapshotId: snapshotId,
+        error: null,
+      }));
+      try {
+        await activateSnapshot(snapshotId);
+        setState((prev) => ({ ...prev, activatingSnapshotId: null }));
+        await loadSnapshots("initial");
+      } catch (err: any) {
+        setState((prev) => ({
+          ...prev,
+          activatingSnapshotId: null,
+          error: err.message || "Failed to activate",
+        }));
+        Alert.alert("Activation failed", err.message || "Failed to activate");
+      }
+    },
+    [loadSnapshots]
+  );
+
+  const handleDelete = useCallback(
+    async (snapshotId: number, filename: string) => {
+      Alert.alert(
+        "Delete snapshot?",
+        `This will permanently delete:\n${filename}\n\nAll parsed rows will be removed.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              setState((prev) => ({
+                ...prev,
+                deletingSnapshotId: snapshotId,
+                error: null,
+              }));
+              try {
+                await deleteSnapshot(snapshotId);
+                setState((prev) => ({ ...prev, deletingSnapshotId: null }));
+                await loadSnapshots("initial");
+              } catch (err: any) {
+                setState((prev) => ({
+                  ...prev,
+                  deletingSnapshotId: null,
+                  error: err.message || "Failed to delete",
+                }));
+                Alert.alert("Delete failed", err.message || "Failed to delete");
               }
-            } catch {
-              Alert.alert("Error", "Could not delete version.");
-            }
+            },
           },
-        },
-      ]
-    );
-  };
+        ]
+      );
+    },
+    [loadSnapshots]
+  );
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadVersions();
-  };
+  const activeSnapshot = useMemo(
+    () => state.snapshots.find((s) => s.id === state.activeSnapshotId) ?? null,
+    [state.snapshots, state.activeSnapshotId]
+  );
 
-  const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const totalRows = (rc: Record<string, number>) =>
-    Object.values(rc).reduce((a, b) => a + b, 0);
-
-  // ─── Render version card ─────────────────────────────────────────────────
-  const renderVersion = ({ item }: { item: WorkbookVersion }) => {
-    const isSelected = item.id === selectedId;
+  if (state.loading) {
     return (
-      <TouchableOpacity
-        style={[styles.versionCard, isSelected && styles.versionCardSelected]}
-        onPress={() => handleSelectVersion(item.id)}
-        onLongPress={() => handleDelete(item)}
-        activeOpacity={0.75}
+      <View style={[s.center, { paddingTop: insets.top }]}>
+        <Stack.Screen options={{ title: "Workbooks", headerShown: true }} />
+        <ActivityIndicator color={C.primary} />
+        <Text style={s.muted}>Loading workbook snapshots…</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[s.container, { paddingTop: insets.top }]}>
+      <Stack.Screen options={{ title: "Workbooks", headerShown: true }} />
+
+      {/* ── Header bar ─────────────────────────────────────────────────────── */}
+      <View style={s.headerRow}>
+        <Text style={s.title}>Workbook Host</Text>
+        <TouchableOpacity
+          style={[s.uploadBtn, state.uploading && s.btnDisabled]}
+          onPress={handleUpload}
+          disabled={state.uploading}
+          testID="upload-workbook-btn"
+        >
+          {state.uploading ? (
+            <ActivityIndicator size="small" color={C.bg} />
+          ) : (
+            <Ionicons name="cloud-upload-outline" size={16} color={C.bg} />
+          )}
+          <Text style={s.uploadBtnText}>
+            {state.uploading ? "Uploading…" : "Upload"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {state.error ? (
+        <View style={s.errorBox}>
+          <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+          <Text style={s.errorText}>{state.error}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Active snapshot summary ─────────────────────────────────────────── */}
+      <View
+        style={[
+          s.activeBox,
+          activeSnapshot
+            ? { borderColor: "rgba(0,212,170,0.35)" }
+            : { borderColor: "rgba(245,158,11,0.3)" },
+        ]}
       >
-        <View style={styles.versionCardTop}>
+        <View style={s.activeBoxHeader}>
           <Ionicons
-            name="document-text"
-            size={16}
-            color={isSelected ? C.primary : C.textMuted}
+            name={activeSnapshot ? "checkmark-circle" : "warning-outline"}
+            size={14}
+            color={activeSnapshot ? C.primary : C.warn}
           />
           <Text
             style={[
-              styles.versionFilename,
-              isSelected && { color: C.primary },
+              s.activeBoxLabel,
+              { color: activeSnapshot ? C.primary : C.warn },
             ]}
-            numberOfLines={1}
           >
-            {item.version_tag || item.filename}
+            {activeSnapshot ? "ACTIVE SNAPSHOT" : "NO ACTIVE SNAPSHOT"}
           </Text>
         </View>
-        <Text style={styles.versionDate}>{formatDate(item.uploaded_at)}</Text>
-        <Text style={styles.versionMeta}>
-          {item.sheets_found?.length ?? 0} sheets · {totalRows(item.row_counts ?? {})} rows
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  // ─── Sheet count pills ───────────────────────────────────────────────────
-  const renderSheetPills = (rc: Record<string, number>) => {
-    const entries = Object.entries(rc);
-    if (!entries.length) return null;
-    return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.pillsRow}
-        contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
-      >
-        {entries.map(([sheet, count]) => (
-          <View key={sheet} style={styles.pill}>
-            <Text style={styles.pillSheet}>{sheet}</Text>
-            <Text style={styles.pillCount}>{count}</Text>
-          </View>
-        ))}
-      </ScrollView>
-    );
-  };
-
-  return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Workbooks",
-          headerStyle: { backgroundColor: C.bg },
-          headerTintColor: C.text,
-          headerTitleStyle: {
-            fontFamily: "Rubik_600SemiBold",
-            color: C.text,
-          },
-          headerRight: () => (
-            <TouchableOpacity
-              style={styles.uploadBtn}
-              onPress={handleUpload}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator size="small" color={C.primary} />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload-outline" size={18} color={C.primary} />
-                  <Text style={styles.uploadBtnText}>Upload</Text>
-                </>
+        {activeSnapshot ? (
+          <>
+            <Text style={s.activeFilename}>{activeSnapshot.filename}</Text>
+            <Text style={s.activeMeta}>
+              snapshot_id = {activeSnapshot.id}
+              {activeSnapshot.filenameDate
+                ? `  •  date = ${activeSnapshot.filenameDate}`
+                : ""}
+            </Text>
+            <Text style={s.activeMeta}>
+              uploaded {new Date(activeSnapshot.uploadedAt).toLocaleString()}
+            </Text>
+            <View style={s.rowCountRow}>
+              {Object.entries(activeSnapshot.rowCounts || {}).map(
+                ([sheet, count]) => (
+                  <View key={sheet} style={s.pill}>
+                    <Text style={s.pillText}>
+                      {sheet}: {count}
+                    </Text>
+                  </View>
+                )
               )}
-            </TouchableOpacity>
-          ),
+            </View>
+          </>
+        ) : (
+          <Text style={s.muted}>
+            Upload a workbook to activate. Activation is always explicit — no
+            auto-select from filename.
+          </Text>
+        )}
+      </View>
+
+      {/* ── Snapshot list ──────────────────────────────────────────────────── */}
+      <Text style={[s.sectionTitle, { marginBottom: 8 }]}>
+        All Snapshots
+        {state.snapshots.length > 0 ? ` (${state.snapshots.length})` : ""}
+      </Text>
+
+      <FlatList
+        data={state.snapshots}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={state.refreshing}
+            onRefresh={() => void loadSnapshots("refresh")}
+            tintColor={C.primary}
+          />
+        }
+        ListEmptyComponent={
+          <View style={s.emptyBox}>
+            <Ionicons name="document-text-outline" size={36} color={C.muted} />
+            <Text style={s.muted}>No workbook snapshots uploaded yet.</Text>
+            <Text style={[s.muted, { fontSize: 11, marginTop: 4 }]}>
+              Tap Upload to add a logbookMMDDYYYY.xlsx file.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const isActive = item.id === state.activeSnapshotId;
+          const isActivating = state.activatingSnapshotId === item.id;
+          const isDeleting = state.deletingSnapshotId === item.id;
+
+          return (
+            <View
+              style={[
+                s.card,
+                isActive && { borderColor: "rgba(0,212,170,0.35)" },
+              ]}
+            >
+              {/* top row */}
+              <View style={s.cardTop}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.cardFilename}>{item.filename}</Text>
+                  <Text style={s.cardMeta}>
+                    #{item.id}
+                    {item.filenameDate ? `  •  ${item.filenameDate}` : ""}
+                  </Text>
+                  <Text style={s.cardMeta}>
+                    {new Date(item.uploadedAt).toLocaleString()}
+                  </Text>
+                </View>
+
+                {isActive ? (
+                  <View style={s.activeBadge}>
+                    <Text style={s.activeBadgeText}>ACTIVE</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[s.activateBtn, isActivating && s.btnDisabled]}
+                    onPress={() => void handleActivate(item.id)}
+                    disabled={isActivating || isDeleting}
+                    testID={`activate-btn-${item.id}`}
+                  >
+                    {isActivating ? (
+                      <ActivityIndicator size="small" color={C.primary} />
+                    ) : (
+                      <Text style={s.activateBtnText}>Activate</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* row counts */}
+              {Object.keys(item.rowCounts || {}).length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 8 }}
+                >
+                  <View style={s.rowCountRow}>
+                    {Object.entries(item.rowCounts).map(([sheet, count]) => (
+                      <View
+                        key={sheet}
+                        style={[
+                          s.pill,
+                          isActive && { borderColor: "rgba(0,212,170,0.3)" },
+                        ]}
+                      >
+                        <Text style={s.pillText}>
+                          {sheet}: {count}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+              ) : null}
+
+              {/* warnings */}
+              {item.warnings?.length ? (
+                <View style={s.warningBlock}>
+                  {item.warnings.map((w, idx) => (
+                    <Text key={idx} style={s.warningText}>
+                      ⚠ {w}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* delete (only for non-active snapshots) */}
+              {!isActive ? (
+                <TouchableOpacity
+                  style={s.deleteBtn}
+                  onPress={() => void handleDelete(item.id, item.filename)}
+                  disabled={isDeleting || isActivating}
+                  testID={`delete-btn-${item.id}`}
+                >
+                  <Ionicons name="trash-outline" size={12} color={C.muted} />
+                  <Text style={s.deleteBtnText}>
+                    {isDeleting ? "Deleting…" : "Delete"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          );
         }}
       />
 
-      <View
-        style={[
-          styles.container,
-          { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) },
-        ]}
-      >
-        {/* Version list */}
-        {loadingVersions ? (
-          <ActivityIndicator
-            color={C.primary}
-            style={{ marginVertical: 24 }}
-          />
-        ) : versions.length === 0 ? (
-          <TouchableOpacity
-            style={styles.emptyUpload}
-            onPress={handleUpload}
-            disabled={uploading}
-          >
-            <Ionicons name="cloud-upload-outline" size={40} color={C.primary} />
-            <Text style={styles.emptyUploadTitle}>Upload a Workbook</Text>
-            <Text style={styles.emptyUploadSub}>
-              Select an .xlsx file containing biolog, ingredients, meal_lines,
-              meal_templates, drift_history, colony_coord, or threshold_lab
-              sheets.
-            </Text>
-          </TouchableOpacity>
-        ) : (
+      {/* ── Provenance panel ───────────────────────────────────────────────── */}
+      <View style={s.provBox}>
+        <Text style={s.provLabel}>PROVENANCE</Text>
+        {state.provenance ? (
           <>
-            <FlatList
-              data={versions}
-              keyExtractor={(v) => String(v.id)}
-              renderItem={renderVersion}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.versionList}
-              contentContainerStyle={{
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                gap: 10,
-              }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  tintColor={C.primary}
-                />
-              }
-            />
-
-            {/* Sheet row counts for selected workbook */}
-            {summary && renderSheetPills(summary.workbook.row_counts ?? {})}
-
-            {/* Panel tabs */}
-            <View style={styles.panelTabs}>
-              {PANELS.map((p) => (
-                <TouchableOpacity
-                  key={p.key}
-                  style={[
-                    styles.panelTab,
-                    activePanel === p.key && styles.panelTabActive,
-                  ]}
-                  onPress={() => setActivePanel(p.key)}
-                >
-                  <Ionicons
-                    name={p.icon as any}
-                    size={14}
-                    color={activePanel === p.key ? C.primary : C.textMuted}
-                  />
-                  <Text
-                    style={[
-                      styles.panelTabText,
-                      activePanel === p.key && styles.panelTabTextActive,
-                    ]}
-                  >
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Panel content */}
-            {loadingSummary ? (
-              <ActivityIndicator
-                color={C.primary}
-                style={{ flex: 1, marginTop: 40 }}
-              />
-            ) : summary ? (
-              <View style={{ flex: 1 }}>
-                {activePanel === "phase" && <PhasePanel summary={summary} />}
-                {activePanel === "nutrition" && (
-                  <NutritionPanel summary={summary} />
-                )}
-                {activePanel === "drift" && <DriftPanel summary={summary} />}
-                {activePanel === "colonies" && (
-                  <ColoniesPanel summary={summary} />
-                )}
-              </View>
-            ) : (
-              <EmptyPanel message="Select a workbook version above to view its data." />
-            )}
+            <Text style={s.provLine}>
+              db = {state.provenance.db?.database ?? "?"} @{" "}
+              {state.provenance.db?.host ?? "?"}
+            </Text>
+            <Text style={s.provLine}>
+              env = {state.provenance.db?.node_env ?? state.provenance.db?.nodeEnv ?? "?"}  •  source ={" "}
+              {state.provenance.source}
+            </Text>
+            <Text style={s.provLine}>
+              active_snapshot_id ={" "}
+              {state.provenance.activeWorkbookSnapshotId ?? "none"}
+            </Text>
+            {state.provenance.tablesRead?.length ? (
+              <Text style={s.provLine}>
+                tables = {state.provenance.tablesRead.join(", ")}
+              </Text>
+            ) : null}
           </>
+        ) : (
+          <Text style={s.provLine}>No provenance loaded</Text>
         )}
       </View>
-    </>
+    </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+// ─── Styles ──────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: C.bg,
+    paddingHorizontal: 16,
+    paddingBottom: 0,
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.bg,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+  },
+  title: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 20,
+    color: C.text,
   },
   uploadBtn: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+    backgroundColor: C.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  uploadBtnText: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 13,
+    color: C.bg,
+  },
+  btnDisabled: { opacity: 0.5 },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "rgba(239,68,68,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.3)",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: "Rubik_400Regular",
+    fontSize: 12,
+    color: C.danger,
+  },
+  activeBox: {
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
     gap: 5,
+  },
+  activeBoxHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  activeBoxLabel: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.8,
+  },
+  activeFilename: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 15,
+    color: C.text,
+  },
+  activeMeta: {
+    fontFamily: "Rubik_400Regular",
+    fontSize: 11,
+    color: C.sec,
+  },
+  sectionTitle: {
+    fontFamily: "Rubik_600SemiBold",
+    fontSize: 14,
+    color: C.text,
+  },
+  card: {
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  cardTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  cardFilename: {
+    fontFamily: "Rubik_600SemiBold",
+    fontSize: 13,
+    color: C.text,
+  },
+  cardMeta: {
+    fontFamily: "Rubik_400Regular",
+    fontSize: 11,
+    color: C.sec,
+    marginTop: 1,
+  },
+  activeBadge: {
+    backgroundColor: "rgba(0,212,170,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(0,212,170,0.5)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  activeBadgeText: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 10,
+    color: C.primary,
+    letterSpacing: 0.8,
+  },
+  activateBtn: {
+    borderWidth: 1,
+    borderColor: C.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  activateBtnText: {
+    fontFamily: "Rubik_600SemiBold",
+    fontSize: 12,
+    color: C.primary,
+  },
+  rowCountRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  pill: {
+    backgroundColor: C.card2,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pillText: {
+    fontFamily: "Rubik_400Regular",
+    fontSize: 10,
+    color: C.sec,
+  },
+  warningBlock: {
+    marginTop: 8,
+    gap: 3,
+  },
+  warningText: {
+    fontFamily: "Rubik_400Regular",
+    fontSize: 11,
+    color: C.warn,
+  },
+  deleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-end",
+    marginTop: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  uploadBtnText: {
-    fontSize: 14,
-    fontFamily: "Rubik_600SemiBold",
-    color: C.primary,
-  },
-  emptyUpload: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 40,
-    gap: 14,
-  },
-  emptyUploadTitle: {
-    fontSize: 20,
-    fontFamily: "Rubik_700Bold",
-    color: C.text,
-    textAlign: "center",
-  },
-  emptyUploadSub: {
-    fontSize: 14,
+  deleteBtnText: {
     fontFamily: "Rubik_400Regular",
-    color: C.textSec,
-    textAlign: "center",
-    lineHeight: 21,
-  },
-  versionList: {
-    flexGrow: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  versionCard: {
-    width: 200,
-    backgroundColor: C.cardBg,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 4,
-  },
-  versionCardSelected: {
-    borderColor: C.primary,
-    backgroundColor: C.cardBg2,
-  },
-  versionCardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  versionFilename: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: "Rubik_600SemiBold",
-    color: C.text,
-  },
-  versionDate: {
     fontSize: 11,
-    fontFamily: "Rubik_400Regular",
-    color: C.textMuted,
+    color: C.muted,
   },
-  versionMeta: {
-    fontSize: 11,
-    fontFamily: "Rubik_400Regular",
-    color: C.textSec,
-  },
-  pillsRow: {
-    flexGrow: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    paddingVertical: 10,
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.cardBg,
-    borderRadius: 20,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  pillSheet: {
-    fontSize: 11,
-    fontFamily: "Rubik_500Medium",
-    color: C.textSec,
-  },
-  pillCount: {
-    fontSize: 11,
-    fontFamily: "Rubik_700Bold",
-    color: C.primary,
-  },
-  panelTabs: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    backgroundColor: C.bg,
-  },
-  panelTab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 12,
-  },
-  panelTabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: C.primary,
-  },
-  panelTabText: {
-    fontSize: 13,
-    fontFamily: "Rubik_500Medium",
-    color: C.textMuted,
-  },
-  panelTabTextActive: {
-    color: C.primary,
-    fontFamily: "Rubik_600SemiBold",
-  },
-  panelScroll: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 40,
-  },
-  phaseHero: {
-    flexDirection: "row",
+  emptyBox: {
+    paddingVertical: 40,
     alignItems: "center",
     gap: 8,
-    marginBottom: 4,
   },
-  phaseHeroTitle: {
-    fontSize: 17,
-    fontFamily: "Rubik_700Bold",
-    color: C.text,
+  muted: {
+    fontFamily: "Rubik_400Regular",
+    fontSize: 12,
+    color: C.muted,
+    textAlign: "center",
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontFamily: "Rubik_600SemiBold",
-    color: C.textSec,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  dataCard: {
-    backgroundColor: C.cardBg,
-    borderRadius: 12,
-    padding: 14,
+  provBox: {
+    backgroundColor: C.card,
     borderWidth: 1,
     borderColor: C.border,
-    gap: 2,
-  },
-  dataCardIndex: {
-    fontSize: 11,
-    fontFamily: "Rubik_500Medium",
-    color: C.textMuted,
-    marginBottom: 6,
-  },
-  truncNote: {
-    fontSize: 12,
-    fontFamily: "Rubik_400Regular",
-    color: C.textMuted,
-    textAlign: "center",
+    borderRadius: 10,
+    padding: 12,
     marginTop: 4,
+    marginBottom: 16,
+    gap: 3,
   },
-  emptyPanel: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    gap: 12,
-    paddingHorizontal: 32,
+  provLabel: {
+    fontFamily: "Rubik_700Bold",
+    fontSize: 9,
+    color: C.muted,
+    letterSpacing: 1,
+    marginBottom: 4,
   },
-  emptyPanelText: {
-    fontSize: 14,
+  provLine: {
     fontFamily: "Rubik_400Regular",
-    color: C.textMuted,
-    textAlign: "center",
-    lineHeight: 21,
+    fontSize: 10,
+    color: C.sec,
   },
 });

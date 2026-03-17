@@ -5,7 +5,7 @@
  * Truth read:
  *   meal_line_rows      — normalized meal lines (keyed to active workbook_snapshot_id)
  *   meal_template_rows  — normalized meal templates (keyed to active workbook_snapshot_id)
- *   workbook_sheet_rows — raw ingredients sheet (keyed to active workbook_snapshot_id)
+ *   snapshot_sheet_rows — raw ingredients sheet (keyed to active workbook_snapshot_id)
  *
  * User scope: X-User-Id header — REQUIRED. No fallback. No local_default.
  * No AsyncStorage identity. No legacy daily_log reads.
@@ -164,7 +164,7 @@ nutritionRouter.get("/api/nutrition/meal-templates", async (req: Request, res: R
 });
 
 // ── GET /api/nutrition/ingredients ───────────────────────────────────────────
-// Returns raw ingredients sheet rows from workbook_sheet_rows.
+// Returns raw ingredients sheet rows from snapshot_sheet_rows.
 // (Ingredients are not yet normalized into their own table — raw only for now.)
 nutritionRouter.get("/api/nutrition/ingredients", async (req: Request, res: Response) => {
   const dbProv = getDbProvenance();
@@ -177,7 +177,7 @@ nutritionRouter.get("/api/nutrition/ingredients", async (req: Request, res: Resp
 
     const result = await pool.query(
       `SELECT row_index, raw_json
-       FROM workbook_sheet_rows
+       FROM snapshot_sheet_rows
        WHERE workbook_snapshot_id = $1 AND sheet_name = 'ingredients'
        ORDER BY row_index ASC
        LIMIT $2 OFFSET $3`,
@@ -188,7 +188,7 @@ nutritionRouter.get("/api/nutrition/ingredients", async (req: Request, res: Resp
       sheet: "ingredients",
       rows: result.rows,
       count: result.rows.length,
-      _provenance: prov(userId, snapshotId, ["workbook_sheet_rows"], { sheetName: "ingredients" }),
+      _provenance: prov(userId, snapshotId, ["snapshot_sheet_rows"], { sheetName: "ingredients" }),
     });
   } catch (err: any) {
     return res.status(err.statusCode || 500).json({
@@ -287,7 +287,7 @@ nutritionRouter.get("/api/nutrition", async (req: Request, res: Response) => {
       ),
       pool.query(
         `SELECT row_index, raw_json
-         FROM workbook_sheet_rows
+         FROM snapshot_sheet_rows
          WHERE workbook_snapshot_id = $1 AND sheet_name = 'ingredients'
          ORDER BY row_index`,
         [snapshotId]
@@ -301,7 +301,7 @@ nutritionRouter.get("/api/nutrition", async (req: Request, res: Response) => {
       _provenance: prov(userId, snapshotId, [
         "meal_template_rows",
         "meal_line_rows",
-        "workbook_sheet_rows",
+        "snapshot_sheet_rows",
       ]),
     });
   } catch (err: any) {
