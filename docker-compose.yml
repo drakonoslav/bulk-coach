@@ -19,7 +19,9 @@ services:
       retries: 5
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.docker-compose-only
     restart: unless-stopped
     depends_on:
       db:
