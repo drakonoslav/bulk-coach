@@ -17,7 +17,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetch as expoFetch } from "expo/fetch";
 import { getApiUrl } from "@/lib/query-client";
-import { getDeviceUserId } from "@/lib/user-identity";
+import { makeApiHeaders } from "@/lib/api-headers";
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 const C = {
@@ -66,14 +66,8 @@ const PANELS: { key: Panel; label: string; icon: string }[] = [
 ];
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
-async function makeHeaders(): Promise<Record<string, string>> {
-  const headers: Record<string, string> = {};
-  try {
-    const uid = await getDeviceUserId();
-    if (uid) headers["X-User-Id"] = uid;
-  } catch {}
-  return headers;
-}
+// makeApiHeaders sends both Authorization: Bearer <token> and X-User-Id
+const makeHeaders = makeApiHeaders;
 
 async function fetchVersions(): Promise<WorkbookVersion[]> {
   const base = getApiUrl();

@@ -22,7 +22,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { fetch as expoFetch } from "expo/fetch";
 import { getApiUrl } from "@/lib/query-client";
-import { getDeviceUserId } from "@/lib/user-identity";
+import { makeApiHeaders } from "@/lib/api-headers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ActiveWorkbook {
@@ -82,12 +82,10 @@ export function ProvenanceBanner() {
     setLoading(true);
     setError(null);
     try {
-      const base = getApiUrl();
-      const url  = new URL("/api/provenance", base).toString();
-      const uid  = await getDeviceUserId();
-      const res  = await expoFetch(url, {
-        headers: uid ? { "X-User-Id": uid } : {},
-      });
+      const base    = getApiUrl();
+      const url     = new URL("/api/provenance", base).toString();
+      const headers = await makeApiHeaders();
+      const res     = await expoFetch(url, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as Provenance;
       setProvenance(data);
