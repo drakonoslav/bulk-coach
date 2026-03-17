@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { pool } from "./db.js";
+import { buildProvenance, getActiveWorkbook } from "./provenance.js";
 
 const router = Router();
 const upload = multer({
@@ -96,12 +97,15 @@ router.post("/upload", upload.single("file"), async (req: any, res: any) => {
 // GET /api/workbooks — list versions for current user
 router.get("/", async (req: any, res: any) => {
   const userId = getUserId(req);
-  const result = await pool.query(
-    `SELECT id, filename, version_tag, uploaded_at, sheets_found, row_counts
-     FROM workbook_versions WHERE user_id = $1 ORDER BY uploaded_at DESC`,
-    [userId]
-  );
-  res.json(result.rows);
+  const [result, provenance] = await Promise.all([
+    pool.query(
+      `SELECT id, filename, version_tag, uploaded_at, sheets_found, row_counts, is_active
+       FROM workbook_versions WHERE user_id = $1 ORDER BY uploaded_at DESC`,
+      [userId]
+    ),
+    buildProvenance(userId, ["workbook_versions"]),
+  ]);
+  res.json({ versions: result.rows, _provenance: provenance });
 });
 
 // GET /api/workbooks/:id/sheet/:sheetName — paginated raw rows
@@ -181,6 +185,11 @@ router.get("/:id/summary", async (req: any, res: any) => {
     }
   }
 
+  const provenance = await buildProvenance(userId, [
+    "workbook_versions",
+    "workbook_sheet_rows",
+  ]);
+
   res.json({
     workbook: ver.rows[0],
     currentPhase,
@@ -191,7 +200,50 @@ router.get("/:id/summary", async (req: any, res: any) => {
     driftHistory,
     colonies,
     thresholds,
+    _provenance: provenance,
   });
+});
+
+// PATCH /api/workbooks/:id/activate — mark this snapshot as the active canonical source
+router.patch("/:id/activate", async (req: any, res: any) => {
+  const userId = getUserId(req);
+  const { id } = req.params;
+
+  const ver = await pool.query(
+    `SELECT id, filename, version_tag FROM workbook_versions WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  );
+  if (!ver.rows.length) return res.status(404).json({ error: "Not found" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Deactivate all others for this user
+    await client.query(
+      `UPDATE workbook_versions SET is_active = false WHERE user_id = $1`,
+      [userId]
+    );
+    // Activate the target
+    await client.query(
+      `UPDATE workbook_versions SET is_active = true WHERE id = $1`,
+      [id]
+    );
+    await client.query("COMMIT");
+
+    const provenance = await buildProvenance(userId, ["workbook_versions"]);
+    res.json({
+      ok: true,
+      active_workbook_id: parseInt(id),
+      filename: ver.rows[0].filename,
+      version_tag: ver.rows[0].version_tag,
+      _provenance: provenance,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // DELETE /api/workbooks/:id — remove a version + all its rows

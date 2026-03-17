@@ -81,7 +81,9 @@ async function fetchVersions(): Promise<WorkbookVersion[]> {
   const headers = await makeHeaders();
   const res = await expoFetch(url, { headers });
   if (!res.ok) throw new Error(`${res.status}`);
-  return res.json() as Promise<WorkbookVersion[]>;
+  const body = await res.json() as any;
+  // Handle both old flat-array shape and new { versions, _provenance } shape
+  return Array.isArray(body) ? body : (body.versions ?? []);
 }
 
 async function fetchSummary(id: number): Promise<WorkbookSummary> {

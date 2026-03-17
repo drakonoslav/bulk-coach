@@ -1356,6 +1356,11 @@ async function runMigrations(): Promise<void> {
       (122, 'Turkish Get-Up',                       NULL,                    false)
     ON CONFLICT (intel_exercise_id) DO NOTHING;
   `);
+
+  await runMigration('035_workbook_active_flag', `
+    ALTER TABLE workbook_versions ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT false;
+    CREATE INDEX IF NOT EXISTS idx_workbook_versions_active ON workbook_versions(user_id, is_active) WHERE is_active = true;
+  `);
 }
 
 export { pool };

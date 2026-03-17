@@ -1,7 +1,8 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -15,6 +16,7 @@ import {
 } from "@expo-google-fonts/rubik";
 import { StatusBar } from "expo-status-bar";
 import { getProfile } from "@/lib/profile";
+import { ProvenanceBanner } from "@/components/ProvenanceBanner";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,7 +41,7 @@ function ProfileGuard() {
 
 function RootLayoutNav() {
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <StatusBar style="light" />
       <ProfileGuard />
       <Stack screenOptions={{ headerBackTitle: "Back" }}>
@@ -51,7 +53,8 @@ function RootLayoutNav() {
         <Stack.Screen name="training"    options={{ headerShown: false }} />
         <Stack.Screen name="workbook"    options={{ headerShown: false }} />
       </Stack>
-    </>
+      <ProvenanceBanner />
+    </View>
   );
 }
 

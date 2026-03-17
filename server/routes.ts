@@ -12,6 +12,7 @@ import { classifyDayRange } from "./day-classifier";
 import { computeOscillator } from "./oscillator-engine";
 import vitalsRouter from "./vitals/vitals.routes";
 import workbookRouter from "./workbook-routes";
+import { buildProvenance } from "./provenance";
 import { computeScheduleStability } from "./schedule-stability";
 import {
   validateSleepSummaryInput,
@@ -1062,12 +1063,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const provenance = await buildProvenance(userId, [
+        "daily_log",
+        "dashboard_cache",
+        "calorie_decisions",
+      ]);
+
       res.json({
         entries: mapped,
         appliedCalorieDelta,
         policySource,
         modeInsightReason,
         decisions14d,
+        _provenance: provenance,
       });
     } catch (err: unknown) {
       console.error("dashboard error:", err);
@@ -2141,6 +2149,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Vitals v1 API — dashboard, recommendation, baseline (spec section 14+15)
   app.use("/api/vitals", vitalsRouter);
   app.use("/api/workbooks", workbookRouter);
+
+  // GET /api/provenance — truth-path diagnostic for every client
+  app.get("/api/provenance", async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const provenance = await buildProvenance(userId, []);
+      res.json(provenance);
+    } catch (err) {
+      console.error("provenance error:", err);
+      res.status(500).json({ error: "Could not build provenance" });
+    }
+  });
 
   app.get("/api/hpa", async (req: Request, res: Response) => {
     try {
