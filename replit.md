@@ -12,6 +12,37 @@ Each device has a permanent user ID stored in AsyncStorage under `tracker_user_i
 ## Onboarding & Identity
 On first launch (no `user_profile` in AsyncStorage), the app routes to `/onboarding` (full-screen Stack screen). The user enters their name and birthday (MM/DD/YYYY). This creates a `UserProfile` (`lib/profile.ts`) with a generated UUID stored under `tracker_user_id` and `user_profile` AsyncStorage keys. On system reset (via Vitals tab), the DB rows are wiped, profile is cleared, UUID cache is invalidated, and the app redirects to onboarding so the next person can create their own identity. Profile management lives in `lib/profile.ts`; identity helpers in `lib/user-identity.ts`.
 
+## Migration Status — Safe Gut Renovation (active)
+**New source of truth**: `workbook_snapshots` + `workbook_sheet_rows` + `biolog_rows` (Postgres).
+**Paths no longer allowed**: MemStorage (disabled), `local_default` fallback on new routes, legacy screens reading from daily_log without workbook scope.
+
+| Pass | Status | Description |
+|------|--------|-------------|
+| 1 — Inventory | ✓ | All persistence paths mapped |
+| 2 — Source-of-truth matrix | ✓ | KEEP/GUT/RISK lists produced |
+| 3 — Freeze unsafe writes | ✓ | MemStorage gutted; tracker/checklist/metrics quarantined |
+| 4 — Clean Postgres schema | ✓ | workbook_snapshots, workbook_sheet_rows, biolog_rows (migration 036) |
+| 5 — Rebuild upload/parsing spine | ✓ | server/routes/upload.ts, server/services/workbookParser.ts |
+| 6 — Active snapshot selection | ✓ | PATCH /api/snapshots/:id/activate |
+| 7 — Reconnect screens to workbook truth | In progress | workbook.tsx uses new endpoints; biolog/nutrition/colony APIs live |
+| 8 — Provenance display | ✓ | ProvenanceBanner on every screen; _provenance on every API response |
+| 9 — Disable legacy screens | Pending | Dashboard, Report, Vitals still read from daily_log |
+| 10 — Native engine lab | Pending | After parity only |
+
+**Quarantined tabs** (show QuarantinedScreen): tracker.tsx, checklist.tsx, metrics.tsx
+**Quarantined server files**: see server/quarantine/QUARANTINE.md
+**Conflict noted**: `workbook_versions` (legacy) and `workbook_snapshots` (new canonical) are both in Postgres. New routes use `workbook_snapshots` only.
+
+**New canonical API endpoints** (all require Authorization + X-User-Id, no fallbacks):
+- `POST /api/upload-workbook` → workbook_snapshots + workbook_sheet_rows + biolog_rows
+- `GET /api/snapshots` → list for user
+- `GET /api/snapshots/active` → active snapshot
+- `PATCH /api/snapshots/:id/activate` → set active
+- `DELETE /api/snapshots/:id` → cascade delete
+- `GET /api/biolog` → biolog_rows from active snapshot
+- `GET /api/nutrition/meal-lines|meal-templates|ingredients` → workbook_sheet_rows
+- `GET /api/colony` → colony_coord + drift_history + threshold_lab sheets
+
 ## System Architecture
 The application features an Expo Router frontend with file-based routing and a 6-tab layout (Dashboard, Logbook, Plan, Report, Vitals, Metrics). The old `log.tsx` is retained but hidden from the tab bar. The backend is an Express server communicating with a Postgres database via `pg` pool. Data persistence is handled by Postgres, with AsyncStorage for baseline data.
 

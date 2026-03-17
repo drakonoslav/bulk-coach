@@ -69,32 +69,59 @@ const PANELS: { key: Panel; label: string; icon: string }[] = [
 // makeApiHeaders sends both Authorization: Bearer <token> and X-User-Id
 const makeHeaders = makeApiHeaders;
 
+// ─── NEW CANONICAL API (workbook_snapshots) ───────────────────────────────────
+// Source of truth: workbook_snapshots table in Postgres.
+// Paths no longer allowed: /api/workbooks (legacy workbook_versions table).
+
 async function fetchVersions(): Promise<WorkbookVersion[]> {
   const base = getApiUrl();
-  const url = new URL("/api/workbooks", base).toString();
+  const url = new URL("/api/snapshots", base).toString();
   const headers = await makeHeaders();
   const res = await expoFetch(url, { headers });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body = await res.json() as any;
-  // Handle both old flat-array shape and new { versions, _provenance } shape
-  return Array.isArray(body) ? body : (body.versions ?? []);
+  // New shape: { snapshots: [...], _provenance: {...} }
+  return body.snapshots ?? [];
 }
 
 async function fetchSummary(id: number): Promise<WorkbookSummary> {
   const base = getApiUrl();
-  const url = new URL(`/api/workbooks/${id}/summary`, base).toString();
+  // New canonical endpoint: reads from workbook_sheet_rows for this snapshot
+  const url = new URL(`/api/snapshots/${id}/sheets`, base).toString();
   const headers = await makeHeaders();
   const res = await expoFetch(url, { headers });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json() as Promise<WorkbookSummary>;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json() as any;
+  // Map new shape { snapshotId, sheetNames, rowCounts, warnings } to WorkbookSummary
+  return {
+    phase: null,
+    biolog: [],
+    nutrition: [],
+    drift: [],
+    colonies: [],
+    thresholds: [],
+    // Expose the raw sheet metadata as provenance
+    _sheets: body.sheetNames ?? [],
+    _rowCounts: body.rowCounts ?? {},
+    _warnings: body.warnings ?? [],
+    _provenance: body._provenance,
+  } as unknown as WorkbookSummary;
 }
 
 async function deleteVersion(id: number): Promise<void> {
   const base = getApiUrl();
-  const url = new URL(`/api/workbooks/${id}`, base).toString();
+  const url = new URL(`/api/snapshots/${id}`, base).toString();
   const headers = await makeHeaders();
   const res = await expoFetch(url, { method: "DELETE", headers });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+async function activateSnapshot(id: number): Promise<void> {
+  const base = getApiUrl();
+  const url = new URL(`/api/snapshots/${id}/activate`, base).toString();
+  const headers = await makeHeaders();
+  const res = await expoFetch(url, { method: "PATCH", headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 // ─── Small components ─────────────────────────────────────────────────────────
@@ -422,7 +449,8 @@ export default function WorkbookScreen() {
       } as any);
 
       const base = getApiUrl();
-      const url = new URL("/api/workbooks/upload", base).toString();
+      // NEW CANONICAL: /api/upload-workbook writes to workbook_snapshots table
+      const url = new URL("/api/upload-workbook", base).toString();
       const headers = await makeHeaders();
 
       const res = await expoFetch(url, {
@@ -440,12 +468,15 @@ export default function WorkbookScreen() {
       const warnings = body.warnings as string[] | undefined;
       const msg =
         warnings?.length
-          ? `Uploaded successfully.\n\nWarnings:\n${warnings.join("\n")}`
-          : "Workbook uploaded and parsed successfully.";
+          ? `Uploaded & activated.\n\nWarnings:\n${warnings.join("\n")}`
+          : "Workbook uploaded, parsed, and set as active snapshot.";
 
       Alert.alert("Success", msg);
       await loadVersions();
-      handleSelectVersion(body.workbookId);
+      // New response shape uses workbookSnapshotId (not workbookId)
+      if (body.workbookSnapshotId) {
+        handleSelectVersion(Number(body.workbookSnapshotId));
+      }
     } catch (e: any) {
       Alert.alert("Upload error", e?.message || "Something went wrong.");
     } finally {

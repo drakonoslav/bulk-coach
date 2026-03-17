@@ -4,6 +4,15 @@ import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
 
+// ── NEW CANONICAL SPINE ROUTES (Pass 3+) ─────────────────────────────────────
+// These are registered AFTER registerRoutes so the global Bearer auth middleware
+// still applies. Each handler also enforces X-User-Id explicitly (no fallback).
+import { uploadRouter }   from "./routes/upload.js";
+import { workbookRouter } from "./routes/workbook.js";
+import { biologRouter }   from "./routes/biolog.js";
+import { nutritionRouter } from "./routes/nutrition.js";
+import { colonyRouter }   from "./routes/colony.js";
+
 const app = express();
 const log = console.log;
 
@@ -40,7 +49,10 @@ function setupCors(app: express.Application) {
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.header(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-User-Id",
+      );
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
@@ -257,6 +269,15 @@ function setupErrorHandler(app: express.Application) {
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
+
+  // ── Register new canonical spine routes ─────────────────────────────────────
+  // New source of truth: workbook_snapshots, workbook_sheet_rows, biolog_rows
+  // Paths no longer allowed: MemStorage, local_default fallback on these routes
+  app.use(uploadRouter);
+  app.use(workbookRouter);
+  app.use(biologRouter);
+  app.use(nutritionRouter);
+  app.use(colonyRouter);
 
   setupErrorHandler(app);
 

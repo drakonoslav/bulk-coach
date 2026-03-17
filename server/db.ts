@@ -1361,6 +1361,52 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE workbook_versions ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT false;
     CREATE INDEX IF NOT EXISTS idx_workbook_versions_active ON workbook_versions(user_id, is_active) WHERE is_active = true;
   `);
+
+  // 036: NEW CANONICAL workbook_snapshots table (replaces workbook_versions in new routes).
+  // workbook_versions is frozen legacy — not dropped yet. Two-table conflict noted in provenance.
+  // biolog_rows: normalized biolog sheet rows keyed to a snapshot.
+  await runMigration('036_workbook_snapshots_canonical', `
+    CREATE TABLE IF NOT EXISTS workbook_snapshots (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      version_tag TEXT,
+      uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      is_active BOOLEAN NOT NULL DEFAULT FALSE,
+      sheet_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+      row_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+      warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+      source_sha256 TEXT,
+      original_file_size_bytes BIGINT,
+      notes TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workbook_snapshots_user_uploaded
+      ON workbook_snapshots(user_id, uploaded_at DESC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_workbook_snapshots_one_active_per_user
+      ON workbook_snapshots(user_id)
+      WHERE is_active = TRUE;
+
+    CREATE TABLE IF NOT EXISTS biolog_rows (
+      id BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index INTEGER NOT NULL,
+      biolog_date DATE,
+      phase TEXT,
+      source_date_key TEXT,
+      source_phase_key TEXT,
+      raw_json JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_biolog_rows_snapshot_date
+      ON biolog_rows(workbook_snapshot_id, biolog_date);
+
+    CREATE INDEX IF NOT EXISTS idx_biolog_rows_snapshot_phase
+      ON biolog_rows(workbook_snapshot_id, phase);
+  `);
 }
 
 export { pool };
