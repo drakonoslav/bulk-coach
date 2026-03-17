@@ -1,8 +1,10 @@
 /**
  * server/services/workbookParser.ts
- * NEW CANONICAL: Parses an Excel .xlsx buffer into sheet rows and normalized biolog rows.
+ * NEW CANONICAL: Parses an Excel .xlsx buffer into sheet rows,
+ * normalized biolog rows, meal_line rows, and meal_template rows.
+ *
  * Source of truth: the uploaded workbook buffer.
- * No fallback, no default values injected.
+ * No fallback. No default values injected. No native recomputation.
  */
 import * as XLSX from "xlsx";
 
@@ -32,13 +34,42 @@ export type ParsedBiologRow = {
   raw: Record<string, unknown>;
 };
 
+export type ParsedMealLineRow = {
+  rowIndex: number;
+  phase: string | null;
+  mealTemplateId: string | null;
+  lineNo: number | null;
+  ingredientId: string | null;
+  amountUnit: number | null;
+  kcalLine: number | null;
+  proteinLine: number | null;
+  carbsLine: number | null;
+  fatLine: number | null;
+  raw: Record<string, unknown>;
+};
+
+export type ParsedMealTemplateRow = {
+  rowIndex: number;
+  phase: string | null;
+  mealTemplateId: string | null;
+  kcalSum: number | null;
+  proteinSum: number | null;
+  carbsSum: number | null;
+  fatSum: number | null;
+  raw: Record<string, unknown>;
+};
+
 export type ParsedWorkbook = {
   sheetNames: string[];
   rowCounts: Record<string, number>;
   warnings: string[];
   sheets: Record<string, ParsedSheetRow[]>;
   biologRows: ParsedBiologRow[];
+  mealLineRows: ParsedMealLineRow[];
+  mealTemplateRows: ParsedMealTemplateRow[];
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeKey(key: string): string {
   return key.trim().toLowerCase().replace(/\s+/g, "_");
@@ -75,40 +106,72 @@ function toIsoDate(value: unknown): string | null {
   return null;
 }
 
-function extractBiologDate(row: Record<string, unknown>): {
-  key: string | null;
-  value: string | null;
-} {
-  const preferredKeys = ["date", "day", "log_date", "biolog_date", "entry_date"];
+function toNumber(value: unknown): number | null {
+  if (!isNonEmpty(value)) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  const raw = String(value).replace(/,/g, "").trim();
+  if (raw === "") return null;
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getByPreferredKeys(
+  row: Record<string, unknown>,
+  preferredKeys: string[]
+): { key: string | null; value: unknown } {
   const entries = Object.entries(row).map(([k, v]) => [normalizeKey(k), k, v] as const);
 
   for (const pref of preferredKeys) {
     const hit = entries.find(([nk, , v]) => nk === pref && isNonEmpty(v));
-    if (hit) return { key: hit[1], value: toIsoDate(hit[2]) };
+    if (hit) return { key: hit[1], value: hit[2] };
   }
 
-  const fuzzy = entries.find(([nk, , v]) => nk.includes("date") && isNonEmpty(v));
-  if (fuzzy) return { key: fuzzy[1], value: toIsoDate(fuzzy[2]) };
-
   return { key: null, value: null };
+}
+
+function getByFuzzyIncludes(
+  row: Record<string, unknown>,
+  includesAny: string[]
+): { key: string | null; value: unknown } {
+  const entries = Object.entries(row).map(([k, v]) => [normalizeKey(k), k, v] as const);
+  const hit = entries.find(
+    ([nk, , v]) => includesAny.some((frag) => nk.includes(frag)) && isNonEmpty(v)
+  );
+  if (hit) return { key: hit[1], value: hit[2] };
+  return { key: null, value: null };
+}
+
+function extractBiologDate(row: Record<string, unknown>): {
+  key: string | null;
+  value: string | null;
+} {
+  const preferred = getByPreferredKeys(row, [
+    "date", "day", "log_date", "biolog_date", "entry_date",
+  ]);
+  if (preferred.key) return { key: preferred.key, value: toIsoDate(preferred.value) };
+
+  const fuzzy = getByFuzzyIncludes(row, ["date"]);
+  return { key: fuzzy.key, value: toIsoDate(fuzzy.value) };
 }
 
 function extractPhase(row: Record<string, unknown>): {
   key: string | null;
   value: string | null;
 } {
-  const preferredKeys = ["phase", "biolog_phase", "today_bound_phase", "final_phase"];
-  const entries = Object.entries(row).map(([k, v]) => [normalizeKey(k), k, v] as const);
-
-  for (const pref of preferredKeys) {
-    const hit = entries.find(([nk, , v]) => nk === pref && isNonEmpty(v));
-    if (hit) return { key: hit[1], value: String(hit[2]).trim() };
+  const preferred = getByPreferredKeys(row, [
+    "phase", "biolog_phase", "today_bound_phase", "final_phase",
+  ]);
+  if (preferred.key) {
+    return { key: preferred.key, value: String(preferred.value).trim() };
   }
 
-  const fuzzy = entries.find(([nk, , v]) => nk.includes("phase") && isNonEmpty(v));
-  if (fuzzy) return { key: fuzzy[1], value: String(fuzzy[2]).trim() };
-
-  return { key: null, value: null };
+  const fuzzy = getByFuzzyIncludes(row, ["phase"]);
+  return {
+    key: fuzzy.key,
+    value: isNonEmpty(fuzzy.value) ? String(fuzzy.value).trim() : null,
+  };
 }
 
 function parseSheetRows(sheet: XLSX.WorkSheet): ParsedSheetRow[] {
@@ -119,6 +182,84 @@ function parseSheetRows(sheet: XLSX.WorkSheet): ParsedSheetRow[] {
   });
   return rows.map((raw, idx) => ({ rowIndex: idx + 2, raw }));
 }
+
+// ─── meal_lines extractor ─────────────────────────────────────────────────────
+
+function extractMealLineRow(row: ParsedSheetRow): ParsedMealLineRow {
+  const phase = extractPhase(row.raw).value;
+
+  const mealTemplateInfo = getByPreferredKeys(row.raw, [
+    "meal_template_id", "meal_template", "meal_id",
+  ]);
+  const lineNoInfo = getByPreferredKeys(row.raw, [
+    "line_no", "line", "line_number",
+  ]);
+  const ingredientInfo = getByPreferredKeys(row.raw, [
+    "ingredient_id", "ingredient", "food_id",
+  ]);
+  const amountInfo = getByPreferredKeys(row.raw, [
+    "amount_unit", "amount", "qty", "quantity",
+  ]);
+  const kcalInfo = getByPreferredKeys(row.raw, [
+    "kcal_line", "kcal", "calories_line", "calories",
+  ]);
+  const proteinInfo = getByPreferredKeys(row.raw, ["protein_line", "protein"]);
+  const carbsInfo = getByPreferredKeys(row.raw, [
+    "carbs_line", "carbs", "carb_line", "carb",
+  ]);
+  const fatInfo = getByPreferredKeys(row.raw, ["fat_line", "fat"]);
+
+  return {
+    rowIndex: row.rowIndex,
+    phase,
+    mealTemplateId: isNonEmpty(mealTemplateInfo.value)
+      ? String(mealTemplateInfo.value).trim()
+      : null,
+    lineNo: toNumber(lineNoInfo.value),
+    ingredientId: isNonEmpty(ingredientInfo.value)
+      ? String(ingredientInfo.value).trim()
+      : null,
+    amountUnit: toNumber(amountInfo.value),
+    kcalLine: toNumber(kcalInfo.value),
+    proteinLine: toNumber(proteinInfo.value),
+    carbsLine: toNumber(carbsInfo.value),
+    fatLine: toNumber(fatInfo.value),
+    raw: row.raw,
+  };
+}
+
+// ─── meal_templates extractor ─────────────────────────────────────────────────
+
+function extractMealTemplateRow(row: ParsedSheetRow): ParsedMealTemplateRow {
+  const phase = extractPhase(row.raw).value;
+
+  const mealTemplateInfo = getByPreferredKeys(row.raw, [
+    "meal_template_id", "meal_template", "meal_id",
+  ]);
+  const kcalInfo = getByPreferredKeys(row.raw, [
+    "kcal_sum", "kcal", "calories_sum", "calories",
+  ]);
+  const proteinInfo = getByPreferredKeys(row.raw, ["protein_sum", "protein"]);
+  const carbsInfo = getByPreferredKeys(row.raw, [
+    "carbs_sum", "carbs", "carb_sum", "carb",
+  ]);
+  const fatInfo = getByPreferredKeys(row.raw, ["fat_sum", "fat"]);
+
+  return {
+    rowIndex: row.rowIndex,
+    phase,
+    mealTemplateId: isNonEmpty(mealTemplateInfo.value)
+      ? String(mealTemplateInfo.value).trim()
+      : null,
+    kcalSum: toNumber(kcalInfo.value),
+    proteinSum: toNumber(proteinInfo.value),
+    carbsSum: toNumber(carbsInfo.value),
+    fatSum: toNumber(fatInfo.value),
+    raw: row.raw,
+  };
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export function parseWorkbookBuffer(buffer: Buffer): ParsedWorkbook {
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
@@ -153,5 +294,16 @@ export function parseWorkbookBuffer(buffer: Buffer): ParsedWorkbook {
     };
   });
 
-  return { sheetNames, rowCounts, warnings, sheets, biologRows };
+  const mealLineRows = (sheets["meal_lines"] || []).map(extractMealLineRow);
+  const mealTemplateRows = (sheets["meal_templates"] || []).map(extractMealTemplateRow);
+
+  return {
+    sheetNames,
+    rowCounts,
+    warnings,
+    sheets,
+    biologRows,
+    mealLineRows,
+    mealTemplateRows,
+  };
 }

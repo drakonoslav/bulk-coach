@@ -2,9 +2,15 @@
  * server/routes/upload.ts
  * NEW CANONICAL: POST /api/upload-workbook
  *
- * Truth written: workbook_snapshots, workbook_sheet_rows, biolog_rows
- * Truth read: none (write-only on upload)
+ * Truth written:
+ *   workbook_snapshots       — snapshot metadata + active flag
+ *   workbook_sheet_rows      — all sheet rows as raw JSONB
+ *   biolog_rows              — normalized biolog sheet rows
+ *   meal_line_rows           — normalized meal_lines sheet rows
+ *   meal_template_rows       — normalized meal_templates sheet rows
+ *
  * User scope: X-User-Id header — REQUIRED. No fallback. Fails loudly.
+ * No AsyncStorage identity. No local_default fallback.
  * Provenance: every response includes _provenance block.
  */
 import { Router, Request, Response } from "express";
@@ -98,7 +104,7 @@ uploadRouter.post(
         workbookSnapshotId = snapshotInsert.rows[0].id;
         uploadedAt = snapshotInsert.rows[0].uploaded_at;
 
-        // Store all sheet rows
+        // ── workbook_sheet_rows (all sheets, raw) ──────────────────────────────
         for (const [sheetName, rows] of Object.entries(parsed.sheets)) {
           for (const row of rows) {
             await client.query(
@@ -111,7 +117,7 @@ uploadRouter.post(
           }
         }
 
-        // Store normalized biolog rows
+        // ── biolog_rows (normalized) ───────────────────────────────────────────
         for (const row of parsed.biologRows) {
           await client.query(
             `INSERT INTO biolog_rows (
@@ -132,6 +138,58 @@ uploadRouter.post(
           );
         }
 
+        // ── meal_line_rows (normalized) ────────────────────────────────────────
+        for (const row of parsed.mealLineRows) {
+          await client.query(
+            `INSERT INTO meal_line_rows (
+              workbook_snapshot_id, row_index,
+              phase, meal_template_id, line_no,
+              ingredient_id, amount_unit,
+              kcal_line, protein_line, carbs_line, fat_line,
+              raw_json
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+            ON CONFLICT (workbook_snapshot_id, row_index) DO NOTHING`,
+            [
+              workbookSnapshotId,
+              row.rowIndex,
+              row.phase,
+              row.mealTemplateId,
+              row.lineNo,
+              row.ingredientId,
+              row.amountUnit,
+              row.kcalLine,
+              row.proteinLine,
+              row.carbsLine,
+              row.fatLine,
+              JSON.stringify(row.raw),
+            ]
+          );
+        }
+
+        // ── meal_template_rows (normalized) ───────────────────────────────────
+        for (const row of parsed.mealTemplateRows) {
+          await client.query(
+            `INSERT INTO meal_template_rows (
+              workbook_snapshot_id, row_index,
+              phase, meal_template_id,
+              kcal_sum, protein_sum, carbs_sum, fat_sum,
+              raw_json
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+            ON CONFLICT (workbook_snapshot_id, row_index) DO NOTHING`,
+            [
+              workbookSnapshotId,
+              row.rowIndex,
+              row.phase,
+              row.mealTemplateId,
+              row.kcalSum,
+              row.proteinSum,
+              row.carbsSum,
+              row.fatSum,
+              JSON.stringify(row.raw),
+            ]
+          );
+        }
+
         await client.query("COMMIT");
       } catch (err) {
         await client.query("ROLLBACK");
@@ -142,7 +200,10 @@ uploadRouter.post(
 
       console.log(
         `[upload-workbook] user=${userId} snapshot=${workbookSnapshotId} ` +
-          `sheets=${parsed.sheetNames.join(",")} biolog_rows=${parsed.biologRows.length}`
+          `sheets=${parsed.sheetNames.join(",")} ` +
+          `biolog=${parsed.biologRows.length} ` +
+          `meal_lines=${parsed.mealLineRows.length} ` +
+          `meal_templates=${parsed.mealTemplateRows.length}`
       );
 
       return res.status(201).json({
@@ -157,7 +218,13 @@ uploadRouter.post(
           db: dbProv,
           userId,
           workbookSnapshotId,
-          tablesWritten: ["workbook_snapshots", "workbook_sheet_rows", "biolog_rows"],
+          tablesWritten: [
+            "workbook_snapshots",
+            "workbook_sheet_rows",
+            "biolog_rows",
+            "meal_line_rows",
+            "meal_template_rows",
+          ],
           source: "uploaded_workbook",
         },
       });
