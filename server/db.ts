@@ -1407,6 +1407,125 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_biolog_rows_snapshot_phase
       ON biolog_rows(workbook_snapshot_id, phase);
   `);
+
+  // 037: filename_date + snapshot_sheet_rows + meal_line_rows + meal_template_rows
+  //      + drift_event_rows + colony_metric_rows + threshold_lab_rows
+  //      These tables exist in dev DB but were never added to the migration runner.
+  await runMigration('037_missing_workbook_tables', `
+    ALTER TABLE workbook_snapshots
+      ADD COLUMN IF NOT EXISTS filename_date DATE;
+
+    CREATE INDEX IF NOT EXISTS idx_workbook_snapshots_user_filename_date
+      ON workbook_snapshots(user_id, filename_date DESC);
+
+    CREATE TABLE IF NOT EXISTS snapshot_sheet_rows (
+      id                   BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      sheet_name           TEXT NOT NULL,
+      row_index            INTEGER NOT NULL,
+      raw_json             JSONB NOT NULL,
+      UNIQUE (workbook_snapshot_id, sheet_name, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ssr_snapshot_sheet
+      ON snapshot_sheet_rows(workbook_snapshot_id, sheet_name);
+
+    CREATE TABLE IF NOT EXISTS meal_line_rows (
+      id                   BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index            INTEGER NOT NULL,
+      phase                TEXT,
+      meal_template_id     TEXT,
+      line_no              INTEGER,
+      ingredient_id        TEXT,
+      amount_unit          TEXT,
+      kcal_line            NUMERIC,
+      protein_line         NUMERIC,
+      carbs_line           NUMERIC,
+      fat_line             NUMERIC,
+      raw_json             JSONB NOT NULL,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_meal_line_rows_snapshot_phase
+      ON meal_line_rows(workbook_snapshot_id, phase);
+
+    CREATE TABLE IF NOT EXISTS meal_template_rows (
+      id                   BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index            INTEGER NOT NULL,
+      phase                TEXT,
+      meal_template_id     TEXT,
+      kcal_sum             NUMERIC,
+      protein_sum          NUMERIC,
+      carbs_sum            NUMERIC,
+      fat_sum              NUMERIC,
+      raw_json             JSONB NOT NULL,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_meal_template_rows_snapshot_phase
+      ON meal_template_rows(workbook_snapshot_id, phase);
+
+    CREATE TABLE IF NOT EXISTS drift_event_rows (
+      id                    BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id  BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index             INTEGER NOT NULL,
+      drift_date            DATE,
+      phase                 TEXT,
+      drift_type            TEXT,
+      drift_source          TEXT,
+      confidence            TEXT,
+      weighted_drift_score  NUMERIC,
+      watch_flag            TEXT,
+      raw_json              JSONB NOT NULL,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_drift_event_rows_snapshot_date
+      ON drift_event_rows(workbook_snapshot_id, drift_date);
+
+    CREATE INDEX IF NOT EXISTS idx_drift_event_rows_snapshot_type
+      ON drift_event_rows(workbook_snapshot_id, drift_type);
+
+    CREATE TABLE IF NOT EXISTS colony_metric_rows (
+      id                   BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index            INTEGER NOT NULL,
+      metric               TEXT,
+      metric_value         TEXT,
+      threshold_value      TEXT,
+      status               TEXT,
+      recommendation       TEXT,
+      confidence           TEXT,
+      raw_json             JSONB NOT NULL,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_colony_metric_rows_snapshot_metric
+      ON colony_metric_rows(workbook_snapshot_id, metric);
+
+    CREATE TABLE IF NOT EXISTS threshold_lab_rows (
+      id                   BIGSERIAL PRIMARY KEY,
+      workbook_snapshot_id BIGINT NOT NULL REFERENCES workbook_snapshots(id) ON DELETE CASCADE,
+      row_index            INTEGER NOT NULL,
+      threshold_name       TEXT,
+      current_value        TEXT,
+      suggested_value      TEXT,
+      evidence_count       NUMERIC,
+      notes                TEXT,
+      raw_json             JSONB NOT NULL,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workbook_snapshot_id, row_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_threshold_lab_rows_snapshot_name
+      ON threshold_lab_rows(workbook_snapshot_id, threshold_name);
+  `);
 }
 
 export { pool };
