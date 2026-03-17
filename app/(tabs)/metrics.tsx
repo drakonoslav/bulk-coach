@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, Alert, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { getProfile, getAge, getDaysSince, formatBirthdayDisplay, type UserProfile } from "@/lib/profile";
@@ -44,6 +44,7 @@ interface TodayLog {
 
 export default function MetricsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [profile, setProfile]   = useState<UserProfile | null>(null);
   const [metrics, setMetrics]   = useState<QuickMetrics>(EMPTY);
   const [saving, setSaving]     = useState(false);
@@ -175,6 +176,17 @@ export default function MetricsScreen() {
           </Text>
         </View>
       </View>
+
+      {/* ── Workbook shortcut ── */}
+      <TouchableOpacity
+        style={styles.workbookBtn}
+        onPress={() => router.push("/workbook" as any)}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="document-text-outline" size={18} color={TEAL} />
+        <Text style={styles.workbookBtnText}>Workbooks</Text>
+        <Ionicons name="chevron-forward" size={16} color={MUTED} style={{ marginLeft: "auto" }} />
+      </TouchableOpacity>
 
       {/* ── Today header ── */}
       <View style={styles.sectionHeader}>
@@ -484,5 +496,21 @@ const styles = StyleSheet.create({
     fontFamily: "Rubik_400Regular",
     fontSize: 14,
     color: MUTED,
+  },
+  workbookBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,212,170,0.2)",
+    marginBottom: 16,
+  },
+  workbookBtnText: {
+    fontFamily: "Rubik_600SemiBold",
+    fontSize: 15,
+    color: TEXT,
   },
 });

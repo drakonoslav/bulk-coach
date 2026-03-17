@@ -41,6 +41,9 @@ Core logic is modularized into several engines and modules:
 
 UI/UX decisions include a dark theme with a teal primary color (#00D4AA), a purple accent for vitals (#8B5CF6), and the Rubik font family. Authentication uses Bearer tokens. Shared formatting utilities from `lib/format.ts` are used for signal breakdown values. The Dashboard CAPACITY chart displays Readiness and three sleep disruption metrics (Sleep Latency, Wake After Sleep Onset, Awake-in-Bed) with normalized percentages, exceedance fills, and blend colors for overlaps. The 3×2 regulation triads (Schedule: alignment/consistency/recovery; Outcome: adequacy/efficiency/continuity) are rendered as horizontal fuel-gauge fill bars with a green/amber/red color scale based on thresholds. Sleep efficiency and continuity metrics are provided with dual-unit fields (fraction and percentage) and invariant checks.
 
+## Workbook Module
+Versioned Excel workbook ingestion system. Users upload `.xlsx` files via the Metrics tab → "Workbooks" button. Each upload is stored as an immutable version (`workbook_versions` table) with all sheet rows stored as raw JSON in `workbook_sheet_rows` (workbook_id, sheet_name, row_index, raw_json). Expected sheets: `biolog`, `ingredients`, `meal_lines`, `meal_templates`, `drift_history`, `colony_coord`, `threshold_lab`. Any subset is accepted; missing sheets are flagged as warnings. Frontend screen: `app/workbook.tsx` — horizontal version selector, sheet-count pills, 4 display panels (Phase / Nutrition / Drift / Colonies). Backend: `server/workbook-routes.ts` mounted at `/api/workbooks`. Phase detection: scans last biolog row containing a column with "phase" in its name. No logic recomputation — Excel is source of truth. Future: native computation engine + behavior recommendations layer.
+
 ## External Dependencies
 - **Postgres (Neon)**: Primary database.
 - **Fitbit API (OAuth 2.0)**: For importing health and activity data.
