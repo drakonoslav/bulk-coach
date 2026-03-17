@@ -1,10 +1,29 @@
 # Bulk Coach - Recomp Monitor App
 
+## Trust Hierarchy — Non-Negotiable
+
+The Excel workbook exists because the app lost trust when dev and prod diverged. It is the canonical memory system. The app's job is to host it faithfully, not reinterpret it.
+
+```
+1. Excel workbook        = canonical organism (user's trust anchor)
+2. Postgres snapshot     = hosted runtime copy of canonical organism
+3. App UI                = window into hosted truth
+4. Native app logic      = lab layer — earns authority later, not assumed
+```
+
+**Rules that follow from this hierarchy:**
+- The app never outranks the workbook until it has earned that right through proven parity
+- No silent fallbacks. No legacy data paths alongside workbook paths. No dual truth.
+- Every route that reads workbook data must prove it via provenance (`activeWorkbookSnapshotId`)
+- New native logic is a lab layer only — it does not write to or override snapshot truth
+- Proof required at three levels before any change counts as real: SOURCE → BUILD → RUNTIME
+- Dev parity with prod must be verified at the runtime level, not assumed from source inspection
+
 ## Overview
 Bulk Coach is a mobile fitness tracking application for feedback-controlled bulk/recomposition. Users log daily metrics (weight, waist, sleep, activity, dietary adherence). The app provides weekly coaching recommendations and calorie adjustments. Key capabilities: body fat tracking, lean mass calculation, readiness system for training intensity, and full body composition monitoring.
 
 ## User Preferences
-Iterative development with clear communication on significant changes. Ask for confirmation before major architectural decisions. Well-documented code, modern TypeScript best practices, robust error handling, data integrity.
+Iterative development with clear communication on significant changes. Ask for confirmation before major architectural decisions. Well-documented code, modern TypeScript best practices, robust error handling, data integrity. Every major change verified at source + build + runtime level before declaring success.
 
 ## Multi-User Architecture
 Each device has a permanent user ID in AsyncStorage (`tracker_user_id`). Sent as `X-User-Id` header on every API request. Backend `requireAuth` middleware uses it for all DB queries. Every table has a `user_id` column. `ADMIN_USER_ID` env var designates the owner. Intel recommendation cache keyed by `intel_recommendation_{userId}_{date}`.
