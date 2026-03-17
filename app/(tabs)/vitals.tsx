@@ -1314,6 +1314,14 @@ export default function VitalsScreen() {
         }
       >
         <OscillatorCard data={oscillatorData} />
+        <View style={{ marginHorizontal: 0, marginBottom: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: "rgba(139,92,246,0.06)", borderWidth: 1, borderColor: "rgba(139,92,246,0.18)" }}>
+          <Text style={{ fontSize: 10, fontFamily: "Rubik_600SemiBold", color: "#8B5CF6", letterSpacing: 0.6, marginBottom: 3 }}>
+            ADVISORY — Intel-derived macros
+          </Text>
+          <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "rgba(255,255,255,0.38)", lineHeight: 15 }}>
+            Macro targets shown here come from the Intel recommendation engine (advisory, R1). When a workbook is active, canonical nutrition targets live in meal_template_rows — not from this oscillator prescription.
+          </Text>
+        </View>
 
         <View style={styles.card}>
           <View style={styles.cardHeader}>

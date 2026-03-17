@@ -14,6 +14,7 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { loadEntries } from "@/lib/entry-storage";
 import { authFetch, getApiUrl } from "@/lib/query-client";
+import { makeApiHeaders } from "@/lib/api-headers";
 import { fmtVal, fmtInt, fmtDelta, fmtPctVal } from "@/lib/format";
 import SignalCharts from "@/components/SignalCharts";
 import type { ForecastSummary } from "@/lib/forecast-types";
@@ -190,6 +191,7 @@ export default function DashboardScreen() {
   const [muscleMapError, setMuscleMapError] = useState<string | null>(null);
   const [muscleMapRaw, setMuscleMapRaw] = useState<any>(null);
   const [muscleDoseMode, setMuscleDoseMode] = useState<"total" | "direct">("total");
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null | undefined>(undefined);
 
   const fetchMuscleMap = useCallback(async () => {
     setMuscleMapLoading(true);
@@ -274,19 +276,41 @@ export default function DashboardScreen() {
     setEntries(data);
   }, []);
 
+  const fetchActiveSnapshot = useCallback(async () => {
+    try {
+      const url = new URL("/api/snapshots/active", getApiUrl());
+      const headers = await makeApiHeaders();
+      const res = await authFetch(url.toString(), { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveSnapshotId(String(data.snapshot?.id ?? data.id ?? ""));
+      } else {
+        setActiveSnapshotId(null);
+      }
+    } catch {
+      setActiveSnapshotId(null);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchEntries();
       fetchSignals(signalDays);
       fetchMuscleMap();
-    }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap])
+      fetchActiveSnapshot();
+    }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap, fetchActiveSnapshot])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchEntries(), fetchSignals(signalDays), fetchMuscleMap()]);
+    await Promise.all([
+      fetchEntries(),
+      fetchSignals(signalDays),
+      fetchMuscleMap(),
+      fetchActiveSnapshot(),
+    ]);
     setRefreshing(false);
-  }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap]);
+  }, [fetchEntries, fetchSignals, signalDays, fetchMuscleMap, fetchActiveSnapshot]);
 
   const handleRangeChange = useCallback((days: number) => {
     setSignalDays(days);
@@ -447,13 +471,23 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.statsGrid}>
-          <StatCard
-            icon="fitness-outline"
-            iconColor={Colors.primary}
-            label="Baseline"
-            value={fmtInt(BASELINE.calories, "--")}
-            subtitle="kcal/day"
-          />
+          {activeSnapshotId ? (
+            <StatCard
+              icon="document-text-outline"
+              iconColor={Colors.primary}
+              label="Kcal Target"
+              value="Workbook"
+              subtitle="→ Nutrition tab"
+            />
+          ) : (
+            <StatCard
+              icon="fitness-outline"
+              iconColor="#F59E0B"
+              label="Baseline ⚠"
+              value={fmtInt(BASELINE.calories, "--")}
+              subtitle="LEGACY FALLBACK — no workbook"
+            />
+          )}
           <StatCard
             icon="resize-outline"
             iconColor={Colors.secondary}
@@ -502,23 +536,50 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        <View style={styles.macroRow}>
-          <Text style={styles.sectionTitle}>Macro Targets</Text>
-          <View style={styles.macroCards}>
-            <View style={[styles.macroCard, { borderLeftColor: Colors.primary }]}>
-              <Text style={styles.macroValue}>{BASELINE.proteinG}g</Text>
-              <Text style={styles.macroLabel}>Protein</Text>
+        {activeSnapshotId ? (
+          <View style={styles.macroRow}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <Text style={styles.sectionTitle}>Macro Targets</Text>
+              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5, backgroundColor: "rgba(0,212,170,0.12)", borderWidth: 1, borderColor: "rgba(0,212,170,0.3)" }}>
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#00D4AA", letterSpacing: 0.8 }}>WORKBOOK ACTIVE</Text>
+              </View>
             </View>
-            <View style={[styles.macroCard, { borderLeftColor: Colors.secondary }]}>
-              <Text style={styles.macroValue}>{BASELINE.carbsG}g</Text>
-              <Text style={styles.macroLabel}>Carbs</Text>
-            </View>
-            <View style={[styles.macroCard, { borderLeftColor: Colors.danger }]}>
-              <Text style={styles.macroValue}>{BASELINE.fatG}g</Text>
-              <Text style={styles.macroLabel}>Fat</Text>
+            <View style={[styles.macroCard, { borderLeftColor: Colors.primary, paddingVertical: 14 }]}>
+              <Text style={[styles.macroValue, { color: "#00D4AA", fontSize: 14 }]}>
+                Canonical targets available in Nutrition tab
+              </Text>
+              <Text style={[styles.macroLabel, { marginTop: 4 }]}>
+                workbook meal_templates → GET /api/nutrition/summary
+              </Text>
             </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.macroRow}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <Text style={styles.sectionTitle}>Macro Targets</Text>
+              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5, backgroundColor: "rgba(245,158,11,0.12)", borderWidth: 1, borderColor: "rgba(245,158,11,0.3)" }}>
+                <Text style={{ fontSize: 9, fontFamily: "Rubik_700Bold", color: "#F59E0B", letterSpacing: 0.8 }}>LEGACY FALLBACK</Text>
+              </View>
+            </View>
+            <View style={styles.macroCards}>
+              <View style={[styles.macroCard, { borderLeftColor: "#F59E0B" }]}>
+                <Text style={styles.macroValue}>{BASELINE.proteinG}g</Text>
+                <Text style={styles.macroLabel}>Protein</Text>
+              </View>
+              <View style={[styles.macroCard, { borderLeftColor: "#F59E0B" }]}>
+                <Text style={styles.macroValue}>{BASELINE.carbsG}g</Text>
+                <Text style={styles.macroLabel}>Carbs</Text>
+              </View>
+              <View style={[styles.macroCard, { borderLeftColor: "#F59E0B" }]}>
+                <Text style={styles.macroValue}>{BASELINE.fatG}g</Text>
+                <Text style={styles.macroLabel}>Fat</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 10, fontFamily: "Rubik_400Regular", color: "#F59E0B", marginTop: 6, textAlign: "center" }}>
+              Upload a workbook to enable canonical nutrition targets (R1)
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
